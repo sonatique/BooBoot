@@ -12,26 +12,24 @@ and a Python library are included.
 
 - [Architecture](docs/architecture.md)
 - [HTTP API](docs/api.md)
+- [First bring-up](docs/bringup.md)
 
 ## Server setup (on the Raspberry Pi)
 
-1. Install Raspberry Pi OS Lite (any model, 32 or 64 bit) and connect it to
-   the network.
+1. Write Raspberry Pi OS Lite (any model, 32 or 64 bit) with Raspberry Pi
+   Imager, with hostname `booboot` and SSH on. Connect it to the network.
 2. Connect the relay driver to GPIO17, the USB-SD-Mux FAST and the USB UART
    adapter.
-3. Get this repository on the board and run:
+3. Install:
 
    ```sh
-   sudo server/install.sh
+   sudo apt install -y git
+   git clone https://github.com/sonatique/BooBoot.git
+   sudo BooBoot/server/install.sh
    ```
 
-4. Check the setup and adapt `/etc/booboot/dut1.ini` if needed:
-
-   ```sh
-   sudo booboot-server --probe       # GPIO lines, muxes, serial ports
-   sudo systemctl restart booboot@dut1
-   booboot --url http://localhost:8080 status
-   ```
+4. Follow [First bring-up](docs/bringup.md): it checks the relay, the SD card
+   and the serial console one by one before the DUT is connected.
 
 ## Client
 
@@ -70,5 +68,6 @@ python3 -m unittest discover -s tests
 ```
 
 CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
-3.14, once as root, runs the client tests on Windows and macOS, and checks the
-C# client against a server with a simulated board.
+3.14, once as root, runs the client tests on Windows and macOS, checks the C#
+client against a server with a simulated board, and runs `server/install.sh`
+on a machine with systemd, with the relay on a simulated GPIO chip.

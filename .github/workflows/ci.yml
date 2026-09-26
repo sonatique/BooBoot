@@ -46,6 +46,23 @@ jobs:
           ls -l /dev/gpiochip*
       - run: sudo python3 -m unittest discover -s tests -v
 
+  install:
+    # server/install.sh on a machine with systemd, the relay on a simulated GPIO chip.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Load a simulated GPIO chip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          sudo modprobe gpio-mockup gpio_mockup_ranges=-1,8 gpio_mockup_named_lines
+      - run: sudo server/install.sh
+      - name: Put the relay on the simulated GPIO chip
+        run: |
+          sudo sed -i 's/^line = .*/line = gpio-mockup-A-3/' /etc/booboot/dut1.ini
+          sudo systemctl restart booboot@dut1
+      - run: tests/check_install.sh gpio-mockup-A-3
+
   client:
     name: client (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

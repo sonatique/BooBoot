@@ -199,8 +199,13 @@ adapter (by `/dev/serial/by-id/` path). The systemd template unit
 2. copies the server there, and installs `booboot-server` and the `booboot`
    client in `/usr/local/bin`,
 3. loads the `sg` kernel module at boot (needed by the mux),
-4. creates `/etc/booboot/NAME.ini` if missing,
-5. installs, enables and starts `booboot@NAME`.
+4. adds a udev rule that keeps desktop automounters away from the mux card,
+5. creates `/etc/booboot/NAME.ini` if missing, with the next free port
+   (8080 for the first DUT, 8081 for the second, ...),
+6. installs, enables and starts `booboot@NAME`.
+
+Running it again updates the code and keeps the configuration.
+[First bring-up](bringup.md) lists the checks to do on new hardware.
 
 The service runs as root: it switches GPIO lines, writes to the card and
 mounts partitions. It is meant for a trusted network: there is no
