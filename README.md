@@ -51,6 +51,10 @@ booboot session close
 
 Other commands: `booboot --help`, and `booboot COMMAND --help`.
 
+For C#, `client/csharp/BooBootClient.cs` is a small client class (.NET 6 or
+later, no package needed), with an example program in `client/csharp/Example`.
+Other languages can use the [HTTP API](docs/api.md) directly.
+
 ## Development
 
 Run the server with a simulated board, no hardware needed:
@@ -66,4 +70,5 @@ python3 -m unittest discover -s tests
 ```
 
 CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
-3.14, once as root, and runs the client tests on Windows and macOS.
+3.14, once as root, runs the client tests on Windows and macOS, and checks the
+C# client against a server with a simulated board.

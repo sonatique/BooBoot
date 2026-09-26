@@ -181,6 +181,10 @@ exit codes tell errors (1), timeouts (3) and busy (4) apart. It opens a
 session when needed and keeps the token in a local file between calls.
 `booboot console attach` is an interactive terminal for humans.
 
+`client/csharp/BooBootClient.cs` is the same client as a small C# class
+(.NET 6 or later, one file, no package needed). Other languages use the HTTP
+API directly.
+
 ## Several DUTs
 
 One board can serve several DUTs: one server instance per DUT, each with its
@@ -212,8 +216,9 @@ desktop without hardware.
 
 Tests: `python3 -m unittest discover -s tests`. The tests that need loop
 devices, mounts or a simulated GPIO chip (`modprobe gpio-mockup`) run only as
-root. CI runs them all, on several Python versions, and runs the client tests
-on Windows and macOS.
+root. CI runs them all, on several Python versions, runs the client tests on
+Windows and macOS, and checks the C# client (`client/csharp/Check`) against a
+server with a simulated board.
 
 ## Limits and ideas for later
 

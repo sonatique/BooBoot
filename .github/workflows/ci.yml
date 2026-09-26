@@ -60,3 +60,31 @@ jobs:
           python-version: "3.12"
       - run: python -m unittest discover -s tests -p test_client.py -v
       - run: python client/booboot.py --help
+
+  csharp:
+    # C# client against a server with a fake board.
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Start the server with a fake board
+        run: |
+          cd server
+          nohup python3 -m booboot_server --fake --host 127.0.0.1 --port 8080 > ../server.log 2>&1 &
+          for i in $(seq 20); do
+            curl -sf http://127.0.0.1:8080/api/v1/status > /dev/null && exit 0
+            sleep 0.5
+          done
+          cat ../server.log
+          exit 1
+      - run: dotnet run --project client/csharp/Check -- http://127.0.0.1:8080
+      - run: |
+          echo boot > BOOT.BIN
+          dotnet run --project client/csharp/Example -- http://127.0.0.1:8080 BOOT.BIN
+      - if: always()
+        run: cat server.log

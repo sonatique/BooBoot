@@ -217,7 +217,27 @@ Invoke-RestMethod -Method Delete "$u/session" -Headers $h
 
 ### C#
 
-.NET 6 or later, no package needed. Tested with .NET 8.
+`client/csharp/BooBootClient.cs` is a small client class for .NET 6 or
+later, in one file with no package needed. Copy it into a project.
+`client/csharp/Example` is a complete program.
+
+```csharp
+using BooBoot;
+
+using var dut = new BooBootClient("http://booboot.local:8080");
+await dut.OpenSessionAsync("csharp");
+await dut.PowerOffAsync();
+await dut.PutFileAsync("BOOT.BIN", "1:/BOOT.BIN");
+await dut.PowerOnAsync();
+var boot = await dut.ExpectAsync("login: ", since: "boot", timeout: 120);
+Console.WriteLine(boot.Text);
+await dut.RunAsync("root");
+Console.WriteLine((await dut.RunAsync("uname -a")).Text);
+await dut.CloseSessionAsync();
+```
+
+Errors throw `BooBootException`, with `Status` (HTTP status) and `Code` (like
+`busy`). Without the class, `HttpClient` alone is enough:
 
 ```csharp
 using System.Net.Http.Headers;
