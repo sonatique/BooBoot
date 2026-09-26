@@ -14,13 +14,16 @@ if [ "$(id -u)" != 0 ]; then
     exit 1
 fi
 
-if ! python3 -c "import ensurepip" 2>/dev/null; then
-    apt-get update
-    apt-get install -y python3-venv
-fi
-
 mkdir -p "$PREFIX/booboot_server"
-[ -x "$PREFIX/venv/bin/python3" ] || python3 -m venv "$PREFIX/venv"
+if [ ! -x "$PREFIX/venv/bin/pip" ]; then
+    # On Debian, a venv with pip needs the python3-venv package.
+    if ! python3 -m venv "$PREFIX/venv" >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y python3-venv
+        rm -rf "$PREFIX/venv"
+        python3 -m venv "$PREFIX/venv"
+    fi
+fi
 "$PREFIX/venv/bin/pip" install --upgrade "usbsdmux>=24.1"
 
 rm -f "$PREFIX"/booboot_server/*.py
@@ -36,10 +39,18 @@ install -m 755 "$SRC/../client/booboot.py" /usr/local/bin/booboot
 echo sg > /etc/modules-load.d/booboot.conf
 modprobe sg || true
 
+# Keep desktop automounters away from the SD card of the mux.
+mkdir -p /etc/udev/rules.d
+install -m 644 "$SRC/99-booboot.rules" /etc/udev/rules.d/
+udevadm control --reload || true
+
 mkdir -p /etc/booboot
 if [ ! -e "/etc/booboot/$NAME.ini" ]; then
-    sed "s/^name = .*/name = $NAME/" "$SRC/booboot.ini" > "/etc/booboot/$NAME.ini"
-    echo "Created /etc/booboot/$NAME.ini"
+    # One port per DUT: 8080 for the first one, then 8081, ...
+    PORT=$((8080 + $(find /etc/booboot -name '*.ini' | wc -l)))
+    sed -e "s/^name = .*/name = $NAME/" -e "s/^port = .*/port = $PORT/" \
+        "$SRC/booboot.ini" > "/etc/booboot/$NAME.ini"
+    echo "Created /etc/booboot/$NAME.ini (port $PORT)"
 fi
 
 install -m 644 "$SRC/booboot@.service" /etc/systemd/system/

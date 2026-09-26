@@ -1,0 +1,4 @@
+# Keep desktop automounters (udisks) away from the SD card of the USB-SD-Mux:
+# BooBoot mounts it only for the time of a file operation.
+SUBSYSTEM=="block", ATTRS{manufacturer}=="Linux Automation GmbH", ATTRS{product}=="usb-sd-mux*", ENV{UDISKS_IGNORE}="1"
+SUBSYSTEM=="block", ATTRS{manufacturer}=="Pengutronix", ATTRS{product}=="usb-sd-mux*", ENV{UDISKS_IGNORE}="1"
