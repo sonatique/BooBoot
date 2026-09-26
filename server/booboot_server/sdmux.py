@@ -11,6 +11,7 @@ from .errors import HardwareError, Unavailable
 # SCSI model strings of the mux card readers
 MODELS = {"sdmux HS-SD/MMC": "classic", "sdFST HS-SD/MMC": "fast"}
 MODES = ("host", "dut", "off")
+SYS_SG = "/sys/class/scsi_generic"
 
 
 def _read(path):
@@ -24,7 +25,7 @@ def _read(path):
 def find_muxes():
     """Return the USB-SD-Mux devices seen by the kernel."""
     found = []
-    for sg in sorted(glob.glob("/sys/class/scsi_generic/sg*")):
+    for sg in sorted(glob.glob(os.path.join(SYS_SG, "sg*"))):
         model = MODELS.get(_read(os.path.join(sg, "device", "model")))
         if not model:
             continue

@@ -59,8 +59,11 @@ Run the server with a simulated board, no hardware needed:
 cd server && python3 -m booboot_server --fake --port 8080
 ```
 
-Run the tests:
+Run the tests (as root, the tests with loop devices and GPIO run too):
 
 ```sh
 python3 -m unittest discover -s tests
 ```
+
+CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
+3.14, once as root, and runs the client tests on Windows and macOS.

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check --select E,F,B,W --line-length 120 server client tests
+
+  test:
+    name: test (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the oldest supported (Raspberry Pi OS Bullseye). 3.14 adds zstd.
+        python: ["3.9", "3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+
+  test-root:
+    # Loop devices, mounts and the simulated GPIO chip need root.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load a simulated GPIO chip
+        continue-on-error: true
+        run: |
+          if ! sudo modprobe gpio-mockup gpio_mockup_ranges=-1,8 gpio_mockup_named_lines; then
+            sudo apt-get update
+            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+            sudo modprobe gpio-mockup gpio_mockup_ranges=-1,8 gpio_mockup_named_lines
+          fi
+          ls -l /dev/gpiochip*
+      - run: sudo python3 -m unittest discover -s tests -v
+
+  client:
+    name: client (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tests -p test_client.py -v
+      - run: python client/booboot.py --help

@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -134,6 +135,51 @@ class EndToEnd(unittest.TestCase):
             self.c.list_dir("7:/")
         self.assertEqual(e.exception.status, 404)
 
+    def raw(self, request):
+        """Send raw HTTP and return (status line, body)."""
+        host, port = self.url[7:].split(":")
+        with socket.create_connection((host, int(port)), timeout=10) as s:
+            s.sendall(request.replace(b"TOKEN", self.c.session.encode()))
+            data = b""
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        head, _, body = data.partition(b"\r\n\r\n")
+        return head.split(b"\r\n")[0].decode(), body
+
+    def test_bad_requests(self):
+        auth = b"Authorization: Bearer TOKEN\r\nConnection: close\r\n"
+        cases = [
+            (b"PUT /api/v1/power HTTP/1.1\r\n" + auth + b"Content-Length: 5\r\n\r\n{bad}", b"not valid JSON"),
+            (b"PUT /api/v1/power HTTP/1.1\r\n" + auth + b"Content-Length: 2\r\n\r\n[]", b"JSON object"),
+            (b"PUT /api/v1/power HTTP/1.1\r\n" + auth + b"Content-Length: x\r\n\r\n", b"Content-Length"),
+            (b"POST /api/v1/console/write?newline=maybe HTTP/1.1\r\n" + auth + b"\r\n", b"true or false"),
+            (b"GET /api/v1/console?wait=100 HTTP/1.1\r\n" + auth + b"\r\n", b"between 0 and 60"),
+            (b"PUT /api/v1/sd/image?compression=rar HTTP/1.1\r\n" + auth + b"Content-Length: 1\r\n\r\nx",
+             b"compression must be"),
+        ]
+        for request, message in cases:
+            status, body = self.raw(request)
+            self.assertIn(" 400 ", status + " ", request)
+            self.assertIn(message, body, request)
+
+    def test_keep_alive(self):
+        # Several requests on one connection, one of them an upload.
+        self.c.power_off()
+        host, port = self.url[7:].split(":")
+        conn = http.client.HTTPConnection(host, int(port), timeout=10)
+        headers = {"Authorization": "Bearer " + self.c.session}
+        for i in range(3):
+            conn.request("PUT", "/api/v1/sd/files/1/k%d" % i, body=b"x" * 1000, headers=headers)
+            self.assertEqual(json.loads(conn.getresponse().read())["size"], 1000)
+            conn.request("GET", "/api/v1/status", headers=headers)
+            self.assertTrue(json.loads(conn.getresponse().read())["session"]["yours"])
+        conn.close()
+        for i in range(3):
+            self.c.delete("1:/k%d" % i)
+
 
 class Cli(unittest.TestCase):
     @classmethod
@@ -184,6 +230,28 @@ class Cli(unittest.TestCase):
         self.assertIn("vfat", self.cli("sd", "parts"))
         self.cli("session", "close")
         self.assertIn("free", self.cli("status"))
+
+    def test_more_commands(self):
+        self.cli("session", "open", "--force", "--timeout", "60")
+        self.cli("power", "off")
+        image = os.path.join(self.tmp, "card.img.gz")
+        with open(image, "wb") as f:
+            f.write(gzip.compress(b"\1" * 100000))
+        self.assertIn("wrote 100.0 kB", self.cli("sd", "flash", image, "--verify"))
+        self.assertEqual(self.cli("sd", "host"), "sd card: host\n")
+        self.assertEqual(self.cli("sd", "off"), "sd card: off\n")
+        self.assertEqual(self.cli("sd", "dut"), "sd card: dut\n")
+        self.cli("sd", "mkdir", "1:/newdir")
+        self.assertIn("newdir/", self.cli("sd", "ls"))
+        self.cli("sd", "rm", "1:/newdir")
+        self.assertEqual(self.cli("power", "cycle", "--off-time", "0"), "power on\n")
+        self.assertIn("Fake FSBL", self.cli("console", "read", "--since", "boot"))
+        # Errors are also JSON with --json.
+        out = self.cli("--json", "sd", "host", code=1)
+        self.assertEqual(json.loads(out)["error"], "power_on")
+        self.cli("console", "write", "-n", "-e", r"\x03")
+        self.cli("power", "off")
+        self.cli("session", "close")
 
 
 if __name__ == "__main__":

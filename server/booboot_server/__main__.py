@@ -45,7 +45,7 @@ def build(cfg, fake_dir=None):
     run_dir = config.expand(s.get("run_dir"), name)
     if fake_dir is not None:
         from .fake import FakeBoard
-        board = FakeBoard(fake_dir, c.getint("baudrate"))
+        board = FakeBoard(fake_dir)
         power, mux, storage, port = board.power, board.mux, board.storage, board.port
         log_dir = os.path.join(fake_dir, "log")
     else:

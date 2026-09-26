@@ -81,13 +81,14 @@ class FakeBoard:
     Login is "root". The shell knows "uname -a", "echo" and "exit".
     """
 
-    def __init__(self, directory, baudrate=921600):
+    def __init__(self, directory):
         os.makedirs(directory, exist_ok=True)
         self.mux = FakeMux()
         self.storage = FakeStorage(os.path.join(directory, "card"))
         self.power = FakePower(self._power)
         self._master, self._slave = os.openpty()
-        self.port = SerialPort(os.ttyname(self._slave), baudrate)
+        # A pseudo terminal ignores the speed. 115200 exists on all systems.
+        self.port = SerialPort(os.ttyname(self._slave), 115200)
         self._lock = threading.Lock()
         self._gen = 0
         self._state = "off"

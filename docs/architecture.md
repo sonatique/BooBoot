@@ -211,7 +211,9 @@ directories as card partitions. The whole stack, client included, runs on a
 desktop without hardware.
 
 Tests: `python3 -m unittest discover -s tests`. The tests that need loop
-devices run only as root.
+devices, mounts or a simulated GPIO chip (`modprobe gpio-mockup`) run only as
+root. CI runs them all, on several Python versions, and runs the client tests
+on Windows and macOS.
 
 ## Limits and ideas for later
 

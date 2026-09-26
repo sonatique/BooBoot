@@ -66,6 +66,18 @@ class InflaterTest(unittest.TestCase):
             # Several streams in one file
             self.assertEqual(self.inflate(kind, data + comp(b"end")), raw + b"end", kind)
 
+    def test_zstd(self):
+        try:
+            from compression import zstd  # Python 3.14 or later
+        except ImportError:
+            with self.assertRaises(BadRequest):
+                storage.Inflater("zst")
+            return
+        raw = os.urandom(300000) + bytes(5000000)
+        data = zstd.compress(raw) + zstd.compress(b"end")
+        self.assertEqual(storage.detect_compression(data), "zst")
+        self.assertEqual(self.inflate("zst", data), raw + b"end")
+
     def test_xz_padding(self):
         data = lzma.compress(b"hello") + b"\0" * 8
         self.assertEqual(self.inflate("xz", data), b"hello")

@@ -1,5 +1,6 @@
 """Test helpers."""
 
+import logging
 import os
 import sys
 import threading
@@ -14,6 +15,9 @@ from booboot_server.__main__ import build  # noqa: E402
 from booboot_server.api import Server  # noqa: E402
 
 CLIENT = os.path.join(ROOT, "client", "booboot.py")
+
+# Tests check errors themselves: keep the output clean.
+logging.basicConfig(level=logging.CRITICAL)
 
 
 def start_fake_server(directory, session_timeout=300):
