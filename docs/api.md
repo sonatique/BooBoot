@@ -217,6 +217,8 @@ Invoke-RestMethod -Method Delete "$u/session" -Headers $h
 
 ### C#
 
+.NET 6 or later, no package needed. Tested with .NET 8.
+
 ```csharp
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -227,20 +229,20 @@ var http = new HttpClient {
     Timeout = TimeSpan.FromMinutes(10) };
 
 var s = await (await http.PostAsJsonAsync("session", new { client = "csharp" }))
-    .Content.ReadFromJsonAsync<JsonElement>();
+    .EnsureSuccessStatusCode().Content.ReadFromJsonAsync<JsonElement>();
 http.DefaultRequestHeaders.Authorization =
     new AuthenticationHeaderValue("Bearer", s.GetProperty("session").GetString());
 
-await http.PutAsJsonAsync("power", new { state = "off" });
+(await http.PutAsJsonAsync("power", new { state = "off" })).EnsureSuccessStatusCode();
 using (var f = File.OpenRead("BOOT.BIN"))
     (await http.PutAsync("sd/files/1/BOOT.BIN", new StreamContent(f))).EnsureSuccessStatusCode();
-await http.PutAsJsonAsync("power", new { state = "on" });
+(await http.PutAsJsonAsync("power", new { state = "on" })).EnsureSuccessStatusCode();
 
 var r = await (await http.PostAsJsonAsync("console/expect",
         new { pattern = "login: ", since = "boot", timeout = 120 }))
-    .Content.ReadFromJsonAsync<JsonElement>();
+    .EnsureSuccessStatusCode().Content.ReadFromJsonAsync<JsonElement>();
 Console.WriteLine(r.GetProperty("text").GetString());
-await http.DeleteAsync("session");
+(await http.DeleteAsync("session")).EnsureSuccessStatusCode();
 ```
 
 ### Python
