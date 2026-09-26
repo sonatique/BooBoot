@@ -65,6 +65,7 @@ Check((await dut.PartitionsAsync()).GetProperty("partitions").GetArrayLength() >
 Check((await dut.PowerOnAsync()).GetProperty("power").GetString() == "on", "power on");
 var login = await dut.ExpectAsync("login: $", since: "boot", timeout: 10);
 Check(login.Matched && login.Text.Contains("U-Boot"), "expect login prompt");
+Check(login.Time > 0.1 && login.Time < 2, "time from power on to the login prompt");
 Check((await dut.RunAsync("root", timeout: 5)).Text == "", "log in");
 var uname = await dut.RunAsync("uname -a", timeout: 5);
 Check(uname.Matched && uname.Text == "Linux fake 6.6.0-fake #1 SMP armv7l GNU/Linux\n", "run command");
@@ -73,11 +74,16 @@ await dut.WriteAsync("echo written", newline: true);
 Check((await dut.ExpectAsync("written\r\n")).Matched, "write");
 var read = await dut.ReadAsync("boot", wait: 0.5, clean: true);
 Check(read.GetProperty("text").GetString()!.Contains("Linux fake"), "read console");
+Check((await dut.ReadAsync("boot", timestamps: true)).GetProperty("text").GetString()!.StartsWith("["),
+    "read console with timestamps");
 var (data, next) = await dut.ReadRawAsync("boot");
 Check(data.Length > 0 && next == read.GetProperty("cursor").GetInt64() + data.Length, "read raw console");
 var conflict = await Fails(() => dut.SdModeAsync("host"));
 Check(conflict.Status == 409 && conflict.Code == "power_on", "card refused while powered");
 Check((await dut.PowerCycleAsync(0)).GetProperty("power").GetString() == "on", "power cycle");
+var bootTime = await dut.BootTimeAsync("login: $", timeout: 10, offTime: 0);
+Check(bootTime > 0.1 && bootTime < 2, "boot time");
+Check(await dut.BootTimeAsync("never", timeout: 0.5, offTime: 0) == null, "boot time timeout");
 await dut.KeepaliveAsync();
 
 // Clean up and release

@@ -386,6 +386,11 @@ def _regex(r, name, default=None):
         raise BadRequest("bad %s regex: %s" % (name, e)) from None
 
 
+def _time(c, cursor):
+    t = c.time_of(cursor)
+    return None if t is None else round(t, 3)
+
+
 @route("GET", "/console")
 def get_console(r, m):
     c = r.dut.console
@@ -393,6 +398,8 @@ def get_console(r, m):
     wait = r.param_float("wait", 0.0, high=MAX_WAIT)
     start, data = c.read(since, int(r.param_float("max", CHUNK, low=1)), wait)
     nxt = start + len(data)
+    if r.param_bool("timestamps"):
+        data = c.stamped(start, data)
     if r.param("format") == "raw":
         r.send_data_headers(len(data), [("X-Cursor", str(start)), ("X-Next", str(nxt))])
         r.wfile.write(data)
@@ -416,9 +423,11 @@ def console_expect(r, m):
     pattern = _regex(r, "pattern")
     since = _since(r, "last")
     timeout = r.param_float("timeout", 30.0, high=MAX_TIMEOUT)
-    matched, start, data, match, nxt = r.dut.console.expect(pattern, since, timeout)
+    c = r.dut.console
+    matched, start, data, match, nxt = c.expect(pattern, since, timeout)
     return {"matched": matched, "match": match.group(0).decode("utf-8", "replace") if match else None,
-            "cursor": start, "next": nxt, "text": _text(r, data)}
+            "cursor": start, "next": nxt, "time": _time(c, nxt - 1) if matched else None,
+            "text": _text(r, data)}
 
 
 @route("POST", "/console/run")
@@ -428,5 +437,7 @@ def console_run(r, m):
         raise BadRequest("command is required")
     pattern = _regex(r, "prompt", r.server.prompt)
     timeout = r.param_float("timeout", 30.0, high=MAX_TIMEOUT)
-    matched, out, nxt = r.dut.console.run(str(command), pattern, timeout)
-    return {"matched": matched, "next": nxt, "output": _text(r, out, clean=True)}
+    c = r.dut.console
+    matched, out, nxt = c.run(str(command), pattern, timeout)
+    return {"matched": matched, "next": nxt, "time": _time(c, nxt - 1) if matched else None,
+            "output": _text(r, out, clean=True)}

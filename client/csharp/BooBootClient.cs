@@ -41,7 +41,8 @@ public sealed class BooBootException : Exception
 /// <param name="Matched">False when the timeout came first.</param>
 /// <param name="Text">Expect: output up to the end of the match. Run: output of the command.</param>
 /// <param name="Next">Console cursor after the match.</param>
-public sealed record MatchResult(bool Matched, string Text, long Next);
+/// <param name="Time">Seconds from power on to the match, null without match.</param>
+public sealed record MatchResult(bool Matched, string Text, long Next, double? Time);
 
 /// <summary>
 /// Access to one BooBoot server, that is one DUT.
@@ -176,15 +177,20 @@ public sealed class BooBootClient : IDisposable
     // last expect or run match) or "now".
 
     /// <summary>Console output: text, cursor, next. Waits up to wait seconds for new output.</summary>
-    public Task<JsonElement> ReadAsync(string since = "boot", double wait = 0, bool clean = false) =>
+    /// <param name="timestamps">Start each line with its time since power on.</param>
+    public Task<JsonElement> ReadAsync(string since = "boot", double wait = 0, bool clean = false,
+        bool timestamps = false) =>
         SendJsonAsync(HttpMethod.Get,
-            "/console" + Query(("since", since), ("wait", wait > 0 ? wait : null), ("clean", clean ? 1 : null)),
+            "/console" + Query(("since", since), ("wait", wait > 0 ? wait : null), ("clean", clean ? 1 : null),
+                ("timestamps", timestamps ? 1 : null)),
             null, TimeSpan.FromSeconds(wait));
 
     /// <summary>Raw console bytes, and the cursor to read from next.</summary>
-    public async Task<(byte[] Data, long Next)> ReadRawAsync(string since = "boot", double wait = 0)
+    public async Task<(byte[] Data, long Next)> ReadRawAsync(string since = "boot", double wait = 0,
+        bool timestamps = false)
     {
-        var path = "/console" + Query(("since", since), ("wait", wait > 0 ? wait : null), ("format", "raw"));
+        var path = "/console" + Query(("since", since), ("wait", wait > 0 ? wait : null), ("format", "raw"),
+            ("timestamps", timestamps ? 1 : null));
         using var cts = new CancellationTokenSource(Timeout + TimeSpan.FromSeconds(wait));
         using var resp = await SendAsync(new HttpRequestMessage(HttpMethod.Get, Api(path)), cts.Token);
         var data = await resp.Content.ReadAsByteArrayAsync(cts.Token);
@@ -203,8 +209,7 @@ public sealed class BooBootClient : IDisposable
         var r = await SendJsonAsync(HttpMethod.Post, "/console/expect",
             Body(("pattern", pattern), ("since", since), ("timeout", timeout), ("clean", clean)),
             TimeSpan.FromSeconds(timeout));
-        return new MatchResult(r.GetProperty("matched").GetBoolean(), r.GetProperty("text").GetString() ?? "",
-            r.GetProperty("next").GetInt64());
+        return Match(r, "text");
     }
 
     /// <summary>Sends a command line and waits for the prompt regex (default set on the server).</summary>
@@ -214,9 +219,23 @@ public sealed class BooBootClient : IDisposable
         var r = await SendJsonAsync(HttpMethod.Post, "/console/run",
             Body(("command", command), ("prompt", prompt), ("timeout", timeout), ("clean", clean)),
             TimeSpan.FromSeconds(timeout));
-        return new MatchResult(r.GetProperty("matched").GetBoolean(), r.GetProperty("output").GetString() ?? "",
-            r.GetProperty("next").GetInt64());
+        return Match(r, "output");
     }
+
+    /// <summary>
+    /// Power cycles the DUT and waits for a regex, like a login prompt.
+    /// Returns the seconds from power on to the regex, or null on timeout.
+    /// </summary>
+    public async Task<double?> BootTimeAsync(string pattern, double timeout = 120, double? offTime = null)
+    {
+        await PowerCycleAsync(offTime);
+        return (await ExpectAsync(pattern, since: "boot", timeout: timeout)).Time;
+    }
+
+    static MatchResult Match(JsonElement r, string textName) =>
+        new MatchResult(r.GetProperty("matched").GetBoolean(), r.GetProperty(textName).GetString() ?? "",
+            r.GetProperty("next").GetInt64(),
+            r.TryGetProperty("time", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetDouble() : null);
 
     // HTTP
 

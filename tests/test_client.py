@@ -137,6 +137,17 @@ class ClientTest(unittest.TestCase):
             c.get_file("2:/etc", io.BytesIO())
         self.assertEqual(e.exception.code, "is_a_directory")
 
+    def test_boot_time(self):
+        self.answer("POST", "/power/cycle", {"power": "on", "boot": 100})
+        self.answer("POST", "/console/expect", {"matched": True, "text": "x", "next": 200, "time": 12.345})
+        c = booboot.Client(self.url, session="t")
+        self.assertEqual(c.boot_time("login: ", timeout=60, off_time=1), 12.345)
+        cycle, expect = self.server.requests[-2:]
+        self.assertEqual(json.loads(cycle[3]), {"off_time": 1})
+        self.assertEqual(json.loads(expect[3])["since"], "boot")
+        self.answer("POST", "/console/expect", {"matched": False, "text": "", "next": 200, "time": None})
+        self.assertIsNone(c.boot_time("login: "))
+
     def test_read_raw(self):
         self.answer("GET", "/console", b"\x1b[0mboot\r\n", headers={"X-Next": "42"})
         data, nxt = booboot.Client(self.url).read_raw("boot", wait=1)

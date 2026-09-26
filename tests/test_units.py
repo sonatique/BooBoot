@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 import common  # noqa: F401  (sets sys.path)
 from booboot_server import gpio, storage
@@ -235,6 +236,9 @@ class ConsoleTest(unittest.TestCase):
         self.assertGreater(start, 0)
         self.assertLessEqual(len(data), 4096)
         self.assertTrue(data.endswith(b"b" * 3000))
+        # Times of dropped bytes are dropped too.
+        self.assertLessEqual(len(self.c._chunk_pos), 2)
+        self.assertLessEqual(self.c._chunk_pos[0], start)
 
     def test_run(self):
         self.port.replies[b"uname -a"] = b"Linux test\r\n"
@@ -263,6 +267,39 @@ class ConsoleTest(unittest.TestCase):
             lines = f.read().split(b"\n")
         self.assertTrue(lines[1].startswith(b"[") and lines[1].endswith(b"] line one\r"), lines)
         self.assertTrue(lines[2].endswith(b"] line two\r"), lines)
+
+    def test_times(self):
+        # Times count from the end of the power on switch.
+        self.c.mark_boot(lambda: time.sleep(0.2))
+        boot = self.c.boot
+        time.sleep(0.3)
+        self.feed(b"U-Boot\r\nlogin: ")
+        matched, start, data, m, nxt = self.c.expect(re.compile(b"login: $"), boot, 2)
+        self.assertTrue(matched)
+        t = self.c.time_of(nxt - 1)
+        self.assertTrue(0.25 < t < 0.45, t)  # 0.3 s, without the 0.2 s of the switch
+        self.assertIsNone(Console(QueuePort()).time_of(0))
+        stamped = self.c.stamped(start, data).decode()
+        self.assertRegex(stamped, r"^\[ +0\.[0-9]{3}\] U-Boot\r\n\[ +0\.[0-9]{3}\] login: $")
+        # A new boot: times count from it.
+        self.c.mark_boot()
+        self.feed(b"again\n")
+        matched, start, data, m, nxt = self.c.expect(re.compile(b"again"), self.c.boot, 2)
+        self.assertLess(self.c.time_of(nxt - 1), 0.25)
+        self.assertGreater(self.c.time_of(boot), 0.25)  # older bytes keep their boot
+
+    def test_times_bounded(self):
+        self.c.mark_boot()
+        with mock.patch("booboot_server.console.MAX_TIMES", 10):
+            for i in range(25):
+                self.feed(b"%d\n" % i)
+                time.sleep(0.01)
+            deadline = time.monotonic() + 2
+            while not self.c.read(0)[1].endswith(b"24\n") and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertLessEqual(len(self.c._chunk_pos), 10)
+        self.assertIsNotNone(self.c.time_of(self.c.end - 1))
+        self.assertIsNone(self.c.time_of(0))  # oldest times are gone
 
     def test_clean_text(self):
         self.assertEqual(clean_text("\x1b[0;32mOK\x1b[0m\r\nnext\r\r\n"), "OK\nnext\n")

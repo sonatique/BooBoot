@@ -259,18 +259,20 @@ class Client:
     # (bytes before the end), or one of: "start" (oldest byte kept), "boot"
     # (last power on), "last" (end of the last expect or run match), "now".
 
-    def read(self, since="boot", wait=0, clean=False, max_bytes=None):
+    def read(self, since="boot", wait=0, clean=False, max_bytes=None, timestamps=False):
         """Return console output: {"text", "cursor", "next", ...}.
 
         wait: seconds to wait for new output when there is none.
         clean: remove escape codes and carriage returns.
+        timestamps: start each line with its time since power on.
         """
-        params = {"since": since, "wait": wait or None, "clean": 1 if clean else None, "max": max_bytes}
+        params = {"since": since, "wait": wait or None, "clean": 1 if clean else None, "max": max_bytes,
+                  "timestamps": 1 if timestamps else None}
         return self.request("GET", "/console", params=params, timeout=wait + self.timeout)
 
-    def read_raw(self, since="boot", wait=0):
+    def read_raw(self, since="boot", wait=0, timestamps=False):
         """Return (bytes, next cursor)."""
-        params = {"since": since, "wait": wait or None, "format": "raw"}
+        params = {"since": since, "wait": wait or None, "format": "raw", "timestamps": 1 if timestamps else None}
         try:
             with self.request("GET", "/console", params=params, timeout=wait + self.timeout,
                               stream=True) as resp:
@@ -285,8 +287,8 @@ class Client:
     def expect(self, pattern, since="last", timeout=30, clean=False):
         """Wait for a regex in the console output.
 
-        Result: "matched", "match", "text" (output up to the end of the match)
-        and "next" (cursor after the match).
+        Result: "matched", "match", "text" (output up to the end of the match),
+        "next" (cursor after the match) and "time" (seconds from power on to the match).
         """
         body = {"pattern": pattern, "since": since, "timeout": timeout, "clean": clean}
         return self.request("POST", "/console/expect", json_body=body, timeout=timeout + self.timeout)
@@ -294,10 +296,20 @@ class Client:
     def run(self, command, prompt=None, timeout=30, clean=True):
         """Send a command line and wait for the prompt regex.
 
-        Result: "matched" and "output" (without the command echo and the prompt line).
+        Result: "matched", "output" (without the command echo and the prompt line)
+        and "time" (seconds from power on to the prompt).
         """
         body = {"command": command, "prompt": prompt, "timeout": timeout, "clean": clean}
         return self.request("POST", "/console/run", json_body=body, timeout=timeout + self.timeout)
+
+    def boot_time(self, pattern, timeout=120, off_time=None):
+        """Power cycle the DUT and wait for a regex, like a login prompt.
+
+        Return the seconds from power on to the regex, or None on timeout.
+        """
+        self.power_cycle(off_time)
+        r = self.expect(pattern, since="boot", timeout=timeout)
+        return r["time"] if r["matched"] else None
 
 
 # Command line
@@ -310,6 +322,7 @@ examples:
   booboot status
   booboot deploy BOOT.BIN image.ub --expect "login: " --timeout 120
   booboot console run "uname -a"
+  booboot boottime "login: " --runs 5
   booboot sd put BOOT.BIN image.ub 1:/
   booboot console attach
 
@@ -563,15 +576,16 @@ def cmd_sd_rm(args):
 def cmd_console_read(args):
     c = _client(args)
     if args.json:
-        return _print_json(c.read(args.since, clean=args.clean))
+        return _print_json(c.read(args.since, clean=args.clean, timestamps=args.timestamps))
     since = args.since
     out = sys.stdout.buffer
     while True:
+        wait = 30 if args.follow else 0
         if args.clean:
-            r = c.read(since, wait=30 if args.follow else 0, clean=True)
+            r = c.read(since, wait=wait, clean=True, timestamps=args.timestamps)
             data, since = r["text"].encode("utf-8"), r["next"]
         else:
-            data, since = c.read_raw(since, wait=30 if args.follow else 0)
+            data, since = c.read_raw(since, wait=wait, timestamps=args.timestamps)
         out.write(data)
         out.flush()
         if not data and not args.follow:
@@ -593,9 +607,15 @@ def cmd_console_expect(args):
         _print_json(r)
     elif not args.quiet:
         _print_text(r["text"])
+        _print_time(args.pattern, r)
     if not r["matched"]:
         _warn("timeout: %r not seen within %gs" % (args.pattern, args.timeout))
         return EXIT_TIMEOUT
+
+
+def _print_time(pattern, r):
+    if r["matched"] and r.get("time") is not None:
+        _warn("%r seen %.3f s after power on" % (pattern, r["time"]))
 
 
 def cmd_console_run(args):
@@ -706,11 +726,37 @@ def cmd_deploy(args):
         result["expect"] = r
         if not args.json and not args.quiet:
             _print_text(r["text"])
+        if not args.json:
+            _print_time(args.expect, r)
         if not r["matched"]:
             _warn("timeout: %r not seen within %gs" % (args.expect, args.timeout))
             code = EXIT_TIMEOUT
     if args.json:
         _print_json(result)
+    return code
+
+
+def cmd_boottime(args):
+    c = _client(args)
+    times = []
+    code = None
+    for n in range(1, args.runs + 1):
+        t = c.boot_time(args.pattern, args.timeout, args.off_time)
+        if t is None:
+            _warn("run %d: %r not seen within %gs" % (n, args.pattern, args.timeout))
+            code = EXIT_TIMEOUT
+            break
+        times.append(t)
+        if not args.json:
+            print("run %d/%d: %.3f s" % (n, args.runs, t))
+            sys.stdout.flush()
+    result = {"pattern": args.pattern, "times": times}
+    if times:
+        result.update(min=min(times), mean=round(sum(times) / len(times), 3), max=max(times))
+    if args.json:
+        _print_json(result)
+    elif len(times) > 1:
+        print("min %.3f s, mean %.3f s, max %.3f s" % (result["min"], result["mean"], result["max"]))
     return code
 
 
@@ -786,6 +832,7 @@ def build_parser():
     sp.add_argument("--since", default="boot", help=since_help)
     sp.add_argument("-f", "--follow", action="store_true", help="keep printing new output")
     sp.add_argument("--clean", action="store_true", help="remove escape codes and carriage returns")
+    sp.add_argument("-t", "--timestamps", action="store_true", help="start each line with its time since power on")
     sp.set_defaults(func=cmd_console_read)
     sp = con.add_parser("write", help="send text, with a line ending unless -n")
     sp.add_argument("text")
@@ -818,6 +865,13 @@ def build_parser():
     sp.add_argument("--timeout", type=float, default=120.0, metavar="S")
     sp.add_argument("-q", "--quiet", action="store_true", help="do not print the boot output")
     sp.set_defaults(func=cmd_deploy)
+
+    sp = sub.add_parser("boottime", help="power cycle and measure the time from power on to a regex")
+    sp.add_argument("pattern", help='regex that ends the boot, like "login: "')
+    sp.add_argument("--runs", type=int, default=1, metavar="N", help="number of boots (default 1)")
+    sp.add_argument("--off-time", type=float, metavar="S", help="seconds off before each boot")
+    sp.add_argument("--timeout", type=float, default=120.0, metavar="S")
+    sp.set_defaults(func=cmd_boottime)
     return p
 
 

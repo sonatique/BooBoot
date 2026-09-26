@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import fcntl
 import glob
 import logging
@@ -11,6 +12,7 @@ import select
 import termios
 import threading
 import time
+from array import array
 
 from .errors import BadRequest, HardwareError, Unavailable
 
@@ -21,6 +23,8 @@ ANSI = re.compile(r"\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|[@-Z\\-
 # expect() scans new data again from this many bytes back, so that
 # a match can span two reads.
 OVERLAP = 64 * 1024
+# Arrival times kept at most, to bound memory when output comes in tiny reads.
+MAX_TIMES = 100000
 
 
 def clean_text(text):
@@ -131,7 +135,8 @@ class ConsoleLog:
         os.makedirs(directory, exist_ok=True)
         self.new_file()
 
-    def new_file(self):
+    def new_file(self, t0=None):
+        """Start a new file. Line times count from t0 (time.monotonic())."""
         with self._lock:
             if self._f:
                 self._f.close()
@@ -142,7 +147,7 @@ class ConsoleLog:
             self._f = open(path, "ab")
             self._f.write(time.strftime("# %Y-%m-%d %H:%M:%S\n").encode())
             self._f.flush()
-            self._t0 = time.monotonic()
+            self._t0 = time.monotonic() if t0 is None else t0
             self._bol = True
             self._link(path)
             self._prune()
@@ -164,7 +169,8 @@ class ConsoleLog:
             except OSError:
                 pass
 
-    def write(self, data):
+    def write(self, data, now=None):
+        now = time.monotonic() if now is None else now
         with self._lock:
             out = bytearray()
             parts = data.split(b"\n")
@@ -173,7 +179,7 @@ class ConsoleLog:
                 if last and not part:
                     break
                 if self._bol:
-                    out += b"[%10.3f] " % (time.monotonic() - self._t0)
+                    out += b"[%10.3f] " % (now - self._t0)
                 out += part
                 if last:
                     self._bol = False
@@ -209,6 +215,11 @@ class Console:
         self._size = buffer_size
         self._buf = bytearray()
         self._base = 0  # cursor of _buf[0]
+        # Arrival time of each read, and time of each power on, by cursor.
+        self._chunk_pos = array("q")
+        self._chunk_time = array("d")
+        self._boot_pos = []
+        self._boot_time = []
         self._cond = threading.Condition()
         self._write_lock = threading.Lock()
         self._log = ConsoleLog(log_dir, keep_logs) if log_dir else None
@@ -257,7 +268,14 @@ class Console:
                 self._append(data)
 
     def _append(self, data):
+        now = time.monotonic()
         with self._cond:
+            self._chunk_pos.append(self.end)
+            self._chunk_time.append(now)
+            if len(self._chunk_pos) > MAX_TIMES:
+                # Forget the times of the oldest half.
+                del self._chunk_pos[:MAX_TIMES // 2]
+                del self._chunk_time[:MAX_TIMES // 2]
             self._buf += data
             extra = len(self._buf) - self._size
             if extra > 0:
@@ -265,9 +283,44 @@ class Console:
                 drop = max(extra, self._size // 8)
                 del self._buf[:drop]
                 self._base += drop
+                self._trim_times()
             self._cond.notify_all()
         if self._log:
-            self._log.write(data)
+            self._log.write(data, now)
+
+    def _trim_times(self):
+        """Forget the times of bytes that left the buffer."""
+        for pos, times in ((self._chunk_pos, self._chunk_time), (self._boot_pos, self._boot_time)):
+            i = bisect.bisect_right(pos, self._base) - 1
+            if i > 0:
+                del pos[:i]
+                del times[:i]
+
+    def _time_of(self, cursor):
+        c = bisect.bisect_right(self._chunk_pos, cursor) - 1
+        b = bisect.bisect_right(self._boot_pos, cursor) - 1
+        if c < 0 or b < 0:
+            return None
+        return max(0.0, self._chunk_time[c] - self._boot_time[b])
+
+    def time_of(self, cursor):
+        """Seconds from the power on to the arrival of a byte, or None."""
+        with self._cond:
+            return self._time_of(cursor)
+
+    def stamped(self, start, data):
+        """Return data with the time since power on at the start of each line."""
+        out = bytearray()
+        with self._cond:
+            i = 0
+            while i < len(data):
+                j = data.find(b"\n", i)
+                j = len(data) if j < 0 else j + 1
+                t = self._time_of(start + i)
+                out += b"[%10.3f] " % t if t is not None else b"[%10s] " % b"?"
+                out += data[i:j]
+                i = j
+        return bytes(out)
 
     def resolve(self, since):
         """Turn a since value into a cursor.
@@ -309,11 +362,21 @@ class Console:
             except OSError as e:
                 raise HardwareError("console write failed: %s" % e) from e
 
-    def mark_boot(self):
+    def mark_boot(self, switch=None):
+        """Start a new boot: mark the cursor, call switch (the power on), note the time.
+
+        Output times count from the end of switch.
+        """
         with self._cond:
             self.boot = self.last = self.end
+        if switch:
+            switch()
+        now = time.monotonic()
+        with self._cond:
+            self._boot_pos.append(self.boot)
+            self._boot_time.append(now)
         if self._log:
-            self._log.new_file()
+            self._log.new_file(now)
         return self.boot
 
     def expect(self, pattern, since, timeout):

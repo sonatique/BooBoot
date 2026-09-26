@@ -43,6 +43,7 @@ booboot status
 booboot deploy BOOT.BIN image.ub --expect "login: " --timeout 120
 booboot console run root
 booboot console run "uname -a"
+booboot boottime "login: " --runs 5  # power on to login prompt, 5 boots
 booboot console attach              # interactive terminal, Ctrl-] to quit
 booboot session close
 ```

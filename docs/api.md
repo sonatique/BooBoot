@@ -143,7 +143,8 @@ returned text.
 
 Parameters: `since` (default `boot`), `wait` (seconds to wait for new output
 when there is none, up to 60), `max` (bytes, default 1 MiB), `clean`,
-`format=raw`.
+`timestamps` (start each line with its time since power on, like
+`[    12.345] `), `format=raw`.
 
 Answer: `{"cursor": 1024, "next": 5120, "lost": false, "boot": 1024, "last": 4800, "text": "..."}`.
 Read again from `next` to get what follows. `lost` is true when part of the
@@ -162,10 +163,12 @@ Waits for a regex in the output after a cursor.
 Parameters: `pattern`, `since` (default `last`), `timeout` (seconds, default
 30), `clean`.
 
-Answer: `{"matched": true, "match": "login: ", "cursor": 1024, "next": 4800, "text": "..."}`.
-`text` is the output from `cursor` to the end of the match. After a match,
-`last` is `next`. Without a match (timeout), `matched` is false and `text` has
-all the output since `cursor`.
+Answer: `{"matched": true, "match": "login: ", "cursor": 1024, "next": 4800, "time": 12.345, "text": "..."}`.
+`text` is the output from `cursor` to the end of the match. `time` is the
+number of seconds from the last power on to the arrival of the end of the
+match (see Boot time). After a match, `last` is `next`. Without a match
+(timeout), `matched` is false, `time` is null and `text` has all the output
+since `cursor`.
 
 ### POST /console/run
 
@@ -175,8 +178,27 @@ after the first line received, which is the echo of the command.
 Parameters: `command`, `prompt` (regex, default set on the server:
 `[#$>] $`), `timeout` (default 30), `clean` (default true).
 
-Answer: `{"matched": true, "next": 5120, "output": "..."}`. `output` has
-neither the echoed command nor the prompt line.
+Answer: `{"matched": true, "next": 5120, "time": 15.678, "output": "..."}`.
+`output` has neither the echoed command nor the prompt line. `time` is as for
+expect, for the prompt.
+
+## Boot time
+
+The server notes the time of each power on (just after the relay is switched)
+and the arrival time of each piece of console output. `expect` and `run`
+return `time`, the seconds from power on to their match, and `GET /console`
+with `timestamps=1` gives the time of each line. So a boot time is:
+
+1. `POST /power/cycle` (or `PUT /power` with `state=on`),
+2. `POST /console/expect` with `since=boot` and the pattern that ends the
+   boot, like `login: `. Its `time` is the boot time.
+
+All times are measured on the BooBoot board: the network does not change
+them. They also do not depend on when `expect` is called. Accuracy is about
+20 ms: the relay takes some milliseconds to close, and USB UART adapters pass
+data in small delays (up to 16 ms for FTDI adapters).
+
+The command line tool does it N times: `booboot boottime "login: " --runs 5`.
 
 ## Examples
 

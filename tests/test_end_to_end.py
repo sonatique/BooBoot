@@ -64,9 +64,14 @@ class EndToEnd(unittest.TestCase):
         r = c.expect("login: $", since="boot", timeout=10)
         self.assertTrue(r["matched"], r)
         self.assertIn("U-Boot", r["text"])
+        # The fake board prints its login prompt about 0.2 s after power on.
+        self.assertTrue(0.1 < r["time"] < 2, r["time"])
+        stamped = c.read(since="boot", timestamps=True, clean=True)["text"]
+        self.assertRegex(stamped, r"\[ +0\.[0-9]{3}\] U-Boot 2024.01")
         self.assertEqual(c.run("root", timeout=5)["output"], "")
         r = c.run("uname -a", timeout=5)
         self.assertEqual(r["output"], "Linux fake 6.6.0-fake #1 SMP armv7l GNU/Linux\n")
+        self.assertGreater(r["time"], 0.1)
         self.assertEqual(c.run("echo hello", timeout=5)["output"], "hello\n")
         self.assertIn("Linux fake", c.read(since="boot", clean=True)["text"])
 
@@ -231,6 +236,22 @@ class Cli(unittest.TestCase):
         self.cli("session", "close")
         self.assertIn("free", self.cli("status"))
 
+    def test_boottime(self):
+        boot = os.path.join(self.tmp, "BOOT.BIN")
+        with open(boot, "w") as f:
+            f.write("boot")
+        self.cli("session", "open", "--force")
+        self.cli("sd", "put", boot, "1:/")
+        out = self.cli("boottime", "login: $", "--runs", "3", "--off-time", "0", "--timeout", "10")
+        self.assertRegex(out, r"run 3/3: 0\.[0-9]{3} s\nmin 0\.[0-9]{3} s, mean 0\.[0-9]{3} s, max 0\.[0-9]{3} s")
+        r = json.loads(self.cli("--json", "boottime", "login: $", "--runs", "2", "--off-time", "0"))
+        self.assertEqual(len(r["times"]), 2)
+        self.assertTrue(all(0.1 < t < 2 for t in r["times"]), r)
+        self.cli("boottime", "never", "--off-time", "0", "--timeout", "0.5", code=3)
+        self.cli("power", "off")
+        self.cli("sd", "rm", "1:/BOOT.BIN")
+        self.cli("session", "close")
+
     def test_more_commands(self):
         self.cli("session", "open", "--force", "--timeout", "60")
         self.cli("power", "off")
@@ -246,6 +267,7 @@ class Cli(unittest.TestCase):
         self.cli("sd", "rm", "1:/newdir")
         self.assertEqual(self.cli("power", "cycle", "--off-time", "0"), "power on\n")
         self.assertIn("Fake FSBL", self.cli("console", "read", "--since", "boot"))
+        self.assertRegex(self.cli("console", "read", "-t", "--since", "boot"), r"\[ +0\.[0-9]{3}\] ")
         # Errors are also JSON with --json.
         out = self.cli("--json", "sd", "host", code=1)
         self.assertEqual(json.loads(out)["error"], "power_on")

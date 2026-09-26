@@ -151,6 +151,16 @@ The last 8 MB (configurable) stay in memory. Each power on also starts a new
 log file in `/var/log/booboot/NAME/`, with a time stamp on each line
 (`latest.log` points to the current one).
 
+**Boot time.** The server notes the time of each power on, just after the
+relay is switched, and the arrival time of each read from the serial port.
+`expect` and `run` return the time from power on to their match, and `read`
+can start each line with its time since power on. The times are measured on
+the board, so the network has no effect on them, and they are right even
+when `expect` is called after the text arrived. The command
+`booboot boottime "login: " --runs 5` power cycles the DUT 5 times and gives
+each boot time with the minimum, mean and maximum. Accuracy is about 20 ms
+(relay closing time, USB UART adapter delay).
+
 ### SD card
 
 - **Image**: the client sends the file as is. The server detects gz, xz or

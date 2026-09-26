@@ -141,8 +141,8 @@ class Dut:
                 self._set_mux("dut")
             except Unavailable as e:
                 log.warning("power on without SD card switch: %s", e.message)
-        boot = self.console.mark_boot()
-        self._set_power(True)
+        # Console times count from the moment the relay is switched on.
+        boot = self.console.mark_boot(lambda: self._set_power(True))
         return {"power": "on", "boot": boot}
 
     # SD card
