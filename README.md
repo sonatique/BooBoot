@@ -14,6 +14,7 @@ and a Python library are included.
 - [HTTP API](docs/api.md)
 - [First bring-up](docs/bringup.md)
 - [MCP server](docs/mcp.md)
+- [BooBoot Console](docs/console.md)
 
 ## Server setup (on the Raspberry Pi)
 
@@ -58,6 +59,11 @@ Other languages can use the [HTTP API](docs/api.md) directly.
 `booboot mcp` runs an [MCP server](docs/mcp.md) on standard input and output,
 so that MCP clients can use the DUT through tools.
 
+[BooBoot Console](docs/console.md) is a desktop program (Windows, Linux,
+macOS) that shows the serial console live, with scrollback, copy, save and
+log files. It needs no session, so it can watch while an agent works.
+Ready-built program files come from CI.
+
 ## Development
 
 Run the server with a simulated board, no hardware needed:
@@ -74,5 +80,6 @@ python3 -m unittest discover -s tests
 
 CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
 3.14, once as root, runs the client tests on Windows and macOS, checks the C#
-client against a server with a simulated board, and runs `server/install.sh`
-on a machine with systemd, with the relay on a simulated GPIO chip.
+client and BooBoot Console against a server with a simulated board, builds
+BooBoot Console for Windows and Linux, and runs `server/install.sh` on a
+machine with systemd, with the relay on a simulated GPIO chip.

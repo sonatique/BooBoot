@@ -1,0 +1,96 @@
+# BooBoot Console
+
+A desktop program that shows the serial console of the DUT, live, as a
+terminal connected to it would. It only reads: it needs no session, so
+agents and other clients use the DUT as usual, and the console data is not
+changed in any way.
+
+![BooBoot Console](console.png)
+
+## Features
+
+- **Live output.** The server sends each read from the serial port at once.
+- **Output from before.** The server keeps the last 8 MB of output
+  (`buffer_size` in the server configuration). The window shows it at start.
+- **Terminal text.** Colors, carriage returns, backspaces and line erase work
+  as in a terminal.
+- **Power switches.** A line shows each power on and power off, with its time.
+- **Scrollback.** 200,000 lines by default. Long lines wrap.
+- **Follow.** The view follows new output. Scrolling up stops it, so that the
+  text stays in place. End or the Follow button starts it again.
+- **Copy and save.** Select with the mouse (double-click: word, triple-click:
+  line), copy with Ctrl+C, select all with Ctrl+A. Save writes all the text
+  to a file (Ctrl+S). Clear (Ctrl+L) empties the view.
+- **Logs.** "Start new log" writes all output from now on to a new file
+  `PREFIX-YYYYMMDD-HHMMSS.log` in the log folder. The prefix is the DUT name
+  unless set. Options: start a log when connected, and a new log file at each
+  power on. Logs have the text without escape codes, one line per line.
+- **Connection.** When the connection is lost, the program connects again and
+  continues where it was: no output is lost unless it left the server memory
+  in between (a line then says how many bytes were lost). A line also says
+  when the server was restarted.
+
+The status bar shows the connection, the DUT name, the power state, and which
+client has the session.
+
+## Run
+
+**Ready-built program.** CI builds a single program file for Windows and
+Linux at each push, with nothing else to install. On GitHub, open the latest
+run of the CI workflow, and download the artifact `BooBootConsole-win-x64` or
+`BooBootConsole-linux-x64`. On Linux, make the file executable first:
+`chmod +x BooBootConsole`.
+
+**From the sources**, on any system with the .NET 10 SDK:
+
+```sh
+dotnet run --project client/csharp/BooBootConsole -- http://booboot.local:8080
+```
+
+To build a single program file yourself (RID: `win-x64`, `linux-x64`,
+`linux-arm64`, `osx-arm64`, ...):
+
+```sh
+dotnet publish client/csharp/BooBootConsole -c Release -r win-x64 --self-contained \
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:EnableCompressionInSingleFile=true -o publish
+```
+
+The build uses Avalonia, which sends anonymous usage data while building. Set
+`AVALONIA_TELEMETRY_OPTOUT=1` to turn this off.
+
+The server address comes from the command line, or else is the last one
+used. Run the program once per DUT to watch several.
+
+## Settings
+
+The Settings button opens them. They are kept in `settings.json`, in
+`%APPDATA%\BooBootConsole` on Windows and `~/.config/BooBootConsole` on Linux
+and macOS.
+
+| Setting | Default |
+|---|---|
+| Log folder | `BooBoot logs` in the documents folder |
+| File name prefix | the DUT name |
+| Start a log when connected | off |
+| New log file at each power on | off |
+| Scrollback lines | 200,000 |
+| Text size | 13 |
+| Fonts | Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, monospace (the first one found) |
+
+## How it works
+
+The program reads `GET /api/v1/console/stream` (see [api.md](api.md)): one
+HTTP connection on which the server sends the output and the power switches
+as they come. The server reads the serial port all the time, whether viewers
+are connected or not. Viewers only read its memory, so the DUT does not see
+them, and any number of them can watch. A slow viewer never slows the server:
+if it falls behind by more than the server memory, it skips output.
+
+## Limits
+
+- The view is line based: it only writes to the last line, like a log.
+  Programs that draw on the whole screen (`top`, `vi`, `menuconfig`) do not
+  show well. For them, use `booboot console attach` in a terminal.
+- Read only for now: no typing.
+- Characters wider than others (CJK, emoji) break the alignment of their line.

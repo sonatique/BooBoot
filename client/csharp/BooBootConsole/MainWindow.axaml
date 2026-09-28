@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:BooBootConsole"
+        x:Class="BooBootConsole.MainWindow"
+        Title="BooBoot Console" Width="1100" Height="700" MinWidth="400" MinHeight="200">
+  <DockPanel>
+    <WrapPanel DockPanel.Dock="Top" Margin="6" ItemSpacing="6" LineSpacing="6">
+      <TextBox Name="UrlBox" Width="240" PlaceholderText="http://booboot.local:8080" VerticalAlignment="Center" />
+      <Button Name="ConnectButton" Content="Connect" />
+      <Border Width="12" />
+      <Button Name="ClearButton" Content="Clear" ToolTip.Tip="Clear the view (Ctrl+L)" />
+      <Button Name="CopyButton" Content="Copy" ToolTip.Tip="Copy the selection (Ctrl+C)" />
+      <Button Name="SaveButton" Content="Save..." ToolTip.Tip="Save all the text to a file (Ctrl+S)" />
+      <ToggleButton Name="FollowButton" Content="Follow" IsChecked="True"
+                    ToolTip.Tip="Show new output as it comes (End)" />
+      <Border Width="12" />
+      <Button Name="StartLogButton" Content="Start new log" ToolTip.Tip="Log to a new file from now on" />
+      <Button Name="StopLogButton" Content="Stop log" IsEnabled="False" />
+      <Button Content="Settings">
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedRight" Closed="OnSettingsClosed">
+            <Grid ColumnDefinitions="Auto,260" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                  RowSpacing="8" ColumnSpacing="8">
+              <TextBlock Text="Log folder" VerticalAlignment="Center" />
+              <TextBox Name="LogFolderBox" Grid.Column="1" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <Button Name="BrowseButton" Content="Browse..." />
+                <Button Name="OpenFolderButton" Content="Open folder" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Text="File name prefix" VerticalAlignment="Center" />
+              <TextBox Name="PrefixBox" Grid.Row="2" Grid.Column="1" PlaceholderText="DUT name" />
+              <CheckBox Name="LogOnConnectBox" Grid.Row="3" Grid.Column="1"
+                        Content="Start a log when connected" />
+              <CheckBox Name="NewLogBox" Grid.Row="4" Grid.Column="1"
+                        Content="New log file at each power on" />
+              <TextBlock Grid.Row="5" Text="Scrollback lines" VerticalAlignment="Center" />
+              <NumericUpDown Name="ScrollbackBox" Grid.Row="5" Grid.Column="1" Minimum="1000" Maximum="10000000"
+                             Increment="50000" FormatString="0" />
+              <TextBlock Grid.Row="6" Text="Text size" VerticalAlignment="Center" />
+              <NumericUpDown Name="TextSizeBox" Grid.Row="6" Grid.Column="1" Minimum="6" Maximum="48"
+                             Increment="1" FormatString="0" />
+              <TextBlock Grid.Row="7" Text="Fonts" VerticalAlignment="Center" />
+              <TextBox Name="FontsBox" Grid.Row="7" Grid.Column="1" />
+            </Grid>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+    </WrapPanel>
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="6,3">
+      <TextBlock Name="StatusText" Text="Not connected" TextTrimming="CharacterEllipsis" />
+      <TextBlock Name="LogText" Grid.Column="1" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+    </Grid>
+    <local:TerminalView Name="View">
+      <local:TerminalView.ContextMenu>
+        <ContextMenu>
+          <MenuItem Header="Copy" Click="OnCopy" InputGesture="Ctrl+C" />
+          <MenuItem Header="Copy all" Click="OnCopyAll" />
+          <MenuItem Header="Select all" Click="OnSelectAll" InputGesture="Ctrl+A" />
+          <Separator />
+          <MenuItem Header="Clear" Click="OnClear" InputGesture="Ctrl+L" />
+          <MenuItem Header="Save..." Click="OnSave" InputGesture="Ctrl+S" />
+        </ContextMenu>
+      </local:TerminalView.ContextMenu>
+    </local:TerminalView>
+  </DockPanel>
+</Window>

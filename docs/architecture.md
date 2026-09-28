@@ -105,6 +105,8 @@ Only one client may use the DUT at a time.
   up but busy.
 - `force` takes the session from another client, for when it is known to be
   gone.
+- Reading the console needs no session: viewers can watch while another
+  client uses the DUT.
 - A session never expires while one of its requests runs (like a long image
   write or an expect).
 
@@ -139,6 +141,8 @@ Clients read or wait from a cursor, given as a number or as a name:
 
 - `read`: output from a cursor, with an optional wait for new output (long
   polling). Each answer gives the `next` cursor.
+- `stream`: the output and the power switches as they come, on one
+  connection, for viewers.
 - `write`: send text, optionally followed by the line ending (`cr` by default,
   like a terminal Enter key).
 - `expect`: wait on the server for a regex after a cursor, with a timeout.
@@ -195,6 +199,11 @@ session when needed and keeps the token in a local file between calls.
 (.NET 6 or later, one file, no package needed). Other languages use the HTTP
 API directly.
 
+[BooBoot Console](console.md) (`client/csharp/BooBootConsole`) is a desktop
+program that shows the serial console live, with scrollback, copy, save and
+log files. It is written in C# with Avalonia (.NET 10), for Windows, Linux
+and macOS. It reads the console stream and needs no session.
+
 `booboot mcp` makes the client an MCP (Model Context Protocol) server on
 standard input and output: the DUT becomes a set of tools for MCP clients
 (see [mcp.md](mcp.md)). It runs next to the MCP client, not on the BooBoot
@@ -239,8 +248,9 @@ desktop without hardware.
 Tests: `python3 -m unittest discover -s tests`. The tests that need loop
 devices, mounts or a simulated GPIO chip (`modprobe gpio-mockup`) run only as
 root. CI runs them all, on several Python versions, runs the client tests on
-Windows and macOS, and checks the C# client (`client/csharp/Check`) against a
-server with a simulated board.
+Windows and macOS, and checks the C# client (`client/csharp/Check`) and
+BooBoot Console (`client/csharp/BooBootConsole.Tests`, with its window drawn
+off screen) against a server with a simulated board.
 
 ## Limits and ideas for later
 
@@ -250,5 +260,5 @@ server with a simulated board.
 - zstd images need Python 3.14 on the server.
 - Ideas: `.bmap` support (write only the used blocks of an image), an image
   cache on the board, boot interrupt sequences run on the server (for tight
-  timing like U-Boot with no autoboot delay), a raw TCP console port for
-  terminal programs, current measurement of the DUT, reading a whole card back.
+  timing like U-Boot with no autoboot delay), typing in BooBoot Console,
+  current measurement of the DUT, reading a whole card back.
