@@ -195,6 +195,13 @@ session when needed and keeps the token in a local file between calls.
 (.NET 6 or later, one file, no package needed). Other languages use the HTTP
 API directly.
 
+`booboot mcp` makes the client an MCP (Model Context Protocol) server on
+standard input and output: the DUT becomes a set of tools for MCP clients
+(see [mcp.md](mcp.md)). It runs next to the MCP client, not on the BooBoot
+board, because its tools copy local files to the SD card. It keeps one
+BooBoot session for as long as it runs, and cuts long console output to fit
+tool results.
+
 ## Several DUTs
 
 One board can serve several DUTs: one server instance per DUT, each with its

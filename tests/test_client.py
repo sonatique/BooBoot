@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,7 +16,8 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "client"))
+CLIENT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "client")
+sys.path.insert(0, CLIENT_DIR)
 import booboot  # noqa: E402
 
 STATUS = {
@@ -201,6 +203,25 @@ class ClientTest(unittest.TestCase):
         code, out, err = self.cli("console", "expect", "login:", "--timeout", "1")
         self.assertEqual((code, out), (booboot.EXIT_TIMEOUT, "abc\n"))
         self.assertIn("not seen", err)
+
+    def test_mcp_stdio(self):
+        # The MCP server on this system's standard input and output.
+        self.answer("GET", "/status", STATUS)
+        messages = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t"}}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "status", "arguments": {}}},
+        ]
+        data = "".join(json.dumps(m) + "\n" for m in messages).encode()
+        p = subprocess.run([sys.executable, os.path.join(CLIENT_DIR, "booboot.py"), "--url", self.url, "mcp"],
+                           input=data, capture_output=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        answers = {m["id"]: m for m in map(json.loads, p.stdout.decode().splitlines())}
+        self.assertEqual(answers[1]["result"]["protocolVersion"], "2025-06-18")
+        self.assertIn("console_run", [t["name"] for t in answers[2]["result"]["tools"]])
+        self.assertIn("used by other@pc", answers[3]["result"]["content"][0]["text"])
 
     def test_cli_help(self):
         with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit) as e:

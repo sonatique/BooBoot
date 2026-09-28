@@ -13,6 +13,7 @@ and a Python library are included.
 - [Architecture](docs/architecture.md)
 - [HTTP API](docs/api.md)
 - [First bring-up](docs/bringup.md)
+- [MCP server](docs/mcp.md)
 
 ## Server setup (on the Raspberry Pi)
 
@@ -53,6 +54,9 @@ Other commands: `booboot --help`, and `booboot COMMAND --help`.
 For C#, `client/csharp/BooBootClient.cs` is a small client class (.NET 6 or
 later, no package needed), with an example program in `client/csharp/Example`.
 Other languages can use the [HTTP API](docs/api.md) directly.
+
+`booboot mcp` runs an [MCP server](docs/mcp.md) on standard input and output,
+so that MCP clients can use the DUT through tools.
 
 ## Development
 

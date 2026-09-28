@@ -24,6 +24,7 @@ import getpass
 import json
 import os
 import posixpath
+import queue
 import re
 import socket
 import sys
@@ -425,12 +426,7 @@ def _print_text(text):
     sys.stdout.flush()
 
 
-def cmd_status(args):
-    c = _client(args, session=False)
-    c.session = _saved_token(c.url)
-    s = c.status()
-    if args.json:
-        return _print_json(s)
+def _status_text(s):
     ses = s["session"]
     if not ses["active"]:
         who = "free"
@@ -450,7 +446,16 @@ def cmd_status(args):
     ]
     if s["operation"]:
         lines.append("busy:    " + s["operation"]["name"])
-    print("\n".join(lines))
+    return "\n".join(lines)
+
+
+def cmd_status(args):
+    c = _client(args, session=False)
+    c.session = _saved_token(c.url)
+    s = c.status()
+    if args.json:
+        return _print_json(s)
+    print(_status_text(s))
 
 
 def cmd_session_open(args):
@@ -542,15 +547,19 @@ def cmd_sd_get(args):
     print("copied %s to %s (%s)" % (args.path, local, _size(n)))
 
 
-def cmd_sd_put(args):
-    c = _client(args)
-    part, path = split_path(args.dest)
-    as_dir = path.endswith("/") or len(args.files) > 1
+def _put_targets(files, dest, as_dir=False):
+    """Return (local, remote) pairs to copy files to dest. A dest ending with / is a directory."""
+    part, path = split_path(dest)
+    as_dir = as_dir or path.endswith("/") or len(files) > 1
     if as_dir and not path.endswith("/"):
         path += "/"
+    return [(f, "%d:%s" % (part, path + os.path.basename(f) if as_dir else path)) for f in files]
+
+
+def cmd_sd_put(args):
+    c = _client(args)
     results = []
-    for local in args.files:
-        remote = "%d:%s" % (part, path + os.path.basename(local) if as_dir else path)
+    for local, remote in _put_targets(args.files, args.dest):
         r = c.put_file(local, remote, _progress(args))
         results.append(r)
         if not args.json:
@@ -710,12 +719,8 @@ def cmd_deploy(args):
     if args.image:
         _warn("writing %s" % args.image)
         result["image"] = c.write_image(args.image, args.verify, progress=_progress(args))
-    part, path = split_path(args.dest)
-    if not path.endswith("/"):
-        path += "/"
     result["files"] = []
-    for local in args.files:
-        remote = "%d:%s%s" % (part, path, os.path.basename(local))
+    for local, remote in _put_targets(args.files, args.dest, as_dir=True):
         _warn("copying %s to %s" % (local, remote))
         result["files"].append(c.put_file(local, remote, _progress(args)))
     result["power_on"] = c.power_on()
@@ -758,6 +763,509 @@ def cmd_boottime(args):
     elif len(times) > 1:
         print("min %.3f s, mean %.3f s, max %.3f s" % (result["min"], result["mean"], result["max"]))
     return code
+
+
+# MCP server: the DUT as tools for MCP clients, on standard input and output.
+
+MCP_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+MCP_MAX_TEXT = 16000  # characters of console output in a tool result
+_REQUIRED = object()
+
+MCP_INSTRUCTIONS = """\
+These tools control one embedded board, the DUT, through a BooBoot server: its \
+power, its SD card and its serial console.
+Usual work: deploy boot files or an image and wait for the login prompt, log in \
+with console_write and console_expect, then run shell commands with console_run.
+Card paths are N:/path, N being the partition number ("/path" means "1:/path"). \
+Local paths are files on this computer.
+Every byte of console output has a cursor. "since" takes a cursor or "boot" (last \
+power on), "last" (end of the last expect or run match), "now" or "start".
+The SD card can be used only while the power is off. Power on gives it back to the DUT."""
+
+
+class _McpSession:
+    """The BooBoot client of an MCP server, with a session opened when needed."""
+
+    def __init__(self, url, name=None, timeout=None):
+        self.client = Client(url)
+        self.name = name or "mcp " + default_client_name()
+        self.timeout = timeout or 900
+        self._note = ""
+
+    def dut(self):
+        """Return the client with a valid session."""
+        c = self.client
+        if c.session:
+            try:
+                c.keepalive()
+                return c
+            except Error as e:
+                if e.code != "no_session":
+                    raise
+            self._note = ("Note: the session had expired and was opened again. "
+                          "Another client may have used the DUT in between.\n")
+        c.open_session(self.name, self.timeout)
+        return c
+
+    def take_note(self):
+        note, self._note = self._note, ""
+        return note
+
+    def close(self):
+        try:
+            self.client.close_session()
+        except Error:
+            pass
+
+
+def _arg(a, name, default=_REQUIRED):
+    if a.get(name) is not None:
+        return a[name]
+    if default is _REQUIRED:
+        raise ValueError("missing argument: %s" % name)
+    return default
+
+
+def _local(path):
+    return os.path.expanduser(str(path))
+
+
+def _tail(text):
+    if len(text) <= MCP_MAX_TEXT:
+        return text
+    return "[%d earlier characters not shown]\n%s" % (len(text) - MCP_MAX_TEXT, text[-MCP_MAX_TEXT:])
+
+
+class _Total:
+    """Progress of several uploads as one growing count."""
+
+    def __init__(self, report, total):
+        self.report = report
+        self.total = total
+        self.base = 0
+
+    def upload(self, size):
+        base = self.base
+        self.base += size
+        if not self.report:
+            return None
+        return lambda done, _: self.report(base + done, self.total)
+
+
+def _mcp_status(s, a, report):
+    return _status_text(s.client.status())
+
+
+def _mcp_power(s, a, report):
+    action = _arg(a, "action")
+    c = s.dut()
+    if action == "on":
+        r = c.power_on()
+    elif action == "off":
+        r = c.power_off()
+    elif action == "cycle":
+        r = c.power_cycle(a.get("off_time"))
+    else:
+        raise ValueError("action must be on, off or cycle")
+    if r["power"] == "on":
+        return "Power on. The console output of this boot starts at cursor %d (since \"boot\")." % r["boot"]
+    return "Power off."
+
+
+def _mcp_sd_mode(s, a, report):
+    return "SD card: %s" % s.dut().sd_mode(_arg(a, "mode"))["mode"]
+
+
+def _mcp_sd_flash(s, a, report):
+    path = _local(_arg(a, "image"))
+    progress = _Total(report, os.path.getsize(path)).upload(os.path.getsize(path))
+    r = s.dut().write_image(path, bool(a.get("verify")), progress=progress)
+    return "Wrote %s in %gs, sha256 %s%s. The card stays on the host side until power on." % (
+        _size(r["bytes"]), r["seconds"], r["sha256"], ", verified" if r.get("verified") else "")
+
+
+def _mcp_sd_list(s, a, report):
+    path = a.get("path") or "1:/"
+    lines = []
+    for e in s.dut().list_dir(path):
+        if e["type"] == "dir":
+            lines.append("dir   %s/" % e["name"])
+        else:
+            lines.append("%-5s %s (%s)" % (e["type"], e["name"], _size(e["size"])))
+    return "%s\n%s" % (path, "\n".join(lines) or "(empty)")
+
+
+def _mcp_sd_get(s, a, report):
+    remote = _arg(a, "path")
+    name = posixpath.basename(split_path(remote)[1].rstrip("/"))
+    local = _local(a.get("local_path") or name)
+    if os.path.isdir(local):
+        local = os.path.join(local, name)
+    n = s.dut().get_file(remote, local)
+    return "Copied %s to %s (%s)." % (remote, os.path.abspath(local), _size(n))
+
+
+def _mcp_copy(c, files, dest, report, as_dir=False):
+    files = [files] if isinstance(files, str) else list(files)
+    targets = _put_targets([_local(f) for f in files], dest, as_dir)
+    total = _Total(report, sum(os.path.getsize(f) for f, _ in targets))
+    lines = []
+    for local, remote in targets:
+        r = c.put_file(local, remote, total.upload(os.path.getsize(local)))
+        lines.append("Copied %s to %s (%s)." % (local, remote, _size(r["size"])))
+    return lines
+
+
+def _mcp_sd_put(s, a, report):
+    return "\n".join(_mcp_copy(s.dut(), _arg(a, "files"), _arg(a, "dest"), report))
+
+
+def _mcp_sd_delete(s, a, report):
+    path = _arg(a, "path")
+    s.dut().delete(path, bool(a.get("recursive")))
+    return "Deleted %s." % path
+
+
+def _mcp_console_read(s, a, report):
+    c = s.dut()
+    max_bytes = max(1, min(int(a.get("max_bytes") or MCP_MAX_TEXT), 1 << 20))
+    start = c.read(str(a.get("since", "boot")), max_bytes=1)["cursor"]
+    end = int(a["until"]) if a.get("until") is not None else c.status()["console"]["cursor"]
+    frm = max(start, end - max_bytes)
+    text = ""
+    if end > frm:
+        text = c.read(frm, max_bytes=end - frm, clean=True, timestamps=bool(a.get("timestamps")))["text"]
+    head = "Console output from cursor %d to %d" % (frm, end)
+    if frm > start:
+        head += " (%d earlier bytes not shown: since=%d, until=%d)" % (frm - start, start, frm)
+    return "%s:\n%s" % (head, text or "(none)")
+
+
+def _mcp_console_write(s, a, report):
+    r = s.dut().write(str(_arg(a, "text")), newline=bool(a.get("newline", True)))
+    return "Sent %d bytes. Their answer starts at cursor %d." % (r["written"], r["cursor"])
+
+
+def _mcp_console_expect(s, a, report):
+    pattern = _arg(a, "pattern")
+    timeout = float(a.get("timeout", 30))
+    r = s.dut().expect(pattern, since=str(a.get("since", "last")), timeout=timeout, clean=True)
+    if r["matched"]:
+        head = "Matched %r" % r["match"]
+        if r.get("time") is not None:
+            head += " %.3f s after power on" % r["time"]
+        head += ". Next cursor %d. Output from cursor %d:" % (r["next"], r["cursor"])
+    else:
+        head = "Not seen within %gs. Output from cursor %d:" % (timeout, r["cursor"])
+    return "%s\n%s" % (head, _tail(r["text"]) or "(none)")
+
+
+def _mcp_console_run(s, a, report):
+    timeout = float(a.get("timeout", 30))
+    r = s.dut().run(str(_arg(a, "command")), a.get("prompt"), timeout)
+    if r["matched"]:
+        return _tail(r["output"]) or "(no output)"
+    return "Prompt not seen within %gs. Output so far:\n%s" % (timeout, _tail(r["output"]) or "(none)")
+
+
+def _mcp_deploy(s, a, report):
+    c = s.dut()
+    c.power_off()
+    lines = ["Power off."]
+    image = a.get("image")
+    if image:
+        size = os.path.getsize(_local(image))
+        r = c.write_image(_local(image), bool(a.get("verify")), progress=_Total(report, size).upload(size))
+        lines.append("Wrote %s (%s)." % (image, _size(r["bytes"])))
+    lines += _mcp_copy(c, a.get("files") or [], a.get("dest") or "1:/", report, as_dir=True)
+    c.power_on()
+    lines.append("Power on.")
+    pattern = a.get("expect")
+    if pattern:
+        timeout = float(a.get("timeout", 120))
+        r = c.expect(pattern, since="boot", timeout=timeout, clean=True)
+        if r["matched"]:
+            lines.append("Matched %r %.3f s after power on. Boot output:" % (r["match"], r["time"] or 0))
+        else:
+            lines.append("%r not seen within %gs. Boot output:" % (pattern, timeout))
+        lines.append(_tail(r["text"]) or "(none)")
+    return "\n".join(lines)
+
+
+def _mcp_boot_time(s, a, report):
+    pattern = _arg(a, "pattern")
+    runs = max(1, min(int(a.get("runs", 1)), 50))
+    timeout = float(a.get("timeout", 120))
+    c = s.dut()
+    times, lines = [], []
+    for n in range(1, runs + 1):
+        t = c.boot_time(pattern, timeout, a.get("off_time"))
+        if t is None:
+            lines.append("Run %d: %r not seen within %gs." % (n, pattern, timeout))
+            break
+        times.append(t)
+        lines.append("Run %d: %.3f s" % (n, t))
+    if len(times) > 1:
+        lines.append("min %.3f s, mean %.3f s, max %.3f s" % (min(times), sum(times) / len(times), max(times)))
+    return "\n".join(lines)
+
+
+def _mcp_session(s, a, report):
+    action = _arg(a, "action")
+    c = s.client
+    if action == "release":
+        s.close()
+        return "Session released: other clients can use the DUT."
+    if action != "open":
+        raise ValueError("action must be open or release")
+    if c.session and not a.get("force"):
+        try:
+            c.keepalive()
+            return "The session is already open."
+        except Error as e:
+            if e.code != "no_session":
+                raise
+    info = c.open_session(s.name, s.timeout, bool(a.get("force")))
+    return "Session opened. It ends after %gs without calls." % info["timeout"]
+
+
+def _mcp_error_text(e):
+    if e.code == "busy":
+        ses = e.info.get("session", {})
+        return ("The DUT is used by another client: %s (idle %gs, free in %gs at most). Wait and try "
+                "again. Only if that client is known to be gone, take the DUT with the session tool "
+                "(action open, force true)." % (ses.get("client", "?"), ses.get("idle", 0),
+                                                ses.get("expires_in", 0)))
+    return "Error (%s): %s" % (e.code, e.message)
+
+
+_SINCE = {"type": ["string", "integer"],
+          "description": 'Cursor number, or "boot", "last", "now", "start", or a negative number of bytes'}
+_CARD_PATH = {"type": "string", "description": 'Card path N:/path, like "1:/BOOT.BIN"'}
+_TIMEOUT = {"type": "number", "description": "Seconds to wait"}
+
+
+def _tool(name, title, description, props, required, fn, read_only=False, destructive=True):
+    tool = {
+        "name": name,
+        "title": title,
+        "description": description,
+        "inputSchema": {"type": "object", "properties": props, "required": list(required)},
+        "annotations": {"title": title, "readOnlyHint": read_only, "destructiveHint": destructive,
+                        "openWorldHint": False},
+    }
+    return tool, fn
+
+
+MCP_TOOLS = [
+    _tool("status", "DUT status",
+          "Show the power, SD card, console and session state of the DUT.",
+          {}, [], _mcp_status, read_only=True),
+    _tool("power", "Switch the power",
+          "Switch the DUT power on, off, or off then on (cycle). Power on first connects the SD card "
+          "to the DUT.",
+          {"action": {"type": "string", "enum": ["on", "off", "cycle"]},
+           "off_time": {"type": "number", "description": "Seconds off during a cycle"}},
+          ["action"], _mcp_power),
+    _tool("deploy", "Deploy and boot",
+          "Power off, write a disk image and/or copy files to the SD card, power on, and wait for a "
+          "regex such as a login prompt. Returns the boot output and the boot time.",
+          {"files": {"type": "array", "items": {"type": "string"}, "description": "Local files to copy"},
+           "dest": {"type": "string", "description": 'Card directory for the files, default "1:/"'},
+           "image": {"type": "string", "description": "Local disk image to write first (raw, gz, xz, bz2)"},
+           "verify": {"type": "boolean", "description": "Read the image back and compare"},
+           "expect": {"type": "string", "description": 'Regex that ends the boot, like "login: "'},
+           "timeout": {"type": "number", "description": "Seconds to wait for expect, default 120"}},
+          [], _mcp_deploy),
+    _tool("sd_mode", "Switch the SD card",
+          "Connect the SD card to the BooBoot board (host), to the DUT (dut), or to nothing (off). "
+          "host needs the power off. The file tools switch to host by themselves.",
+          {"mode": {"type": "string", "enum": ["host", "dut", "off"]}},
+          ["mode"], _mcp_sd_mode, destructive=False),
+    _tool("sd_flash", "Write a disk image",
+          "Write a local disk image (raw, gz, xz or bz2) to the whole SD card. The power must be off.",
+          {"image": {"type": "string", "description": "Local path of the image"},
+           "verify": {"type": "boolean", "description": "Read the card back and compare"}},
+          ["image"], _mcp_sd_flash),
+    _tool("sd_list", "List SD card files",
+          "List a directory of the SD card. The power must be off.",
+          {"path": dict(_CARD_PATH, description='Card directory, default "1:/"')},
+          [], _mcp_sd_list, destructive=False),
+    _tool("sd_get", "Copy a file from the SD card",
+          "Copy a file of the SD card to this computer. The power must be off.",
+          {"path": _CARD_PATH,
+           "local_path": {"type": "string", "description": "Local file or directory, default the current one"}},
+          ["path"], _mcp_sd_get, destructive=False),
+    _tool("sd_put", "Copy files to the SD card",
+          "Copy local files to the SD card, replacing files of the same name. The power must be off. "
+          "A dest ending with / is a directory.",
+          {"files": {"type": "array", "items": {"type": "string"}, "description": "Local files"},
+           "dest": _CARD_PATH},
+          ["files", "dest"], _mcp_sd_put),
+    _tool("sd_delete", "Delete on the SD card",
+          "Delete a file or directory of the SD card. The power must be off.",
+          {"path": _CARD_PATH, "recursive": {"type": "boolean", "description": "Delete a directory and its content"}},
+          ["path"], _mcp_sd_delete),
+    _tool("console_read", "Read the console",
+          "Read the serial console output after a cursor. Long output is cut to its last max_bytes; "
+          "the answer gives the cursors to read the rest.",
+          {"since": dict(_SINCE, description=_SINCE["description"] + ', default "boot"'),
+           "until": {"type": "integer", "description": "Stop at this cursor"},
+           "max_bytes": {"type": "integer", "description": "Default %d" % MCP_MAX_TEXT},
+           "timestamps": {"type": "boolean", "description": "Start each line with its time since power on"}},
+          [], _mcp_console_read, read_only=True, destructive=False),
+    _tool("console_write", "Write to the console",
+          "Send text to the serial console, followed by Enter unless newline is false. Control "
+          "characters work: \\u0003 is Ctrl-C.",
+          {"text": {"type": "string"}, "newline": {"type": "boolean", "description": "Default true"}},
+          ["text"], _mcp_console_write),
+    _tool("console_expect", "Wait for console output",
+          "Wait until a regex (Python syntax) appears in the console output after a cursor, and return "
+          "the output up to it. $ matches the end of the output received so far, which suits prompts.",
+          {"pattern": {"type": "string"},
+           "since": dict(_SINCE, description=_SINCE["description"] + ', default "last"'),
+           "timeout": dict(_TIMEOUT, description="Seconds to wait, default 30")},
+          ["pattern"], _mcp_console_expect, read_only=True, destructive=False),
+    _tool("console_run", "Run a console command",
+          "Send a command line to the shell of the DUT (or to U-Boot) and return its output, without the "
+          "echo and the prompt. Waits for the prompt regex, by default the one set on the server "
+          "(ends with #, $ or >). For prompts like login or password, use console_write and console_expect.",
+          {"command": {"type": "string"},
+           "prompt": {"type": "string", "description": "Prompt regex"},
+           "timeout": dict(_TIMEOUT, description="Seconds to wait, default 30")},
+          ["command"], _mcp_console_run),
+    _tool("boot_time", "Measure the boot time",
+          "Power cycle the DUT and measure the time from power on to a regex, like a login prompt, "
+          "once or several times.",
+          {"pattern": {"type": "string"},
+           "runs": {"type": "integer", "description": "Number of boots, default 1"},
+           "off_time": {"type": "number", "description": "Seconds off before each boot"},
+           "timeout": dict(_TIMEOUT, description="Seconds to wait for each boot, default 120")},
+          ["pattern"], _mcp_boot_time),
+    _tool("session", "Open or release the session",
+          "Only one client can use the DUT at a time. The other tools open the session when needed. "
+          "release lets other clients use the DUT. open with force takes the DUT from another client.",
+          {"action": {"type": "string", "enum": ["open", "release"]},
+           "force": {"type": "boolean", "description": "Take the session from another client"}},
+          ["action"], _mcp_session),
+]
+MCP_FUNCTIONS = {tool["name"]: fn for tool, fn in MCP_TOOLS}
+
+
+class McpServer:
+    """MCP server: JSON-RPC 2.0 messages, one per line, on binary streams."""
+
+    def __init__(self, session, inp=None, out=None):
+        self.session = session
+        self._in = inp or sys.stdin.buffer
+        self._out = out or sys.stdout.buffer
+        self._lock = threading.Lock()
+        self._jobs = queue.Queue()
+
+    def send(self, msg):
+        data = json.dumps(msg, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+        with self._lock:
+            self._out.write(data)
+            self._out.flush()
+
+    def _reply(self, mid, result=None, error=None):
+        msg = {"jsonrpc": "2.0", "id": mid}
+        if error:
+            msg["error"] = error
+        else:
+            msg["result"] = result
+        self.send(msg)
+
+    def serve(self):
+        """Answer requests until the input ends. Tool calls run one at a time."""
+        worker = threading.Thread(target=self._work, daemon=True)
+        worker.start()
+        while True:
+            line = self._in.readline()
+            if not line:
+                break
+            if not line.strip():
+                continue
+            try:
+                msg = json.loads(line.decode("utf-8"))
+            except ValueError:
+                self._reply(None, error={"code": -32700, "message": "parse error"})
+                continue
+            for m in msg if isinstance(msg, list) else [msg]:
+                self._handle(m)
+        self._jobs.put(None)
+        worker.join()
+
+    def _handle(self, msg):
+        # Notifications (no id) and responses (no method) need no answer.
+        if not isinstance(msg, dict) or "method" not in msg or "id" not in msg:
+            return
+        mid, method = msg["id"], msg["method"]
+        params = msg.get("params") or {}
+        if method == "initialize":
+            asked = params.get("protocolVersion")
+            self._reply(mid, {
+                "protocolVersion": asked if asked in MCP_VERSIONS else MCP_VERSIONS[0],
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": "booboot", "version": __version__},
+                "instructions": MCP_INSTRUCTIONS,
+            })
+        elif method == "ping":
+            self._reply(mid, {})
+        elif method == "tools/list":
+            self._reply(mid, {"tools": [tool for tool, _ in MCP_TOOLS]})
+        elif method == "tools/call":
+            self._jobs.put((mid, params))
+        else:
+            self._reply(mid, error={"code": -32601, "message": "method not found: %s" % method})
+
+    def _work(self):
+        while True:
+            job = self._jobs.get()
+            if job is None:
+                return
+            self._call(*job)
+
+    def _call(self, mid, params):
+        fn = MCP_FUNCTIONS.get(params.get("name"))
+        if fn is None:
+            self._reply(mid, error={"code": -32602, "message": "unknown tool: %s" % params.get("name")})
+            return
+        token = (params.get("_meta") or {}).get("progressToken")
+        try:
+            text, failed = fn(self.session, params.get("arguments") or {}, self._progress(token)), False
+        except Error as e:
+            text, failed = _mcp_error_text(e), True
+        except Exception as e:
+            text, failed = "Error: %s" % e, True
+        text = self.session.take_note() + text
+        self._reply(mid, {"content": [{"type": "text", "text": text}], "isError": failed})
+
+    def _progress(self, token):
+        """Return report(done, total) sending progress notifications, or None."""
+        if token is None:
+            return None
+        last = [0.0, -1]  # time and value of the last notification
+
+        def report(done, total):
+            now = time.monotonic()
+            # Progress must go up, and a few notifications are enough.
+            if done <= last[1] or (now - last[0] < 0.5 and done < total):
+                return
+            last[:] = [now, done]
+            self.send({"jsonrpc": "2.0", "method": "notifications/progress",
+                       "params": {"progressToken": token, "progress": done, "total": total,
+                                  "message": "sent %s of %s" % (_size(done), _size(total))}})
+
+        return report
+
+
+def cmd_mcp(args):
+    session = _McpSession(args.url, args.name, args.session_timeout)
+    try:
+        McpServer(session).serve()
+    finally:
+        session.close()
 
 
 def build_parser():
@@ -872,6 +1380,9 @@ def build_parser():
     sp.add_argument("--off-time", type=float, metavar="S", help="seconds off before each boot")
     sp.add_argument("--timeout", type=float, default=120.0, metavar="S")
     sp.set_defaults(func=cmd_boottime)
+
+    sp = sub.add_parser("mcp", help="run as an MCP server on standard input and output")
+    sp.set_defaults(func=cmd_mcp)
     return p
 
 
