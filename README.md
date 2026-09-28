@@ -10,6 +10,7 @@ writes the DUT serial console through a USB UART adapter. Any program on the
 network can use it through a simple HTTP and JSON API. A command line tool
 and a Python library are included.
 
+- [Installation from zero](docs/install.md)
 - [Architecture](docs/architecture.md)
 - [HTTP API](docs/api.md)
 - [First bring-up](docs/bringup.md)
@@ -26,6 +27,7 @@ and a Python library are included.
 3. Install:
 
    ```sh
+   sudo apt update
    sudo apt install -y git
    git clone https://github.com/sonatique/BooBoot.git
    sudo BooBoot/server/install.sh
@@ -33,6 +35,9 @@ and a Python library are included.
 
 4. Follow [First bring-up](docs/bringup.md): it checks the relay, the SD card
    and the serial console one by one before the DUT is connected.
+
+Step by step, with the wiring and the desktop side:
+[Installation from zero](docs/install.md).
 
 ## Client
 

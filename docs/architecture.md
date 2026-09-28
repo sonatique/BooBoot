@@ -235,7 +235,8 @@ adapter (by `/dev/serial/by-id/` path). The systemd template unit
 6. installs, enables and starts `booboot@NAME`.
 
 Running it again updates the code and keeps the configuration.
-[First bring-up](bringup.md) lists the checks to do on new hardware.
+[Installation from zero](install.md) goes step by step from a blank SD card,
+and [First bring-up](bringup.md) lists the checks to do on new hardware.
 
 The service runs as root: it switches GPIO lines, writes to the card and
 mounts partitions. It is meant for a trusted network: there is no

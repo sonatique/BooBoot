@@ -1,7 +1,8 @@
 # First bring-up
 
 Do these steps in order. Each one checks one part alone, before the DUT is
-connected, so that a problem shows up where it is easy to find.
+connected, so that a problem shows up where it is easy to find. The details of
+step 1, with the wiring, are in [Installation from zero](install.md).
 
 ## 1. Board and OS
 
@@ -11,6 +12,7 @@ connected, so that a problem shows up where it is easy to find.
 3. Get the code and install:
 
    ```sh
+   sudo apt update
    sudo apt install -y git
    git clone https://github.com/sonatique/BooBoot.git
    sudo BooBoot/server/install.sh
