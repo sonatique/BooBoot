@@ -11,6 +11,8 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 
 import common
@@ -169,6 +171,69 @@ class EndToEnd(unittest.TestCase):
             status, body = self.raw(request)
             self.assertIn(" 400 ", status + " ", request)
             self.assertIn(message, body, request)
+
+    def test_console_stream(self):
+        c = self.c
+        c.power_off()
+        c.put_file(__file__, "1:/BOOT.BIN")
+        viewer = booboot.Client(self.url)  # no session
+        events = viewer.stream(since="now")
+        hello = next(events)
+        self.assertEqual((hello["type"], hello["name"]), ("hello", "dut1"))
+        self.assertEqual(hello["cursor"], c.status()["console"]["cursor"])
+        self.assertEqual(hello["end"], hello["cursor"])
+        self.assertLess(hello["started"], hello["time"])
+        got = []
+
+        def collect():
+            for e in events:
+                if e["type"] == "power" and e["state"] == "on":
+                    got.clear()  # drop events from before the power on
+                got.append(e)
+                if got[0].get("state") == "on" and e.get("state") == "off":
+                    return
+
+        t = threading.Thread(target=collect, daemon=True)
+        t.start()
+        boot = c.power_on()["boot"]
+        self.assertTrue(c.expect("login: $", since="boot", timeout=10)["matched"])
+        c.power_off()
+        t.join(5)
+        self.assertEqual([e["type"] for e in got][0], "power")
+        self.assertEqual((got[0]["state"], got[0]["cursor"]), ("on", boot))
+        self.assertAlmostEqual(got[0]["time"], time.time(), delta=10)
+        self.assertEqual((got[-1]["type"], got[-1]["state"]), ("power", "off"))
+        output = [e for e in got if e["type"] == "output"]
+        self.assertEqual(output[0]["cursor"], boot)
+        for i in range(1, len(output)):
+            self.assertEqual(output[i - 1]["next"], output[i]["cursor"])
+        text = "".join(e["text"] for e in output)
+        self.assertIn("U-Boot 2024.01", text)
+        self.assertTrue(text.endswith("login: "), text)
+        self.assertEqual(got[-1]["cursor"], output[-1]["next"])
+        events.close()
+
+        # Output since power on, raw, with the session held by another client.
+        host, port = self.url[7:].split(":")
+        conn = http.client.HTTPConnection(host, int(port), timeout=10)
+        conn.request("GET", "/api/v1/console/stream?format=raw&since=%d" % boot)
+        resp = conn.getresponse()
+        self.assertEqual(resp.status, 200)
+        self.assertTrue(resp.read(len(text)).decode().endswith("login: "))
+        conn.close()
+        # Reads need no session either.
+        self.assertIn("U-Boot", viewer.read(since=boot)["text"])
+
+    def test_stream_ends_with_client(self):
+        before = set(threading.enumerate())
+        host, port = self.url[7:].split(":")
+        sock = socket.create_connection((host, int(port)), timeout=10)
+        sock.sendall(b"GET /api/v1/console/stream?since=now HTTP/1.1\r\nHost: x\r\n\r\n")
+        self.assertIn(b"200 OK", sock.recv(4096))
+        (thread,) = set(threading.enumerate()) - before
+        sock.close()
+        thread.join(5)
+        self.assertFalse(thread.is_alive())
 
     def test_keep_alive(self):
         # Several requests on one connection, one of them an upload.

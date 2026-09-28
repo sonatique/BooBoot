@@ -10,8 +10,11 @@ Base URL: `http://HOST:PORT/api/v1` (default port 8080).
 - **Uploads** (image, files) send the data as the request body, with
   `Content-Length` or chunked transfer encoding. Their parameters go in the
   query string.
-- **Session**: all endpoints except `GET /status` and `POST /session` need
-  the header `Authorization: Bearer TOKEN`.
+- **Session**: all endpoints except `GET /status`, `POST /session`,
+  `GET /console` and `GET /console/stream` need the header
+  `Authorization: Bearer TOKEN`. Reading the console needs no session, so
+  viewers do not stop other clients. With a valid token, `GET /console` also
+  keeps the session alive.
 - **Answers** are JSON objects, except file and raw console downloads.
 - **Errors** have an HTTP status and a JSON body:
   `{"error": "code", "message": "text", ...}`.
@@ -151,6 +154,40 @@ Read again from `next` to get what follows. `lost` is true when part of the
 asked output is no longer in memory. With `format=raw`, the answer is the raw
 bytes, and the cursors are in the `X-Cursor` and `X-Next` headers.
 
+### GET /console/stream
+
+The output and the power switches, as they come, on one connection that
+stays open. No session needed. Parameters: `since` (default `boot`),
+`format=raw`.
+
+The answer is one JSON object per line (`application/x-ndjson`):
+
+```json
+{"type": "hello", "name": "dut1", "version": "0.1.0", "started": 1790000000.0, "time": 1790000100.0, "power": "on", "cursor": 1024, "end": 5120}
+{"type": "power", "state": "on", "cursor": 1024, "time": 1790000050.0}
+{"type": "output", "cursor": 1024, "next": 1100, "text": "U-Boot 2024.01\r\n"}
+{"type": "ping"}
+```
+
+- `hello` comes first. `cursor` is the first cursor of the stream, `end` the
+  end of the output at the call, `time` the server time (Unix time), and
+  `started` the start of the server: cursors count from it. A new `started`
+  means that the server was restarted and cursors start again from 0.
+- `output`: `text` from `cursor` to `next`, decoded as UTF-8, escape codes
+  included. A `cursor` greater than the previous `next` means that output was
+  lost: the client fell behind by more than the server memory.
+- `power`: `state` (`on` or `off`) switched at `cursor`, at `time`. Switches
+  at the start cursor are included, also the ones just before the call. After
+  a reconnection, skip the ones already seen (same `time`).
+- `ping` comes after 10 s without other events. A client can take 30 s
+  without any line as a lost connection.
+
+To go on after a lost connection, call again with `since` set to the last
+`next`.
+
+With `format=raw`, the answer is the output bytes only, for terminals:
+`curl -sN "$U/console/stream?format=raw"` shows the console live.
+
 ### POST /console/write
 
 Parameters: `text`, `newline` (add the line ending set on the server).
@@ -218,6 +255,8 @@ curl -s -H "$A" -X POST "$U/console/expect?since=boot&timeout=120" \
 curl -s -H "$A" -X POST "$U/console/run" --data-urlencode "command=root" | jq -r .output
 curl -s -H "$A" -X POST "$U/console/run" --data-urlencode "command=uname -a" | jq -r .output
 curl -s -H "$A" -X DELETE "$U/session"
+
+curl -sN "$U/console/stream?format=raw"               # live console, Ctrl-C to stop
 ```
 
 ### PowerShell

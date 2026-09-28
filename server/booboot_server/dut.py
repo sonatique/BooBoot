@@ -74,6 +74,8 @@ class Dut:
             if isinstance(e, ApiError):
                 raise
             raise HardwareError("power: %s" % e) from e
+        if not on and self.power_state != "off":
+            self.console.mark_off()
         self.power_state = "on" if on else "off"
         self.power_error = ""
         log.info("power %s", self.power_state)

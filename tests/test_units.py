@@ -288,6 +288,49 @@ class ConsoleTest(unittest.TestCase):
         self.assertLess(self.c.time_of(nxt - 1), 0.25)
         self.assertGreater(self.c.time_of(boot), 0.25)  # older bytes keep their boot
 
+    def test_follow(self):
+        self.feed(b"old\n")
+        self.wait_end(4)
+        self.c.mark_off()
+        items = self.c.follow(self.c.end, idle=0.1)
+        self.assertEqual(next(items)[:3], ("power", 4, False))
+        self.assertIsNone(next(items))
+        self.c.mark_boot()
+        self.feed(b"new\n")
+        on = next(items)
+        self.assertEqual(on[:3], ("power", 4, True))
+        self.assertAlmostEqual(on[3], time.time(), delta=5)
+        self.assertEqual(next(items), ("output", 4, b"new\n"))
+        # Output up to a power switch comes before it.
+        self.feed(b"end")
+        self.wait_end(11)
+        self.c.mark_off()
+        self.assertEqual(next(items), ("output", 8, b"end"))
+        self.assertEqual(next(items)[:3], ("power", 11, False))
+        # A new reader gets the switches from its start cursor on.
+        items = self.c.follow(4, idle=0.1)
+        self.assertEqual(next(items)[:3], ("power", 4, False))
+        self.assertEqual(next(items)[:3], ("power", 4, True))
+        self.assertEqual(next(items), ("output", 4, b"new\nend"))
+        self.assertEqual(next(items)[:3], ("power", 11, False))
+        self.assertIsNone(next(items))
+
+    def test_follow_skips_lost_output(self):
+        items = self.c.follow(0, idle=0.1, max_bytes=1000)
+        self.feed(b"a" * 3000, b"b" * 3000)
+        self.wait_end(6000)
+        kind, start, data = next(items)
+        self.assertGreater(start, 0)
+        self.assertEqual(len(data), 1000)
+        rest = b"".join(item[2] for item in iter(lambda: next(items), None))
+        self.assertTrue((data + rest).endswith(b"b" * 3000))
+        self.assertEqual(start + len(data) + len(rest), 6000)
+
+    def wait_end(self, end):
+        deadline = time.monotonic() + 2
+        while self.c.end < end and time.monotonic() < deadline:
+            time.sleep(0.01)
+
     def test_times_bounded(self):
         self.c.mark_boot()
         with mock.patch("booboot_server.console.MAX_TIMES", 10):

@@ -116,7 +116,8 @@ def _copy(src, dst):
 class Client:
     """Access to one BooBoot server, that is one DUT.
 
-    All calls but status() and open_session() need the session.
+    All calls but status(), open_session(), read(), read_raw() and stream()
+    need the session.
     Errors raise booboot.Error.
     """
 
@@ -278,6 +279,24 @@ class Client:
             with self.request("GET", "/console", params=params, timeout=wait + self.timeout,
                               stream=True) as resp:
                 return resp.read(), int(resp.headers.get("X-Next", "0"))
+        except OSError as e:
+            raise Error("cannot reach %s: %s" % (self.url, e)) from None
+
+    def stream(self, since="boot"):
+        """Yield the console events as they come, as dicts. "type" is:
+
+        hello: first event, with "name", "power" (state), "cursor" (first cursor),
+        "end" (cursor at the call), "time" and "started" (Unix time of the
+        server start: cursors count from it);
+        output: "text" from "cursor" to "next";
+        power: "state" (on or off) switched at "cursor", at "time" (Unix time);
+        ping: sent after 10 s without other events.
+        """
+        try:
+            with self.request("GET", "/console/stream", params={"since": since}, timeout=30,
+                              stream=True) as resp:
+                for line in resp:
+                    yield json.loads(line)
         except OSError as e:
             raise Error("cannot reach %s: %s" % (self.url, e)) from None
 
@@ -583,7 +602,9 @@ def cmd_sd_rm(args):
 
 
 def cmd_console_read(args):
-    c = _client(args)
+    # Reading needs no session. A saved one is kept alive.
+    c = _client(args, session=False)
+    c.session = _saved_token(c.url)
     if args.json:
         return _print_json(c.read(args.since, clean=args.clean, timestamps=args.timestamps))
     since = args.since

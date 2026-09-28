@@ -25,6 +25,8 @@ ANSI = re.compile(r"\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|[@-Z\\-
 OVERLAP = 64 * 1024
 # Arrival times kept at most, to bound memory when output comes in tiny reads.
 MAX_TIMES = 100000
+# Power switch events kept at most.
+MAX_EVENTS = 1000
 
 
 def clean_text(text):
@@ -212,6 +214,7 @@ class Console:
         self.error = ""
         self.boot = 0  # cursor at the last power on
         self.last = 0  # cursor after the last expect or run match
+        self.started = time.time()  # cursors count from here
         self._size = buffer_size
         self._buf = bytearray()
         self._base = 0  # cursor of _buf[0]
@@ -220,6 +223,9 @@ class Console:
         self._chunk_time = array("d")
         self._boot_pos = []
         self._boot_time = []
+        # Power switches: (number, cursor, on, time.time()).
+        self._events = []
+        self._seq = 0
         self._cond = threading.Condition()
         self._write_lock = threading.Lock()
         self._log = ConsoleLog(log_dir, keep_logs) if log_dir else None
@@ -375,9 +381,61 @@ class Console:
         with self._cond:
             self._boot_pos.append(self.boot)
             self._boot_time.append(now)
+            self._event(self.boot, True)
         if self._log:
             self._log.new_file(now)
         return self.boot
+
+    def mark_off(self):
+        """Note a power off in the output."""
+        with self._cond:
+            self._event(self.end, False)
+
+    def _event(self, cursor, on):
+        self._seq += 1
+        self._events.append((self._seq, cursor, on, time.time()))
+        if len(self._events) > MAX_EVENTS:
+            del self._events[:MAX_EVENTS // 2]
+        self._cond.notify_all()
+
+    def follow(self, since, idle=1.0, max_bytes=65536):
+        """Yield the output and the power switches from cursor since, as they come.
+
+        Items: ("output", cursor, data), ("power", cursor, on, time), or None
+        when nothing came for idle seconds. Output that left the buffer before
+        it was read is skipped.
+        """
+        with self._cond:
+            pos = max(min(since, self.end), self._base)
+            seq = next((e[0] - 1 for e in self._events if e[1] >= pos), self._seq)
+        while True:
+            with self._cond:
+                item = self._next(pos, seq, max_bytes)
+                if item is None:
+                    self._cond.wait(idle)
+                    item = self._next(pos, seq, max_bytes)
+            if item is None:
+                yield None
+            elif item[0] == "power":
+                seq = item[4]
+                yield item[:4]
+            else:
+                pos = item[1] + len(item[2])
+                yield item
+
+    def _next(self, pos, seq, max_bytes):
+        event = None
+        if self._events:
+            i = max(0, seq + 1 - self._events[0][0])
+            if i < len(self._events):
+                event = self._events[i]
+        pos = max(pos, self._base)
+        if event and event[1] <= pos:
+            return ("power", event[1], event[2], event[3], event[0])
+        stop = min(self.end, pos + max_bytes, event[1] if event else self.end)
+        if stop > pos:
+            return ("output", pos, bytes(self._buf[pos - self._base:stop - self._base]))
+        return None
 
     def expect(self, pattern, since, timeout):
         """Wait for a bytes regex in the output after cursor since.

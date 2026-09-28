@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import logging
 import os
 import re
+import select
 import shutil
 import socket
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -22,6 +25,7 @@ CHUNK = 1 << 20
 MAX_JSON = 1 << 20
 MAX_WAIT = 60
 MAX_TIMEOUT = 3600
+PING = 10  # seconds between pings on an idle console stream
 
 ROUTES = []
 
@@ -29,7 +33,8 @@ ROUTES = []
 def route(method, pattern, session=True, raw=False):
     """Register a handler for a path regex.
 
-    session: the request needs the session token.
+    session: the request needs the session token. "optional": a valid token
+    keeps the session alive, but none is needed.
     raw: the request body is data, not JSON parameters.
     Handlers get (request, match) and return a dict to send, or None.
     """
@@ -143,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
         self._sent = False
         try:
             session = self._route()[2]
-            if session:
+            if session is True:
                 self.server.sessions.check(self.token())
         except ApiError as e:
             self._fail(e)
@@ -162,7 +167,14 @@ class Handler(BaseHTTPRequestHandler):
             self._query = parse_qs(url.query)
             if not raw:
                 self._json = self._read_params()
-            if session:
+            if session == "optional":
+                if token:
+                    try:
+                        self.server.sessions.begin(token)
+                        begun = True
+                    except ApiError:
+                        pass
+            elif session:
                 self.server.sessions.begin(token)
                 begun = True
             result = fn(self, m)
@@ -236,6 +248,17 @@ class Handler(BaseHTTPRequestHandler):
         for key, value in headers:
             self.send_header(key, value)
         self._end_headers()
+
+    def send_stream_headers(self, content_type):
+        """Start an answer that ends when the connection closes."""
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.close_connection = True
+        self.end_headers()
+        self._sent = True
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     # Parameters come from the JSON body, or else from the query string.
 
@@ -391,7 +414,7 @@ def _time(c, cursor):
     return None if t is None else round(t, 3)
 
 
-@route("GET", "/console")
+@route("GET", "/console", session="optional")
 def get_console(r, m):
     c = r.dut.console
     since = _since(r, "boot")
@@ -406,6 +429,54 @@ def get_console(r, m):
         return None
     return {"cursor": start, "next": nxt, "lost": start > since, "boot": c.boot, "last": c.last,
             "text": _text(r, data)}
+
+
+# Not tied to the session: a stream lasts as long as its client wants.
+@route("GET", "/console/stream", session=False)
+def console_stream(r, m):
+    c = r.dut.console
+    raw = r.param("format") == "raw"
+    start = max(min(_since(r, "boot"), c.resolve("now")), c.resolve("start"))
+    items = c.follow(start)
+    r.send_stream_headers("application/octet-stream" if raw else "application/x-ndjson")
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
+    def send(obj):
+        r.wfile.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + b"\n")
+
+    if not raw:
+        send({"type": "hello", "name": r.dut.name, "version": __version__, "started": round(c.started, 3),
+              "time": round(time.time(), 3), "power": r.dut.power_state, "cursor": start, "end": c.resolve("now")})
+    pinged = time.monotonic()
+    for item in items:
+        if item is None:
+            if _gone(r.connection):
+                return None
+            if not raw and time.monotonic() - pinged >= PING:
+                send({"type": "ping"})
+                pinged = time.monotonic()
+        elif raw:
+            if item[0] == "output":
+                r.wfile.write(item[2])
+        elif item[0] == "output":
+            send({"type": "output", "cursor": item[1], "next": item[1] + len(item[2]),
+                  "text": decoder.decode(item[2])})
+            pinged = time.monotonic()
+        else:
+            send({"type": "power", "state": "on" if item[2] else "off", "cursor": item[1],
+                  "time": round(item[3], 3)})
+            pinged = time.monotonic()
+    return None
+
+
+def _gone(sock):
+    """Return True if the client closed the connection."""
+    try:
+        if not select.select([sock], [], [], 0)[0]:
+            return False
+        return not sock.recv(1, socket.MSG_PEEK)
+    except OSError:
+        return True
 
 
 @route("POST", "/console/write")

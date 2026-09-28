@@ -78,6 +78,31 @@ Check((await dut.ReadAsync("boot", timestamps: true)).GetProperty("text").GetStr
     "read console with timestamps");
 var (data, next) = await dut.ReadRawAsync("boot");
 Check(data.Length > 0 && next == read.GetProperty("cursor").GetInt64() + data.Length, "read raw console");
+
+// Stream, without session
+using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+{
+    var events = other.StreamConsoleAsync("now", cts.Token).GetAsyncEnumerator(cts.Token);
+    Check(await events.MoveNextAsync() && events.Current.Type == "hello"
+        && events.Current.Data.GetProperty("name").GetString() == "dut1", "stream hello");
+    var cycle = await dut.PowerCycleAsync(0);
+    var text = "";
+    ConsoleEvent? on = null;
+    while (!text.EndsWith("login: ") && await events.MoveNextAsync())
+    {
+        if (events.Current is { Type: "power", State: "on" })
+            on = events.Current;
+        else if (on != null && events.Current.Type == "output")
+            text += events.Current.Text;
+    }
+    Check(on?.Cursor == cycle.GetProperty("boot").GetInt64()
+        && Math.Abs(on.Time - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0) < 10, "stream power on");
+    Check(text.Contains("U-Boot 2024.01"), "stream output");
+    cts.Cancel();
+    Check(await Cancelled(() => events.MoveNextAsync().AsTask()), "stream cancel");
+    await events.DisposeAsync();
+}
+
 var conflict = await Fails(() => dut.SdModeAsync("host"));
 Check(conflict.Status == 409 && conflict.Code == "power_on", "card refused while powered");
 Check((await dut.PowerCycleAsync(0)).GetProperty("power").GetString() == "on", "power cycle");
@@ -107,6 +132,19 @@ static void Check(bool ok, string what)
     if (!ok)
         throw new Exception("check failed: " + what);
     Console.WriteLine("ok: " + what);
+}
+
+static async Task<bool> Cancelled(Func<Task> call)
+{
+    try
+    {
+        await call();
+    }
+    catch (OperationCanceledException)
+    {
+        return true;
+    }
+    return false;
 }
 
 static async Task<BooBootException> Fails(Func<Task> call)

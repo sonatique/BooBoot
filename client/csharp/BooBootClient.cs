@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -44,9 +45,21 @@ public sealed class BooBootException : Exception
 /// <param name="Time">Seconds from power on to the match, null without match.</param>
 public sealed record MatchResult(bool Matched, string Text, long Next, double? Time);
 
+/// <summary>An event of StreamConsoleAsync.</summary>
+/// <param name="Type">"hello" (first event), "output", "power" or "ping".</param>
+/// <param name="Cursor">Output: cursor of the text. Power: cursor at the switch. Hello: first cursor.</param>
+/// <param name="Next">Output: cursor after the text.</param>
+/// <param name="Text">Output: the text, escape codes included.</param>
+/// <param name="State">Power: "on" or "off". Hello: power state.</param>
+/// <param name="Time">Unix time of the power switch, or of the hello.</param>
+/// <param name="Data">The event as sent by the server. Hello also has "name", "version", "end" (cursor at
+/// the call) and "started" (Unix time of the server start: cursors count from it).</param>
+public sealed record ConsoleEvent(string Type, long Cursor, long Next, string Text, string State, double Time,
+    JsonElement Data);
+
 /// <summary>
 /// Access to one BooBoot server, that is one DUT.
-/// All calls but StatusAsync and OpenSessionAsync need the session.
+/// All calls but StatusAsync, OpenSessionAsync and the console reads need the session.
 /// Errors throw BooBootException. Answers are the JSON of the HTTP API.
 /// </summary>
 public sealed class BooBootClient : IDisposable
@@ -196,6 +209,66 @@ public sealed class BooBootClient : IDisposable
         var data = await resp.Content.ReadAsByteArrayAsync(cts.Token);
         var next = resp.Headers.TryGetValues("X-Next", out var values) ? long.Parse(values.First()) : 0;
         return (data, next);
+    }
+
+    /// <summary>
+    /// Console events as they come, until the token is canceled. The first event is "hello".
+    /// "ping" comes after 10 s without other events. Throws BooBootException when the
+    /// connection is lost, or after 30 s without any event.
+    /// </summary>
+    public async IAsyncEnumerable<ConsoleEvent> StreamConsoleAsync(string since = "boot",
+        [EnumeratorCancellation] CancellationToken token = default)
+    {
+        HttpResponseMessage resp;
+        using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
+        {
+            cts.CancelAfter(Timeout);
+            var request = new HttpRequestMessage(HttpMethod.Get, Api("/console/stream" + Query(("since", since))));
+            try
+            {
+                resp = await SendAsync(request, cts.Token);
+            }
+            catch (BooBootException) when (token.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(token);
+            }
+        }
+        using (resp)
+        {
+            using var reader = new StreamReader(await resp.Content.ReadAsStreamAsync(token), Encoding.UTF8);
+            while (true)
+            {
+                string? line;
+                try
+                {
+                    line = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(30), token);
+                }
+                catch (TimeoutException)
+                {
+                    throw new BooBootException($"no data from {Url} for 30 s");
+                }
+                catch (IOException e)
+                {
+                    throw new BooBootException($"connection to {Url} lost: {e.Message}");
+                }
+                if (line == null)
+                    throw new BooBootException($"connection to {Url} closed");
+                using var doc = JsonDocument.Parse(line);
+                yield return Event(doc.RootElement.Clone());
+            }
+        }
+    }
+
+    static ConsoleEvent Event(JsonElement e)
+    {
+        string Text(string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        double Number(string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+        var type = Text("type");
+        var hello = type == "hello";
+        return new ConsoleEvent(type, (long)Number("cursor"), (long)Number("next"), Text("text"),
+            Text(hello ? "power" : "state"), Number("time"), e);
     }
 
     /// <summary>Sends text. newline adds the line ending set on the server.</summary>
