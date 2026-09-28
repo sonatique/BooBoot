@@ -129,9 +129,12 @@ class NoPort:
 class ConsoleLog:
     """Console output in files, one per boot, each line with a time stamp."""
 
+    NAME = re.compile(r"console-[0-9-]+\.log$")
+
     def __init__(self, directory, keep=100):
         self.dir = directory
         self.keep = keep
+        self.path = ""
         self._lock = threading.Lock()
         self._f = None
         os.makedirs(directory, exist_ok=True)
@@ -147,6 +150,7 @@ class ConsoleLog:
             while os.path.exists(path):
                 path, n = "%s-%d.log" % (base, n), n + 1
             self._f = open(path, "ab")
+            self.path = path
             self._f.write(time.strftime("# %Y-%m-%d %H:%M:%S\n").encode())
             self._f.flush()
             self._t0 = time.monotonic() if t0 is None else t0
@@ -170,6 +174,22 @@ class ConsoleLog:
                 os.unlink(path)
             except OSError:
                 pass
+
+    def files(self):
+        """Return the log files, newest first: dicts with name, size and mtime."""
+        files = []
+        for path in glob.glob(os.path.join(self.dir, "console-*.log")):
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            files.append({"name": os.path.basename(path), "size": st.st_size, "mtime": round(st.st_mtime, 1)})
+        return sorted(files, key=lambda f: (f["mtime"], f["name"]), reverse=True)
+
+    def file_path(self, name):
+        """Return the path of a log file, or None if there is no such file."""
+        path = os.path.join(self.dir, name)
+        return path if self.NAME.match(name) and os.path.isfile(path) else None
 
     def write(self, data, now=None):
         now = time.monotonic() if now is None else now
@@ -228,7 +248,7 @@ class Console:
         self._seq = 0
         self._cond = threading.Condition()
         self._write_lock = threading.Lock()
-        self._log = ConsoleLog(log_dir, keep_logs) if log_dir else None
+        self.log = ConsoleLog(log_dir, keep_logs) if log_dir else None
         self._stop = threading.Event()
         self._thread = None
 
@@ -245,8 +265,8 @@ class Console:
         if self._thread:
             self._thread.join(2)
         self.port.close()
-        if self._log:
-            self._log.close()
+        if self.log:
+            self.log.close()
 
     def _run(self):
         while not self._stop.is_set():
@@ -291,8 +311,8 @@ class Console:
                 self._base += drop
                 self._trim_times()
             self._cond.notify_all()
-        if self._log:
-            self._log.write(data, now)
+        if self.log:
+            self.log.write(data, now)
 
     def _trim_times(self):
         """Forget the times of bytes that left the buffer."""
@@ -382,8 +402,8 @@ class Console:
             self._boot_pos.append(self.boot)
             self._boot_time.append(now)
             self._event(self.boot, True)
-        if self._log:
-            self._log.new_file(now)
+        if self.log:
+            self.log.new_file(now)
         return self.boot
 
     def mark_off(self):

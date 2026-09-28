@@ -40,6 +40,10 @@ wait_up
 [ "$(level)" = lo ] || fail "relay line not low at start"
 echo "ok: service up, relay off"
 
+curl -sf "$URL/" | grep -q 'src="console.js"' || fail "no console web page"
+curl -sf "$URL/console.js" > /dev/null || fail "no console.js"
+echo "ok: console web page"
+
 booboot --url "$URL" power on
 [ "$(level)" = hi ] || fail "relay line not high after power on"
 booboot --url "$URL" power off

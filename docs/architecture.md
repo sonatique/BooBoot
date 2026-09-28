@@ -88,6 +88,7 @@ Automation GmbH (pure Python, no dependencies) to switch the mux. Also used:
 | `storage.py` | Image writing, partitions, file operations |
 | `console.py` | Serial port (termios), output buffer, log files, expect |
 | `fake.py` | Simulated board for development and tests |
+| `web/` | Console web page: HTML and JavaScript, served at `/` |
 | `config.py` | INI configuration with defaults |
 
 ### Sessions
@@ -153,7 +154,10 @@ Clients read or wait from a cursor, given as a number or as a name:
 
 The last 8 MB (configurable) stay in memory. Each power on also starts a new
 log file in `/var/log/booboot/NAME/`, with a time stamp on each line
-(`latest.log` points to the current one).
+(`latest.log` points to the current one). Clients can list and download them.
+
+The server also serves a [web page](web.md) at `/` that shows the console
+live in any browser, from the stream, with no session.
 
 **Boot time.** The server notes the time of each power on, just after the
 relay is switched, and the arrival time of each read from the serial port.

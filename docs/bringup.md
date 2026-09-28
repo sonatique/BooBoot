@@ -96,7 +96,7 @@ booboot deploy BOOT.BIN image.ub --expect "login: " --timeout 120
 
 | What you see | What to check |
 |---|---|
-| Nothing at all | TX and RX swapped, GND, voltage level, `booboot console read --since boot` |
+| Nothing at all | TX and RX swapped, GND, voltage level, `booboot console read --since boot`, or the web page `http://booboot.local:8080/` |
 | Garbage characters | Baud rate (`baudrate` in the configuration, 921600 by default) |
 | U-Boot does not start | Card content, card in the DUT slot (`booboot status`: sd card on dut) |
 | Keys have no effect | `line_ending` (`cr` by default; try `lf`) |

@@ -7,6 +7,9 @@ changed in any way.
 
 ![BooBoot Console](console.png)
 
+To watch with nothing to install, the BooBoot server also has a
+[console web page](web.md).
+
 ## Features
 
 - **Live output.** The server sends each read from the serial port at once.

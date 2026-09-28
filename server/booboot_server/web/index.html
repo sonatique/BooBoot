@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BooBoot</title>
+<style>
+  :root { --size: 13px; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column;
+    background: #1e1e1e; color: #cccccc;
+    font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 6px 8px; background: #2d2d2d; border-bottom: 1px solid #3c3c3c;
+  }
+  #name { font-weight: 600; color: #ffffff; }
+  #info { flex: 1 1 240px; min-width: 0; color: #a0a0a0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  button {
+    font: inherit; color: #dddddd; background: #3a3d41;
+    border: 1px solid #555555; border-radius: 4px; padding: 3px 10px; cursor: pointer;
+  }
+  button:hover { background: #45494e; }
+  button.on { background: #0e639c; border-color: #1177bb; color: #ffffff; }
+  #screen {
+    flex: 1; overflow-y: auto; padding: 4px 6px; outline: none;
+    font-family: "Cascadia Mono", Consolas, Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: var(--size); line-height: 1.3;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  /* Blocks of lines: the browser skips drawing the ones out of view. */
+  #screen > div { content-visibility: auto; contain-intrinsic-size: auto 130em; }
+  .m { color: #569cd6; background: #252a33; }
+  #panel {
+    position: absolute; right: 8px; top: 44px; z-index: 1;
+    max-width: calc(100% - 16px); max-height: 60%; overflow: auto;
+    background: #252526; border: 1px solid #454545; border-radius: 4px; padding: 8px 12px;
+  }
+  #panel a { color: #4fc1ff; }
+  #panel td { padding: 2px 12px 2px 0; white-space: nowrap; }
+  #panel p { margin: 0 0 6px; color: #a0a0a0; }
+  /* Narrow screens: the state on its own line, under the buttons. */
+  @media (max-width: 700px) { #info { order: 1; flex-basis: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <span id="name">BooBoot</span>
+  <span id="info">Connecting...</span>
+  <button id="follow" class="on" title="Show new output as it comes (End)">Follow</button>
+  <button id="clear" title="Clear the view">Clear</button>
+  <button id="save" title="Save all the text to a file">Save</button>
+  <button id="logs" title="Log files on the BooBoot board">Logs</button>
+  <button id="smaller" title="Smaller text">A-</button>
+  <button id="bigger" title="Bigger text">A+</button>
+</header>
+<div id="panel" hidden></div>
+<div id="screen" tabindex="0"></div>
+<script src="terminal.js"></script>
+<script src="console.js"></script>
+</body>
+</html>

@@ -11,7 +11,7 @@ Base URL: `http://HOST:PORT/api/v1` (default port 8080).
   `Content-Length` or chunked transfer encoding. Their parameters go in the
   query string.
 - **Session**: all endpoints except `GET /status`, `POST /session`,
-  `GET /console` and `GET /console/stream` need the header
+  `GET /console`, `GET /console/stream` and `GET /logs` need the header
   `Authorization: Bearer TOKEN`. Reading the console needs no session, so
   viewers do not stop other clients. With a valid token, `GET /console` also
   keeps the session alive.
@@ -218,6 +218,25 @@ Parameters: `command`, `prompt` (regex, default set on the server:
 Answer: `{"matched": true, "next": 5120, "time": 15.678, "output": "..."}`.
 `output` has neither the echoed command nor the prompt line. `time` is as for
 expect, for the prompt.
+
+## Log files
+
+The server writes the console output to a new log file at each power on,
+each line starting with its time since power on. No session needed.
+
+### GET /logs
+
+Answer: `{"files": [{"name": "console-20260928-101500.log", "size": 12345, "mtime": 1790000000.0}, ...], "current": "console-20260928-101500.log"}`,
+newest first. `current` is the file being written.
+
+### GET /logs/NAME
+
+The content of a log file (`text/plain`).
+
+## Web page
+
+`GET /` (outside `/api/v1`) is a web page that shows the console live: see
+[web.md](web.md). `web = no` in the `[server]` configuration turns it off.
 
 ## Boot time
 

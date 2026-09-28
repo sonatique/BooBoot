@@ -26,12 +26,14 @@ MAX_JSON = 1 << 20
 MAX_WAIT = 60
 MAX_TIMEOUT = 3600
 PING = 10  # seconds between pings on an idle console stream
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+WEB_TYPES = {"html": "text/html", "js": "text/javascript", "css": "text/css"}
 
 ROUTES = []
 
 
-def route(method, pattern, session=True, raw=False):
-    """Register a handler for a path regex.
+def route(method, pattern, session=True, raw=False, prefix=PREFIX):
+    """Register a handler for a path regex, under prefix.
 
     session: the request needs the session token. "optional": a valid token
     keeps the session alive, but none is needed.
@@ -39,7 +41,7 @@ def route(method, pattern, session=True, raw=False):
     Handlers get (request, match) and return a dict to send, or None.
     """
     def deco(fn):
-        ROUTES.append((method, re.compile(PREFIX + pattern + "$"), fn, session, raw))
+        ROUTES.append((method, re.compile(prefix + pattern + "$"), fn, session, raw))
         return fn
     return deco
 
@@ -241,9 +243,9 @@ class Handler(BaseHTTPRequestHandler):
         self._end_headers()
         self.wfile.write(data)
 
-    def send_data_headers(self, length, headers=()):
+    def send_data_headers(self, length, headers=(), content_type="application/octet-stream"):
         self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(length))
         for key, value in headers:
             self.send_header(key, value)
@@ -297,13 +299,14 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, dut, sessions, prompt):
+    def __init__(self, address, dut, sessions, prompt, web=True):
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
         super().__init__(address, Handler)
         self.dut = dut
         self.sessions = sessions
         self.prompt = prompt
+        self.web = web
 
 
 # Session
@@ -477,6 +480,51 @@ def _gone(sock):
         return not sock.recv(1, socket.MSG_PEEK)
     except OSError:
         return True
+
+
+# Log files of the console on this board, one per boot. No session needed.
+
+@route("GET", "/logs", session=False)
+def get_logs(r, m):
+    files = r.dut.console.log
+    return {"files": files.files() if files else [], "current": os.path.basename(files.path) if files else ""}
+
+
+@route("GET", "/logs/([^/]+)", session=False)
+def get_log(r, m):
+    files = r.dut.console.log
+    path = files.file_path(unquote(m.group(1))) if files else None
+    if not path:
+        raise NotFound("no such log file: %s" % unquote(m.group(1)))
+    with open(path, "rb") as f:
+        # The current file grows: send the size announced, no more.
+        left = os.fstat(f.fileno()).st_size
+        r.send_data_headers(left, content_type="text/plain; charset=utf-8")
+        while left > 0:
+            data = f.read(min(CHUNK, left))
+            if not data:
+                break
+            r.wfile.write(data)
+            left -= len(data)
+    return None
+
+
+# The console web page. Not under /api/v1.
+
+@route("GET", r"/([a-z]+\.(html|js|css))?", session=False, prefix="")
+def web_file(r, m):
+    if not r.server.web:
+        raise NotFound("the web page is turned off ([server] web = no)")
+    name = m.group(1) or "index.html"
+    try:
+        with open(os.path.join(WEB_DIR, name), "rb") as f:
+            data = f.read()
+    except FileNotFoundError:
+        raise NotFound("no such file: /%s" % name) from None
+    r.send_data_headers(len(data), [("Cache-Control", "no-cache")],
+                        WEB_TYPES[name.rsplit(".", 1)[1]] + "; charset=utf-8")
+    r.wfile.write(data)
+    return None
 
 
 @route("POST", "/console/write")

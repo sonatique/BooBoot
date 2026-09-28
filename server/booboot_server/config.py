@@ -13,6 +13,7 @@ DEFAULTS = {
         "run_dir": "/run/booboot/{name}",
         "session_timeout": "300",
         "session_timeout_max": "3600",
+        "web": "yes",
     },
     "power": {
         "backend": "gpio",

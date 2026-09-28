@@ -26,8 +26,9 @@ if [ ! -x "$PREFIX/venv/bin/pip" ]; then
 fi
 "$PREFIX/venv/bin/pip" install --upgrade "usbsdmux>=24.1"
 
-rm -f "$PREFIX"/booboot_server/*.py
+rm -rf "$PREFIX"/booboot_server/*.py "$PREFIX/booboot_server/web"
 cp "$SRC"/booboot_server/*.py "$PREFIX/booboot_server/"
+cp -r "$SRC/booboot_server/web" "$PREFIX/booboot_server/"
 cat > /usr/local/bin/booboot-server <<EOF
 #!/bin/sh
 PYTHONPATH=$PREFIX exec $PREFIX/venv/bin/python3 -m booboot_server "\$@"

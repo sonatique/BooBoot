@@ -108,7 +108,7 @@ def main(argv=None):
         if args.fake is not None:
             fake_dir = args.fake or tempfile.mkdtemp(prefix="booboot-fake-")
         dut, sessions, address, prompt = build(cfg, fake_dir)
-        server = Server(address, dut, sessions, prompt)
+        server = Server(address, dut, sessions, prompt, cfg["server"].getboolean("web"))
     except (OSError, ValueError, configparser.Error) as e:
         log.error("%s", e)
         return 1
@@ -121,6 +121,8 @@ def main(argv=None):
     dut.start()
     host, port = server.server_address[:2]
     log.info("BooBoot %s: %s on http://%s:%d", __version__, dut.name, host, port)
+    if server.web:
+        log.info("console web page: http://%s:%d/", host, port)
     if fake_dir is not None:
         log.info("fake hardware in %s", fake_dir)
     try:
