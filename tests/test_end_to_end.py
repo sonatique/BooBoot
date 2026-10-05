@@ -331,6 +331,8 @@ class Cli(unittest.TestCase):
         self.assertIn("newdir/", self.cli("sd", "ls"))
         self.cli("sd", "rm", "1:/newdir")
         self.assertEqual(self.cli("power", "cycle", "--off-time", "0"), "power on\n")
+        # A read does not wait: wait for the first boot line before it.
+        self.cli("console", "expect", "Fake FSBL", "--since", "boot", "--timeout", "10", "-q")
         self.assertIn("Fake FSBL", self.cli("console", "read", "--since", "boot"))
         self.assertRegex(self.cli("console", "read", "-t", "--since", "boot"), r"\[ +0\.[0-9]{3}\] ")
         # Errors are also JSON with --json.
