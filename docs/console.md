@@ -1,9 +1,9 @@
 # BooBoot Console
 
 A desktop program that shows the serial console of the DUT, live, as a
-terminal connected to it would. It only reads: it needs no session, so
-agents and other clients use the DUT as usual, and the console data is not
-changed in any way.
+terminal connected to it would. Watching needs no session, so agents and
+other clients use the DUT as usual, and the console data is not changed in
+any way. To type into the console, take control: see [Typing](#typing).
 
 ![BooBoot Console](console.png)
 
@@ -35,6 +35,29 @@ To watch with nothing to install, the BooBoot server also has a
 
 The status bar shows the connection, the DUT name, the power state, and which
 client has the session.
+
+## Typing
+
+"Take control" opens the BooBoot session, in the name of
+`BooBoot Console USER@COMPUTER`. While it is open, other clients that need
+the session (agents, `booboot` commands) get `busy`, as with any session.
+A blue frame shows that the keys go to the DUT. The view then shows the
+cursor, and follows the output at each key.
+
+- **Keys.** Text, Enter, Backspace, Tab, Escape, the arrows, Home, End,
+  Insert and Delete are sent as a terminal sends them. Ctrl+letter sends the
+  control character: Ctrl+C stops a program on the DUT, Ctrl+D ends a shell.
+- **Copy and paste.** Ctrl+C copies when text is selected; with no selection
+  it goes to the DUT. Ctrl+Shift+C always copies. Ctrl+V pastes the clipboard
+  to the DUT, with each line break sent as Enter.
+- **View commands.** Page Up and Page Down still scroll. With Ctrl+Shift:
+  Ctrl+Shift+A selects all, Ctrl+Shift+L clears, Ctrl+Shift+S saves.
+- **Release.** "Release control" closes the session. Closing the window also
+  does. When no key is sent for the session timeout (300 s by default), the
+  session ends and the status bar says so.
+- **Busy.** If another client has the session, the program shows who and its
+  idle time, and asks before taking it over. If another client takes it
+  over, typing stops and the status bar says who.
 
 ## Run
 
@@ -89,11 +112,12 @@ as they come. The server reads the serial port all the time, whether viewers
 are connected or not. Viewers only read its memory, so the DUT does not see
 them, and any number of them can watch. A slow viewer never slows the server:
 if it falls behind by more than the server memory, it skips output.
+Taking control opens a session (`POST /api/v1/session`), and the keys go
+through `POST /api/v1/console/write`.
 
 ## Limits
 
 - The view is line based: it only writes to the last line, like a log.
   Programs that draw on the whole screen (`top`, `vi`, `menuconfig`) do not
   show well. For them, use `booboot console attach` in a terminal.
-- Read only for now: no typing.
 - Characters wider than others (CJK, emoji) break the alignment of their line.

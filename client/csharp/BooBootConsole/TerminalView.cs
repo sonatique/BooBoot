@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -15,7 +16,8 @@ namespace BooBootConsole;
 /// <summary>
 /// Shows a TerminalBuffer. Long lines wrap. Only the visible rows are drawn,
 /// so the buffer can be large. The view follows new output unless the user
-/// scrolls up.
+/// scrolls up. While Typing is on, keys are raised as Input, as a terminal
+/// would send them, and the cursor is shown.
 /// </summary>
 public sealed class TerminalView : Control
 {
@@ -28,6 +30,9 @@ public sealed class TerminalView : Control
     static readonly IBrush SelectionBrush = new ImmutableSolidColorBrush(Color.Parse("#264F78"));
     static readonly IBrush MarkerBrush = new ImmutableSolidColorBrush(Color.Parse("#569CD6"));
     static readonly IBrush MarkerBackground = new ImmutableSolidColorBrush(Color.Parse("#252A33"));
+    static readonly IBrush CursorBrush = new ImmutableSolidColorBrush(Color.Parse("#99CCCCCC"));
+    static readonly IPen CursorPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.Parse("#CCCCCC")));
+    static readonly IPen TypingPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.Parse("#0E639C")), 2);
     static readonly Color[] Basic = Array.ConvertAll(new[]
     {
         "#000000", "#CD3131", "#0DBC79", "#E5E510", "#2472C8", "#BC3FBC", "#11A8CD", "#E5E5E5",
@@ -47,6 +52,7 @@ public sealed class TerminalView : Control
     bool follow = true;
     TextPos? anchor, caret;
     bool selecting;
+    bool typing;
     double wheel;
 
     record RowText(int Version, int Columns, FormattedText Text);
@@ -114,6 +120,23 @@ public sealed class TerminalView : Control
 
     public event EventHandler? FollowChanged;
 
+    /// <summary>Keys go to Input, and the cursor is shown.</summary>
+    public bool Typing
+    {
+        get => typing;
+        set
+        {
+            typing = value;
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>Text to send to the console, while Typing.</summary>
+    public event Action<string>? Input;
+
+    /// <summary>Text was typed while not Typing.</summary>
+    public event EventHandler? ReadOnlyKey;
+
     public bool HasSelection => anchor != null && caret != null && anchor != caret;
 
     /// <summary>Call after the buffer changed.</summary>
@@ -151,6 +174,26 @@ public sealed class TerminalView : Control
             await clipboard.SetTextAsync(SelectedText);
     }
 
+    /// <summary>Sends the clipboard text, with line breaks as Enter.</summary>
+    public async void Paste()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null)
+            return;
+        var text = await clipboard.TryGetTextAsync();
+        if (string.IsNullOrEmpty(text))
+            return;
+        if (typing)
+            Send(text.Replace("\r\n", "\r").Replace('\n', '\r'));
+        else
+            ReadOnlyKey?.Invoke(this, EventArgs.Empty);
+    }
+
+    void Send(string text)
+    {
+        Follow = true;
+        Input?.Invoke(text);
+    }
     // Layout
 
     int Columns => Math.Max(10, (int)((Bounds.Width - bar.Bounds.Width - 2 * Pad) / cellWidth));
@@ -283,6 +326,8 @@ public sealed class TerminalView : Control
         {
             var l = buffer[line];
             var rows = Rows(line);
+            if (typing && line == buffer.Last)
+                rows = Math.Max(rows, buffer.CursorColumn / cols + 1);
             for (; row < rows && y < Bounds.Height; row++, y += rowHeight)
             {
                 var start = row * cols;
@@ -307,10 +352,20 @@ public sealed class TerminalView : Control
                     next[(l, row)] = text;
                     context.DrawText(text.Text, new Point(Pad, y));
                 }
+                if (typing && line == buffer.Last && row == buffer.CursorColumn / cols)
+                {
+                    var cell = new Rect(Pad + buffer.CursorColumn % cols * cellWidth, y, cellWidth, rowHeight);
+                    if (IsFocused)
+                        context.FillRectangle(CursorBrush, cell);
+                    else
+                        context.DrawRectangle(CursorPen, cell.Deflate(0.5));
+                }
             }
             (line, row) = (line + 1, 0);
         }
         rowCache = next;
+        if (typing)
+            context.DrawRectangle(TypingPen, new Rect(Bounds.Size).Deflate(1));
     }
 
     void DrawBackgrounds(DrawingContext context, TermLine line, int start, int end, double y)
@@ -468,8 +523,28 @@ public sealed class TerminalView : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        var mods = e.KeyModifiers;
+        var ctrl = mods.HasFlag(KeyModifiers.Control) || mods.HasFlag(KeyModifiers.Meta);
+        var shift = mods.HasFlag(KeyModifiers.Shift);
         e.Handled = true;
+        // While typing, Ctrl+key goes to the console. Ctrl+C copies when text
+        // is selected; Ctrl+Shift+key and Cmd+key are the view commands.
+        if (typing)
+        {
+            if (e.Key == Key.C && ctrl && (shift || HasSelection || mods.HasFlag(KeyModifiers.Meta)))
+                CopySelection();
+            else if (e.Key == Key.V && ctrl)
+                Paste();
+            else if (e.Key == Key.A && ctrl && (shift || mods.HasFlag(KeyModifiers.Meta)))
+                SelectAll();
+            else if (e.Key is Key.PageUp or Key.PageDown)
+                ScrollRows(e.Key == Key.PageUp ? -(VisibleRows - 1) : VisibleRows - 1);
+            else if (KeyText(e) is string text)
+                Send(text);
+            else
+                e.Handled = false;
+            return;
+        }
         switch (e.Key)
         {
             case Key.C or Key.Insert when ctrl:
@@ -477,6 +552,9 @@ public sealed class TerminalView : Control
                 break;
             case Key.A when ctrl:
                 SelectAll();
+                break;
+            case Key.V when ctrl:
+                Paste();
                 break;
             case Key.PageUp:
                 ScrollRows(-(VisibleRows - 1));
@@ -503,6 +581,71 @@ public sealed class TerminalView : Control
                 e.Handled = false;
                 break;
         }
+    }
+
+    /// <summary>What a terminal sends for a key that is not plain text, or null.</summary>
+    static string? KeyText(KeyEventArgs e)
+    {
+        var mods = e.KeyModifiers;
+        if (mods.HasFlag(KeyModifiers.Meta))
+            return null;
+        // Ctrl+Alt is AltGr on Windows: its characters come as text input.
+        if (mods.HasFlag(KeyModifiers.Control) && !mods.HasFlag(KeyModifiers.Alt))
+        {
+            if (mods.HasFlag(KeyModifiers.Shift))
+                return null;
+            if (e.Key >= Key.A && e.Key <= Key.Z)
+                return ((char)(e.Key - Key.A + 1)).ToString();
+            return e.Key switch
+            {
+                Key.OemOpenBrackets => "\x1b",
+                Key.OemPipe or Key.OemBackslash => "\x1c",
+                Key.OemCloseBrackets => "\x1d",
+                _ => null,
+            };
+        }
+        return e.Key switch
+        {
+            Key.Enter => "\r",
+            Key.Back => "\x7f",
+            Key.Tab => mods.HasFlag(KeyModifiers.Shift) ? "\x1b[Z" : "\t",
+            Key.Escape => "\x1b",
+            Key.Up => "\x1b[A",
+            Key.Down => "\x1b[B",
+            Key.Right => "\x1b[C",
+            Key.Left => "\x1b[D",
+            Key.Home => "\x1b[H",
+            Key.End => "\x1b[F",
+            Key.Insert => "\x1b[2~",
+            Key.Delete => "\x1b[3~",
+            _ => null,
+        };
+    }
+
+    protected override void OnTextInput(TextInputEventArgs e)
+    {
+        base.OnTextInput(e);
+        // Control characters come as keys.
+        var text = e.Text;
+        if (string.IsNullOrEmpty(text) || text.Any(char.IsControl))
+            return;
+        e.Handled = true;
+        if (typing)
+            Send(text);
+        else
+            ReadOnlyKey?.Invoke(this, EventArgs.Empty);
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        InvalidateVisual();
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        InvalidateVisual();
     }
 
     void SelectWord(TextPos pos)

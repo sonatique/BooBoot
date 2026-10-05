@@ -110,7 +110,7 @@ Only one client may use the DUT at a time.
 - `force` takes the session from another client, for when it is known to be
   gone.
 - Reading the console needs no session: viewers can watch while another
-  client uses the DUT.
+  client uses the DUT. To type, a viewer opens the session like any client.
 - A session never expires while one of its requests runs (like a long image
   write or an expect).
 
@@ -160,7 +160,8 @@ log file in `/var/log/booboot/NAME/`, with a time stamp on each line
 (`latest.log` points to the current one). Clients can list and download them.
 
 The server also serves a [web page](web.md) at `/` that shows the console
-live in any browser, from the stream, with no session.
+live in any browser, from the stream, with no session. A user can also take
+control from it, to type into the console.
 
 **Boot time.** The server notes the time of each power on, just after the
 relay is switched, and the arrival time of each read from the serial port.
@@ -209,7 +210,8 @@ API directly.
 [BooBoot Console](console.md) (`client/csharp/BooBootConsole`) is a desktop
 program that shows the serial console live, with scrollback, copy, save and
 log files. It is written in C# with Avalonia (.NET 10), for Windows, Linux
-and macOS. It reads the console stream and needs no session.
+and macOS. It reads the console stream and needs no session to watch;
+taking control opens the session, to type into the console.
 
 `booboot mcp` makes the client an MCP (Model Context Protocol) server on
 standard input and output: the DUT becomes a set of tools for MCP clients
@@ -268,5 +270,4 @@ off screen) against a server with a simulated board.
 - zstd images need Python 3.14 on the server.
 - Ideas: `.bmap` support (write only the used blocks of an image), an image
   cache on the board, boot interrupt sequences run on the server (for tight
-  timing like U-Boot with no autoboot delay), typing in BooBoot Console,
-  current measurement of the DUT, reading a whole card back.
+  timing like U-Boot with no autoboot delay), current measurement of the DUT, reading a whole card back.

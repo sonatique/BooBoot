@@ -4,7 +4,7 @@
 "use strict";
 const path = require("path");
 const assert = require("assert");
-const { Terminal, parseStyle, MAX_LINE, RGB, BOLD } = require(
+const { Terminal, parseStyle, keyData, MAX_LINE, RGB, BOLD } = require(
   path.join(__dirname, "..", "server", "booboot_server", "web", "terminal.js"));
 
 function check(ok, what) {
@@ -60,5 +60,20 @@ check(small.lines.length <= 107 && small.first > 800 && small.line(small.last - 
 check(small.text().endsWith("line 998\nline 999\n"), "all text");
 small.clear();
 check(small.lines.length === 1 && small.pending === "" && small.first > 1000, "clear");
+
+const key = (k, mods) => keyData(Object.assign({ key: k, ctrlKey: false, altKey: false, shiftKey: false,
+  metaKey: false, isComposing: false }, mods), false);
+check(key("a") === "a" && key("A", { shiftKey: true }) === "A" && key(" ") === " " && key("\u00e9") === "\u00e9",
+  "printable keys");
+check(key("Enter") === "\r" && key("Backspace") === "\x7f" && key("ArrowUp") === "\x1b[A"
+  && key("Tab", { shiftKey: true }) === "\x1b[Z", "special keys");
+check(key("c", { ctrlKey: true }) === "\x03" && key("D", { ctrlKey: true }) === "\x04"
+  && key("]", { ctrlKey: true }) === "\x1d", "control codes");
+check(keyData({ key: "c", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false }, true) === null
+  && key("v", { ctrlKey: true }) === null && key("C", { ctrlKey: true, shiftKey: true }) === null,
+  "copy and paste stay with the browser");
+check(key("@", { ctrlKey: true, altKey: true }) === "@", "AltGr characters");
+check(key("Shift", { shiftKey: true }) === null && key("F5") === null && key("a", { metaKey: true }) === null,
+  "other keys stay with the browser");
 
 console.log("all terminal checks passed");

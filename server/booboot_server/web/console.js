@@ -1,5 +1,6 @@
 // The console web page: reads /api/v1/console/stream and shows it.
-// Read only, no session needed. ?lines=N sets the number of lines kept (default 50000).
+// Watching needs no session. "Take control" opens the session, to type into the console.
+// ?lines=N sets the number of lines kept (default 50000).
 
 (function () {
   "use strict";
@@ -8,7 +9,7 @@
   const params = new URLSearchParams(location.search);
   const term = new T.Terminal(Number(params.get("lines")) || 50000);
   const $ = id => document.getElementById(id);
-  const screen = $("screen"), panel = $("panel"), followButton = $("follow");
+  const screen = $("screen"), panel = $("panel"), followButton = $("follow"), controlButton = $("control");
   const BLOCK = 100;  // lines per block of the screen
   const PALETTE = [
     "#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
@@ -17,6 +18,8 @@
 
   let name = "", connection = "Connecting...", power = "", session = "";
   let follow = true, holding = false, scheduled = false;
+  // Control: the session token, and the keys waiting to be sent.
+  let token = "", note = "", keys = "", sending = false;
 
   // Screen: line divs in blocks. nodes[i] shows line domFirst + i.
   let nodes = [], domFirst = 0, from = 0;
@@ -80,6 +83,39 @@
     return div;
   }
 
+  // Shows the cursor on the character at offset, or after the text.
+  function addCursor(div, offset) {
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT);
+    const texts = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode())
+      texts.push(node);
+    let pos = 0;
+    for (const node of texts) {
+      const i = offset - pos;
+      if (i < node.data.length && node.data[i] !== "\n") {
+        const at = node.splitText(i);
+        at.splitText(1);
+        at.replaceWith(cursor);
+        cursor.append(at);
+        return;
+      }
+      pos += node.data.length;
+    }
+    const last = texts[texts.length - 1];
+    cursor.className = "cursor end";
+    last.splitText(last.data.length - 1).before(cursor);
+  }
+
+  function renderLine(n, cursor) {
+    const div = render(term.line(n));
+    if (cursor >= 0)
+      addCursor(div, cursor);
+    div.cursor = cursor;
+    return div;
+  }
+
   function append(div) {
     let block = screen.lastElementChild;
     if (!block || block.childElementCount >= BLOCK) {
@@ -108,9 +144,10 @@
     // Lines before the last do not change once written, but a marker can come before the last one.
     for (let n = Math.max(from, domFirst); n <= term.last; n++) {
       const line = term.line(n), node = nodes[n - domFirst];
-      if (node && node.line === line)
+      const cursor = token && n === term.last ? term.col : -1;
+      if (node && node.line === line && node.cursor === cursor)
         continue;
-      const div = render(line);
+      const div = renderLine(n, cursor);
       if (node)
         node.replaceWith(div);
       else
@@ -135,7 +172,7 @@
 
   function showInfo() {
     const parts = [connection, power && "power " + power, session && "session " + session,
-      term.lines.length.toLocaleString("en") + " lines"];
+      term.lines.length.toLocaleString("en") + " lines", token ? "in control" : note];
     $("info").textContent = parts.filter(Boolean).join("   ");
     $("name").textContent = name || "BooBoot";
     document.title = name ? name + " - BooBoot" : "BooBoot";
@@ -241,8 +278,13 @@
   async function poll() {
     for (;;) {
       try {
-        const s = await (await fetch("/api/v1/status", { cache: "no-store" })).json();
-        session = s.session.active ? "used by " + s.session.client : "free";
+        const t = token;
+        const s = await (await fetch("/api/v1/status", { cache: "no-store", headers: auth(t) })).json();
+        session = !s.session.active ? "free" : s.session.yours ? "yours" : "used by " + s.session.client;
+        // Only an answer about the current session counts.
+        if (t && t === token && !s.session.yours)
+          setControl("", s.session.active ? "control lost: the DUT is used by " + s.session.client
+            : "control ended after the idle time");
         power = s.power.state;
         name = s.name;
         schedule();
@@ -251,6 +293,97 @@
       }
       await sleep(3000);
     }
+  }
+
+  // Control
+
+  function auth(t) {
+    return t ? { Authorization: "Bearer " + t } : {};
+  }
+
+  async function api(method, path, body) {
+    const resp = await fetch("/api/v1" + path, {
+      method, cache: "no-store", body: body && JSON.stringify(body),
+      headers: Object.assign({ "Content-Type": "application/json" }, auth(token)),
+    });
+    const r = await resp.json().catch(() => ({}));
+    if (!resp.ok)
+      throw Object.assign(new Error(r.message || "HTTP " + resp.status), { code: r.error, info: r });
+    return r;
+  }
+
+  function setControl(t, text) {
+    if (t)
+      session = "yours";
+    token = t;
+    note = text;
+    keys = "";
+    controlButton.classList.toggle("on", !!t);
+    controlButton.textContent = t ? "Release control" : "Take control";
+    document.body.classList.toggle("control", !!t);
+    // Draw or remove the cursor.
+    from = Math.min(from, term.last);
+    schedule();
+  }
+
+  async function takeControl() {
+    try {
+      let r;
+      try {
+        r = await api("POST", "/session", {});
+      } catch (err) {
+        const s = err.info && err.info.session;
+        if (err.code !== "busy" || !s)
+          throw err;
+        if (!confirm(`The DUT is used by ${s.client}, idle for ${Math.round(s.idle)} s. Take it over?`))
+          return;
+        r = await api("POST", "/session", { force: true });
+      }
+      setControl(r.session, "");
+      screen.focus();
+    } catch (err) {
+      setControl("", "cannot take control: " + err.message);
+    }
+  }
+
+  async function releaseControl() {
+    const t = token;
+    setControl("", "");
+    session = "free";
+    try {
+      await fetch("/api/v1/session", { method: "DELETE", headers: auth(t) });
+    } catch (err) {
+      // The session ends by itself after the idle time.
+    }
+  }
+
+  // Keys are sent in order, one request at a time; keys typed meanwhile go together in the next one.
+  function type(data) {
+    if (!token || !data)
+      return;
+    keys += data;
+    setFollow(true);
+    if (!sending)
+      sendKeys();
+  }
+
+  async function sendKeys() {
+    sending = true;
+    while (keys && token) {
+      const text = keys;
+      keys = "";
+      try {
+        await api("POST", "/console/write", { text });
+      } catch (err) {
+        if (err.code === "busy" || err.code === "no_session")
+          setControl("", err.code === "busy" ? "control lost: the DUT is used by " + err.info.session.client
+            : "control ended after the idle time");
+        else
+          note = "keys not sent: " + err.message;
+        schedule();
+      }
+    }
+    sending = false;
   }
 
   // Commands
@@ -320,6 +453,7 @@
   }
 
   followButton.onclick = () => setFollow(!follow);
+  controlButton.onclick = () => (token ? releaseControl() : takeControl());
   $("clear").onclick = () => {
     term.clear();
     setFollow(true);
@@ -341,12 +475,32 @@
       screen.scrollTop = screen.scrollHeight;
   });
   document.addEventListener("keydown", e => {
+    if (token) {
+      // Page Up and Page Down still scroll the page.
+      const data = e.key.startsWith("Page") ? null : T.keyData(e, !getSelection().isCollapsed);
+      if (data !== null) {
+        e.preventDefault();
+        type(data);
+      }
+      return;
+    }
     if (e.key === "End") {
       setFollow(true);
       e.preventDefault();
     } else if (e.key === "Escape") {
       panel.hidden = true;
     }
+  });
+  document.addEventListener("paste", e => {
+    if (token) {
+      e.preventDefault();
+      type(e.clipboardData.getData("text").replace(/\r?\n/g, "\r"));
+    }
+  });
+  // Release the session when the page is closed or reloaded.
+  window.addEventListener("pagehide", () => {
+    if (token)
+      fetch("/api/v1/session", { method: "DELETE", headers: auth(token), keepalive: true });
   });
   document.addEventListener("click", e => {
     if (!panel.hidden && !panel.contains(e.target) && e.target !== $("logs"))

@@ -34,6 +34,9 @@
   /* Blocks of lines: the browser skips drawing the ones out of view. */
   #screen > div { content-visibility: auto; contain-intrinsic-size: auto 130em; }
   .m { color: #569cd6; background: #252a33; }
+  body.control #screen { box-shadow: inset 0 0 0 2px #0e639c; }
+  .cursor { background: #cccccc; color: #1e1e1e; }
+  .cursor.end { display: inline-block; width: 1ch; height: 1.2em; vertical-align: text-bottom; }
   #panel {
     position: absolute; right: 8px; top: 44px; z-index: 1;
     max-width: calc(100% - 16px); max-height: 60%; overflow: auto;
@@ -50,6 +53,7 @@
 <header>
   <span id="name">BooBoot</span>
   <span id="info">Connecting...</span>
+  <button id="control" title="Open the session, to type into the console">Take control</button>
   <button id="follow" class="on" title="Show new output as it comes (End)">Follow</button>
   <button id="clear" title="Clear the view">Clear</button>
   <button id="save" title="Save all the text to a file">Save</button>

@@ -119,8 +119,10 @@ class Handler(BaseHTTPRequestHandler):
         self._handle()
 
     def log_request(self, code="-", size="-"):
-        quiet = (self.command == "GET" and str(code).startswith("2")
-                 and self.path.startswith((PREFIX + "/console", PREFIX + "/status")))
+        # Reads, and the writes of typed keys, would fill the log.
+        quiet = str(code).startswith("2") and (
+            (self.command == "GET" and self.path.startswith((PREFIX + "/console", PREFIX + "/status")))
+            or (self.command == "POST" and self.path.startswith(PREFIX + "/console/write")))
         if not quiet:
             log.info('%s "%s %s" %s', self.client_address[0], self.command, self.path, code)
 

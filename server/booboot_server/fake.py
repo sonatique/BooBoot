@@ -154,6 +154,10 @@ class FakeBoard:
         elif ch == b"\x03":
             self._line = b""
             self._out("^C\r\n" + self._prompt())
+        elif ch in (b"\x7f", b"\b"):
+            if self._line:
+                self._line = self._line[:-1]
+                self._out("\b \b")
         else:
             self._line += ch
             os.write(self._master, ch)

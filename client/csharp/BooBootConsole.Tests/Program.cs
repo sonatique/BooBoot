@@ -3,8 +3,11 @@
 //   cd server && python3 -m booboot_server --fake --port 8080
 //   dotnet run --project client/csharp/BooBootConsole.Tests -- http://127.0.0.1:8080 [screenshot.png]
 
+using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using BooBoot;
@@ -182,11 +185,54 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     window.Terminal.SelectAll();
     Check(window.Terminal.SelectedText.Contains("U-Boot 2024.01") && window.Terminal.SelectedText.EndsWith("# "),
         "select all");
+    window.Terminal.ClearSelection();
 
+    // Typing: read only until Take control.
+    window.KeyTextInput("x");
+    await WaitFor(() => window.Status.Contains("read only"), "keys refused while read only");
+    await dut.CloseSessionAsync();
+    await window.TakeControl();
+    await WaitFor(() => window.Status.Contains("session yours") && window.Status.Contains("in control"), "control taken");
+    Check((await dut.StatusAsync()).GetProperty("session").GetProperty("client").GetString()!
+        .StartsWith("BooBoot Console "), "session in the name of the program");
+    window.KeyTextInput("echo typedd");
+    window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
+    window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+    await WaitFor(() => Regex.IsMatch(window.Buffer.GetAllText(), @"echo typed *\ntyped\n"), "typed command");
+    window.KeyPressQwerty(PhysicalKey.C, RawInputModifiers.Control);
+    await WaitFor(() => window.Buffer.GetAllText().Contains("^C"), "Ctrl+C sent");
+    var clipboard = window.Clipboard;
+    if (clipboard != null)
+    {
+        await clipboard.SetTextAsync("echo pasted\n");
+        window.KeyPressQwerty(PhysicalKey.V, RawInputModifiers.Control);
+        await WaitFor(() => Regex.IsMatch(window.Buffer.GetAllText(), @"echo pasted *\npasted\n"), "pasted command");
+    }
+
+    // Another client takes the DUT: the next key ends the control.
+    using var other = new BooBootClient(url);
+    await other.OpenSessionAsync("colleague", force: true);
+    window.KeyTextInput("y");
+    await WaitFor(() => window.Status.Contains("control lost: the DUT is used by colleague"), "control lost",
+        () => window.Status);
+    Check(!window.Terminal.Typing, "read only again");
+    await window.TakeControl(force: true);
+    await WaitFor(() => window.Status.Contains("in control"), "control taken over");
+    await window.ReleaseControl();
+    Check(!(await dut.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(), "control released");
+
+    await dut.OpenSessionAsync("console-check");
     await dut.PowerOffAsync();
     await dut.DeleteAsync("1:/BOOT.BIN");
+    await dut.CloseSessionAsync();
+
+    // Closing the window releases the session.
+    await window.TakeControl();
+    await WaitFor(() => window.Status.Contains("in control"), "control taken before closing");
     window.Close();
-    Check(window.LogPath == null, "log closed with the window");
+    await WaitFor(() => window.LogPath == null, "log closed with the window");
+    Check(!(await dut.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(),
+        "session released with the window");
 }
 
 static async Task WaitFor(Func<bool> condition, string what, Func<string>? state = null)

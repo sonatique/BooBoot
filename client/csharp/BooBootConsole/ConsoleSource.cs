@@ -31,7 +31,8 @@ public sealed class ConsoleSource : IDisposable
     public sealed record Lost(long Bytes) : Item;
 
     /// <summary>Who has the session, from the status polled every few seconds.</summary>
-    public sealed record Session(string Text) : Item;
+    /// <param name="Token">Session token sent with the poll; Yours tells if it holds the session.</param>
+    public sealed record Session(string Text, string? Token, bool Yours) : Item;
 
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
@@ -45,6 +46,9 @@ public sealed class ConsoleSource : IDisposable
     }
 
     public string Url { get; }
+
+    /// <summary>Session token of this program while it types, to know if it still has the session.</summary>
+    public string? Token { get; set; }
 
     /// <summary>Raised on a background thread when items come after the queue was emptied.</summary>
     public event Action? Available;
@@ -153,12 +157,14 @@ public sealed class ConsoleSource : IDisposable
         {
             try
             {
+                var mine = Token;
+                client.Session = mine;
                 var session = (await client.StatusAsync()).GetProperty("session");
-                var text = session.GetProperty("active").GetBoolean()
-                    ? "used by " + session.GetProperty("client").GetString()
-                    : "free";
-                if (text != last)
-                    Post(new Session(last = text));
+                var yours = session.TryGetProperty("yours", out var y) && y.GetBoolean();
+                var text = !session.GetProperty("active").GetBoolean() ? "free"
+                    : yours ? "yours" : "used by " + session.GetProperty("client").GetString();
+                if (text != last || (mine != null && !yours))
+                    Post(new Session(last = text, mine, yours));
             }
             catch (BooBootException)
             {

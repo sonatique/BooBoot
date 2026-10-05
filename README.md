@@ -98,8 +98,9 @@ so that MCP clients can use the DUT through tools.
 To watch the serial console live, open `http://booboot.local:8080/` in any
 browser: the [console web page](docs/web.md), served by the BooBoot board.
 [BooBoot Console](docs/console.md) does the same as a desktop program
-(Windows, Linux, macOS), with log files on the desktop. Both need no session,
-so they can watch while an agent works.
+(Windows, Linux, macOS), with log files on the desktop. Both need no session
+to watch, so they can watch while an agent works. "Take control" in either
+opens the session, to type into the console.
 
 ## Development
 

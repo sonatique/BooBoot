@@ -149,6 +149,9 @@ public sealed class TerminalBuffer
     /// <summary>The line being written, if not empty.</summary>
     public string Pending => cur.ToString();
 
+    /// <summary>Column of the cursor in the line being written.</summary>
+    public int CursorColumn => col;
+
     /// <summary>Text from a to b, lines separated by newline.</summary>
     public string GetText(TextPos a, TextPos b, string newline = "\n")
     {

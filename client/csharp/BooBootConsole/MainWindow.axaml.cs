@@ -3,11 +3,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Layout;
 using Avalonia.Threading;
+using BooBoot;
 
 namespace BooBootConsole;
 
@@ -18,7 +22,9 @@ public partial class MainWindow : Window
     readonly TerminalBuffer buffer;
     readonly LogFile log = new();
     ConsoleSource? source;
-    string connection = "Not connected", dutName = "", power = "", session = "";
+    ConsoleInput? input;
+    string connection = "Not connected", dutName = "", power = "", session = "", note = "";
+    bool closing;
     // True while output from before the connection is added: it is not logged.
     bool history;
     bool connectedOnce;
@@ -65,6 +71,22 @@ public partial class MainWindow : Window
         StopLogButton.Click += (_, _) => StopLog();
         BrowseButton.Click += OnBrowse;
         OpenFolderButton.Click += OnOpenFolder;
+        ControlButton.Click += async (_, _) =>
+        {
+            if (input?.Token != null)
+                await ReleaseControl();
+            else
+                await TakeControl();
+        };
+        View.Input += text => input?.Send(text);
+        View.ReadOnlyKey += (_, _) =>
+        {
+            if (source != null && input?.Token == null)
+            {
+                note = "read only: Take control to type";
+                UpdateStatus();
+            }
+        };
         ShowSettings();
         UpdateLogText();
         Opened += (_, _) =>
@@ -72,8 +94,17 @@ public partial class MainWindow : Window
             View.Focus();
             Connect();
         };
-        Closing += (_, _) =>
+        Closing += async (_, e) =>
         {
+            // Release the session before closing.
+            if (input?.Token != null && !closing)
+            {
+                e.Cancel = true;
+                closing = true;
+                await input.ReleaseAsync();
+                Close();
+                return;
+            }
             Disconnect();
             StopLog();
         };
@@ -113,8 +144,16 @@ public partial class MainWindow : Window
         connectedOnce = false;
         source = new ConsoleSource(url);
         source.Available += () => Dispatcher.UIThread.Post(Drain, DispatcherPriority.Background);
+        input = new ConsoleInput(url);
+        input.Lost += reason => SetControl(false, reason);
+        input.Failed += text =>
+        {
+            note = text;
+            UpdateStatus();
+        };
         connection = "Connecting to " + url;
         ConnectButton.Content = "Disconnect";
+        ControlButton.IsEnabled = true;
         UpdateStatus();
         source.Start();
     }
@@ -125,8 +164,15 @@ public partial class MainWindow : Window
             return;
         source.Dispose();
         source = null;
+        if (input != null)
+        {
+            _ = Release(input);
+            input = null;
+            SetControl(false, "");
+        }
         (connection, dutName, power, session) = ("Not connected", "", "", "");
         ConnectButton.Content = "Connect";
+        ControlButton.IsEnabled = false;
         Title = "BooBoot Console";
         UpdateStatus();
     }
@@ -193,6 +239,13 @@ public partial class MainWindow : Window
                 break;
             case ConsoleSource.Session s:
                 session = s.Text;
+                // Only an answer about the current session counts.
+                if (s.Token != null && s.Token == input?.Token && !s.Yours)
+                {
+                    input.Forget();
+                    SetControl(false, s.Text == "free" ? "control ended after the idle time"
+                        : "control lost: the DUT is " + s.Text);
+                }
                 break;
         }
     }
@@ -208,8 +261,88 @@ public partial class MainWindow : Window
             power != "" ? "power " + power : "",
             session != "" ? "session " + session : "",
             $"{buffer.Count:N0} lines",
+            input?.Token != null ? "in control" : note,
         };
         StatusText.Text = string.Join("    ", parts.Where(p => p != ""));
+    }
+
+    // Control
+
+    /// <summary>Opens the session to type. When another client has it, asks before taking it over.</summary>
+    public async Task TakeControl(bool force = false)
+    {
+        if (input == null)
+            return;
+        try
+        {
+            if (await input.TakeAsync(force) is JsonElement busy)
+                AskTakeOver(busy);
+            else
+                SetControl(true, "");
+        }
+        catch (BooBootException e)
+        {
+            SetControl(false, "cannot take control: " + e.Message);
+        }
+    }
+
+    public async Task ReleaseControl()
+    {
+        if (input == null)
+            return;
+        await input.ReleaseAsync();
+        SetControl(false, "");
+        session = "free";
+        UpdateStatus();
+    }
+
+    static async Task Release(ConsoleInput old)
+    {
+        await old.ReleaseAsync();
+        old.Dispose();
+    }
+
+    void AskTakeOver(JsonElement busy)
+    {
+        var who = busy.GetProperty("client").GetString();
+        var idle = busy.GetProperty("idle").GetDouble();
+        var take = new Button { Content = "Take over" };
+        var cancel = new Button { Content = "Cancel" };
+        var flyout = new Flyout
+        {
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = $"The DUT is used by {who}, idle for {idle:0} s." },
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { take, cancel } },
+                },
+            },
+        };
+        take.Click += async (_, _) =>
+        {
+            flyout.Hide();
+            await TakeControl(force: true);
+        };
+        cancel.Click += (_, _) => flyout.Hide();
+        flyout.ShowAt(ControlButton);
+    }
+
+    void SetControl(bool on, string text)
+    {
+        note = text;
+        View.Typing = on;
+        if (source != null)
+            source.Token = on ? input?.Token : null;
+        ControlButton.Content = on ? "Release control" : "Take control";
+        ControlButton.Classes.Set("accent", on);
+        if (on)
+        {
+            session = "yours";
+            View.Focus();
+        }
+        UpdateStatus();
     }
 
     // Log
@@ -265,6 +398,8 @@ public partial class MainWindow : Window
     }
 
     void OnCopy(object? sender, RoutedEventArgs e) => View.CopySelection();
+
+    void OnPaste(object? sender, RoutedEventArgs e) => View.Paste();
 
     void OnCopyAll(object? sender, RoutedEventArgs e)
     {

@@ -7,10 +7,12 @@
     <WrapPanel DockPanel.Dock="Top" Margin="6" ItemSpacing="6" LineSpacing="6">
       <TextBox Name="UrlBox" Width="240" PlaceholderText="http://booboot.local:8080" VerticalAlignment="Center" />
       <Button Name="ConnectButton" Content="Connect" />
+      <Button Name="ControlButton" Content="Take control" IsEnabled="False"
+              ToolTip.Tip="Open the session, to type into the console" />
       <Border Width="12" />
-      <Button Name="ClearButton" Content="Clear" ToolTip.Tip="Clear the view (Ctrl+L)" />
+      <Button Name="ClearButton" Content="Clear" ToolTip.Tip="Clear the view (Ctrl+L, in control Ctrl+Shift+L)" />
       <Button Name="CopyButton" Content="Copy" ToolTip.Tip="Copy the selection (Ctrl+C)" />
-      <Button Name="SaveButton" Content="Save..." ToolTip.Tip="Save all the text to a file (Ctrl+S)" />
+      <Button Name="SaveButton" Content="Save..." ToolTip.Tip="Save all the text to a file (Ctrl+S, in control Ctrl+Shift+S)" />
       <ToggleButton Name="FollowButton" Content="Follow" IsChecked="True"
                     ToolTip.Tip="Show new output as it comes (End)" />
       <Border Width="12" />
@@ -54,6 +56,7 @@
       <local:TerminalView.ContextMenu>
         <ContextMenu>
           <MenuItem Header="Copy" Click="OnCopy" InputGesture="Ctrl+C" />
+          <MenuItem Header="Paste" Click="OnPaste" InputGesture="Ctrl+V" />
           <MenuItem Header="Copy all" Click="OnCopyAll" />
           <MenuItem Header="Select all" Click="OnSelectAll" InputGesture="Ctrl+A" />
           <Separator />

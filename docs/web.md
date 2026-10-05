@@ -6,9 +6,10 @@ on a computer, a tablet or a phone. Nothing to install.
 
 ![Console web page](web.png)
 
-Like [BooBoot Console](console.md), it only reads: it needs no session, so
-agents and other clients use the DUT as usual, and the console data is not
-changed in any way. Any number of people can watch at the same time.
+Like [BooBoot Console](console.md), watching needs no session, so agents
+and other clients use the DUT as usual, and the console data is not changed
+in any way. Any number of people can watch at the same time. To type into
+the console, take control: see [Typing](#typing).
 
 ## Features
 
@@ -29,6 +30,27 @@ changed in any way. Any number of people can watch at the same time.
 - **A- and A+** change the text size. The browser remembers it.
 - **Connection**: when the connection is lost, the page connects again and
   continues where it was. A line says when the server was restarted.
+
+## Typing
+
+"Take control" opens the BooBoot session, in the name of the address of the
+browser computer. While it is open, other clients that need the session
+(agents, `booboot` commands) get `busy`, as with any session. A blue frame
+shows that the keys go to the DUT, and the page shows the cursor.
+
+- **Keys.** Text, Enter, Backspace, Tab, Escape, the arrows, Home, End,
+  Insert and Delete are sent as a terminal sends them. Ctrl+letter sends the
+  control character: Ctrl+C stops a program on the DUT, Ctrl+D ends a shell.
+  Page Up and Page Down still scroll.
+- **Copy and paste.** Ctrl+C copies when text is selected; with no selection
+  it goes to the DUT. Pasting (Ctrl+V) sends the text to the DUT, with each
+  line break sent as Enter.
+- **Release.** "Release control" closes the session. Closing or reloading the
+  page also does. When no key is sent for the session timeout (300 s by
+  default), the session ends and the status line says so.
+- **Busy.** If another client has the session, the page shows who and its
+  idle time, and asks before taking it over. If another client takes it
+  over, typing stops and the status line says who.
 
 The page keeps the last 50,000 lines. `?lines=N` in the address changes it,
 like `http://booboot.local:8080/?lines=200000`.
@@ -60,13 +82,16 @@ The page is three small files served by the BooBoot server itself
 (`server/booboot_server/web/`), with nothing loaded from the internet. It
 reads `GET /api/v1/console/stream` (see [api.md](api.md)) and lists the logs
 with `GET /api/v1/logs`. The server reads the serial port all the time;
-viewers only read its memory, so the DUT does not see them.
+viewers only read its memory, so the DUT does not see them. Taking control
+opens a session (`POST /api/v1/session`), and the keys go through
+`POST /api/v1/console/write`.
 
 ## Limits
 
 - As in BooBoot Console, the view is line based. Programs that draw on the
   whole screen (`top`, `vi`, `menuconfig`) do not show well: use `booboot
   console attach` in a terminal for them.
-- Read only: no typing.
-- On a trusted network, anyone who can reach the server can watch, as with
-  the API.
+- Typing needs a keyboard: phones and tablets need a physical one, as the
+  page does not open the on-screen keyboard.
+- On a trusted network, anyone who can reach the server can watch and type,
+  as with the API.

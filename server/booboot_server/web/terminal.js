@@ -287,7 +287,37 @@
     }
   }
 
+  // What a terminal sends for special keys.
+  const KEYS = {
+    Enter: "\r", Backspace: "\x7f", Tab: "\t", Escape: "\x1b",
+    ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
+    Home: "\x1b[H", End: "\x1b[F", Insert: "\x1b[2~", Delete: "\x1b[3~",
+  };
+
+  // Text to send for a key event, or null to leave the key to the browser.
+  // Ctrl+letter sends a control code, except Ctrl+C with a selection (copy) and
+  // Ctrl+V (paste). Ctrl+Shift keys stay with the browser.
+  function keyData(e, hasSelection) {
+    if (e.metaKey || e.isComposing)
+      return null;
+    const altGr = e.ctrlKey && e.altKey;
+    if (e.ctrlKey && !altGr) {
+      const k = e.key.length === 1 ? e.key.toLowerCase() : "";
+      if (e.shiftKey || (k === "c" && hasSelection) || k === "v")
+        return null;
+      if (k >= "a" && k <= "z")
+        return String.fromCharCode(k.charCodeAt(0) - 96);
+      return { "[": "\x1b", "\\": "\x1c", "]": "\x1d" }[k] || null;
+    }
+    if (e.key === "Tab" && e.shiftKey)
+      return "\x1b[Z";
+    if (KEYS[e.key])
+      return KEYS[e.key];
+    return [...e.key].length === 1 ? e.key : null;
+  }
+
   exports.Terminal = Terminal;
+  exports.keyData = keyData;
   exports.parseStyle = parseStyle;
   exports.MAX_LINE = MAX_LINE;
   exports.RGB = RGB;
