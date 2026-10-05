@@ -119,6 +119,9 @@ part is connected just before its test.
      the Waveshare relay HAT? Not known yet is a valid answer.
    - The DUT serial speed (921600 if they do not know) and I/O voltage.
    - The DUT power supply voltage.
+
+   If parts are missing or the user is not sure what to use, point to
+   [hardware.md](hardware.md).
 3. Write the answers in the report file. Then go to the first step not done.
    Steps said done are checked when reached; a failed check makes the step
    not done.

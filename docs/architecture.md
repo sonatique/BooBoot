@@ -23,6 +23,8 @@ Desktop                     BooBoot board (Raspberry Pi)                DUT
 
 ## Hardware
 
+What to buy, and why: [hardware.md](hardware.md).
+
 **Relay.** A GPIO line of the board drives a small driver board, which drives
 the power relay. At rest the relay must be off, so that the DUT stays off
 while the BooBoot board boots or is down. On a Raspberry Pi, GPIO17 is pulled
@@ -58,7 +60,8 @@ The server needs:
 - Linux 5.10 or later for the `gpio` power backend,
 - USB host ports for the mux and the UART adapter, and a network link.
 
-It uses little CPU and about 20 to 30 MB of memory.
+It uses little CPU and about 20 to 30 MB of memory. Speeds and buying advice
+by model: [hardware.md](hardware.md#choosing-the-raspberry-pi).
 
 | Board | Notes |
 |---|---|

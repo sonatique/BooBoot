@@ -5,11 +5,10 @@ Raspberry Pi, part B the desktop computer. Then [First bring-up](bringup.md)
 checks each part of the hardware. An agent with a shell on your computer can
 also lead you through all of it: give it [agent-setup.md](agent-setup.md).
 
-What you need:
+What you need (which models and why: [hardware.md](hardware.md)):
 
-- A Raspberry Pi with Ethernet (3B+ recommended, any model works, see
-  [Supported boards](architecture.md#supported-boards)), its power supply, and
-  a micro SD card of 8 GB or more for its system.
+- A Raspberry Pi with Ethernet (Pi 3 or later recommended), its power supply,
+  and a micro SD card of 16 GB or more for its system.
 - A relay driver board and a relay for the DUT power.
 - A USB-SD-Mux FAST and its USB cable.
 - A USB UART adapter at the DUT I/O voltage (3.3 V or 1.8 V).
