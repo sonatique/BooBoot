@@ -28,20 +28,14 @@ tests the rest over SSH, and reports each step in `booboot-setup-report.md`.
 
 1. Use an agent that runs on your computer, on the same network as the Pi: it
    reaches the Pi over SSH.
-2. In a terminal:
-
-   ```sh
-   git clone https://github.com/sonatique/BooBoot.git
-   cd BooBoot
-   ```
-
-3. Start the agent in that folder and give it this message, with your own
-   details:
+2. Create an empty folder for the setup report, and start the agent in it.
+3. Give it this message, with your own details:
 
    ```text
-   Set up BooBoot on my Raspberry Pi. Read docs/agent-setup.md completely,
-   then follow it from phase 0. It refers to docs/install.md, docs/bringup.md
-   and docs/hardware.md.
+   Set up BooBoot on my Raspberry Pi. Read
+   https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-setup.md
+   completely, then follow it from phase 0. The other guides it refers to
+   are in the same folder of the repository.
 
    What I know already:
    - Board: [Raspberry Pi model]
