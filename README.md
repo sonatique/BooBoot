@@ -20,6 +20,40 @@ and a Python library are included.
 - [BooBoot Console](docs/console.md)
 - [Console web page](docs/web.md)
 
+## Start with an agent
+
+An agent that can run shell commands on your computer can lead the whole
+setup: it asks what is already done, tells you the manual steps, installs and
+tests the rest over SSH, and reports each step in `booboot-setup-report.md`.
+
+1. Use an agent that runs on your computer, on the same network as the Pi: it
+   reaches the Pi over SSH.
+2. In a terminal:
+
+   ```sh
+   git clone https://github.com/sonatique/BooBoot.git
+   cd BooBoot
+   ```
+
+3. Start the agent in that folder and give it this message, with your own
+   details:
+
+   ```text
+   Set up BooBoot on my Raspberry Pi. Read docs/agent-setup.md completely,
+   then follow it from phase 0. It refers to docs/install.md, docs/bringup.md
+   and docs/hardware.md.
+
+   What I know already:
+   - Board: [Raspberry Pi model]
+   - Done so far: [nothing yet, or the steps of docs/install.md already done]
+   - Relay: [not bought yet, module type, or relay HAT]
+   - DUT serial speed: [921600], I/O voltage: [3.3 V], DUT supply: [24 V DC]
+   ```
+
+To go on later, start a new session in the same folder with the same message:
+the agent finds the report file and continues from there. The rules the agent
+follows are in [docs/agent-setup.md](docs/agent-setup.md).
+
 ## Server setup (on the Raspberry Pi)
 
 1. Write Raspberry Pi OS Lite (any model, 32 or 64 bit) with Raspberry Pi
