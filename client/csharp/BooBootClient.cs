@@ -383,11 +383,22 @@ public sealed class BooBootClient : IDisposable
         return resp;
     }
 
-    static async Task<JsonElement> ReadJsonAsync(HttpResponseMessage resp, CancellationToken token)
+    async Task<JsonElement> ReadJsonAsync(HttpResponseMessage resp, CancellationToken token)
     {
-        using var stream = await resp.Content.ReadAsStreamAsync(token);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-        return doc.RootElement.Clone();
+        try
+        {
+            using var stream = await resp.Content.ReadAsStreamAsync(token);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
+            return doc.RootElement.Clone();
+        }
+        catch (Exception e) when (e is IOException or HttpRequestException or JsonException)
+        {
+            throw new BooBootException($"bad answer from {Url}: {e.Message}");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw new BooBootException($"no answer from {Url} in time");
+        }
     }
 
     static async Task<BooBootException> ErrorAsync(HttpResponseMessage resp)
