@@ -2,7 +2,8 @@
 
 From a blank SD card to the first boot of the DUT. Part A sets up the
 Raspberry Pi, part B the desktop computer. Then [First bring-up](bringup.md)
-checks each part of the hardware.
+checks each part of the hardware. An agent with a shell on your computer can
+also lead you through all of it: give it [agent-setup.md](agent-setup.md).
 
 What you need:
 

@@ -11,6 +11,7 @@ network can use it through a simple HTTP and JSON API. A command line tool
 and a Python library are included.
 
 - [Installation from zero](docs/install.md)
+- [Setup runbook for agents](docs/agent-setup.md)
 - [Architecture](docs/architecture.md)
 - [HTTP API](docs/api.md)
 - [First bring-up](docs/bringup.md)
