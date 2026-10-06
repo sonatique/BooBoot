@@ -97,7 +97,7 @@ class Browser:
         for ch in text:
             self.key(ch, ch)
 
-    def accept_dialog(self, timeout=10):
+    def accept_dialog(self, timeout=10, accept=True):
         deadline = time.monotonic() + timeout
         while not any(e.get("method") == "Page.javascriptDialogOpening" for e in self.events):
             if time.monotonic() > deadline:
@@ -105,7 +105,7 @@ class Browser:
             self.events.append(self._read(timeout))
         message = [e for e in self.events if e.get("method") == "Page.javascriptDialogOpening"][-1]
         self.events.clear()
-        self.call("Page.handleJavaScriptDialog", session=True, accept=True)
+        self.call("Page.handleJavaScriptDialog", session=True, accept=accept)
         return message["params"]["message"]
 
     def close(self):
@@ -268,9 +268,27 @@ class WebTest(unittest.TestCase):
             b.eval("document.getElementById('control').click()")
             self.assertIn("used by colleague, which is gone", b.accept_dialog())
             b.wait(info + ".includes('in control')", "gone client taken over")
+
+        # The power button works in control. Power off asks first.
+        power = "document.getElementById('power')"
+        power_state = lambda: self.dut.status()["power"]["state"]  # noqa: E731
+        self.assertEqual(b.eval(power + ".disabled"), False)
+        self.assertEqual(b.eval(power + ".textContent"), "Power off")
+        # A click that asks waits for the answer: it runs after this call returns.
+        b.eval("setTimeout(() => %s.click())" % power)
+        self.assertEqual(b.accept_dialog(accept=False), "Switch the DUT off?")
+        self.assertEqual(power_state(), "on")
+        b.eval("setTimeout(() => %s.click())" % power)
+        b.accept_dialog()
+        b.wait(power + ".textContent === 'Power on' && !%s.disabled" % power, "button after power off")
+        self.assertEqual(power_state(), "off")
+        b.eval(power + ".click()")
+        b.wait(power + ".textContent === 'Power off' && !%s.disabled" % power, "button after power on")
+        self.assertEqual(power_state(), "on")
         b.eval("document.getElementById('control').click()")
         b.wait(info + ".includes('session free')", "control released")
         self.assertFalse(self.status()["active"])
+        self.assertEqual(b.eval(power + ".disabled"), True)
 
         # Leaving the page releases the session.
         b.eval("document.getElementById('control').click()")

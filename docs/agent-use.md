@@ -290,8 +290,9 @@ Then tell them, once, in a few lines:
   you hold it as "agent of ME on COMPUTER", and others get `busy`. You
   release it when you are done or pause.
 - "Take control" in BooBoot Console or on the web page opens the session to
-  type into the console: it takes the DUT from you, or from a colleague. They
-  should tell you first, and click "Release control" after.
+  type into the console and switch the power: it takes the DUT from you, or
+  from a colleague. They should tell you first, and click "Release control"
+  after.
 - If the DUT is on (rule 3), ask whether you may take it.
 
 Then go on with the task.

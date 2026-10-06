@@ -28,6 +28,10 @@ public partial class MainWindow : Window
     // Another address of the server, for where its name does not work.
     string alsoAt = "";
     bool closing;
+    // True while a power switch of the power button runs.
+    bool switching;
+    // The question before a power off, with its answers, while it shows.
+    (Flyout Flyout, Button Yes, Button No)? powerOffQuestion;
     // True while output from before the connection is added: it is not logged.
     bool history;
     bool connectedOnce;
@@ -81,6 +85,13 @@ public partial class MainWindow : Window
             else
                 await TakeControl();
         };
+        PowerButton.Click += async (_, _) =>
+        {
+            if (power == "on")
+                AskPowerOff();
+            else
+                await SwitchPower(true);
+        };
         View.Input += text => input?.Send(text);
         View.ReadOnlyKey += (_, _) =>
         {
@@ -117,6 +128,9 @@ public partial class MainWindow : Window
     public TerminalBuffer Buffer => buffer;
 
     public TerminalView Terminal => View;
+
+    /// <summary>The power button, for tests.</summary>
+    public Button Power => PowerButton;
 
     /// <summary>The current log file, for tests.</summary>
     public string? LogPath => log.Active ? log.Path : null;
@@ -280,9 +294,12 @@ public partial class MainWindow : Window
             power != "" ? "power " + power : "",
             session != "" ? "session " + session : "",
             $"{buffer.Count:N0} lines",
-            input?.Token != null ? "in control" : note,
+            input?.Token != null ? (note != "" ? "in control, " + note : "in control") : note,
         };
         StatusText.Text = string.Join("    ", parts.Where(p => p != ""));
+        // The power button follows the power state, and works only in control.
+        PowerButton.Content = power == "on" ? "Power off" : "Power on";
+        PowerButton.IsEnabled = input?.Token != null && !switching;
     }
 
     // Control
@@ -353,6 +370,69 @@ public partial class MainWindow : Window
         };
         cancel.Click += (_, _) => flyout.Hide();
         flyout.ShowAt(ControlButton);
+    }
+
+    /// <summary>Switches the DUT power, in control.</summary>
+    public async Task SwitchPower(bool on)
+    {
+        if (input?.Token == null)
+            return;
+        switching = true;
+        UpdateStatus();
+        try
+        {
+            if (await input.PowerAsync(on) is string state)
+            {
+                power = state;
+                note = "";
+            }
+        }
+        catch (BooBootException e)
+        {
+            note = $"power {(on ? "on" : "off")} failed: {e.Message}";
+        }
+        finally
+        {
+            switching = false;
+            UpdateStatus();
+            View.Focus();
+        }
+    }
+
+    void AskPowerOff()
+    {
+        var yes = new Button { Content = "Power off" };
+        var no = new Button { Content = "Cancel" };
+        var flyout = new Flyout
+        {
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "Switch the DUT off?" },
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { yes, no } },
+                },
+            },
+        };
+        yes.Click += async (_, _) =>
+        {
+            flyout.Hide();
+            await SwitchPower(false);
+        };
+        no.Click += (_, _) => flyout.Hide();
+        powerOffQuestion = (flyout, yes, no);
+        flyout.ShowAt(PowerButton);
+    }
+
+    /// <summary>True while the question before a power off shows. For tests.</summary>
+    public bool AskingPowerOff => powerOffQuestion?.Flyout.IsOpen == true;
+
+    /// <summary>Answers the question before a power off. For tests.</summary>
+    public void AnswerPowerOff(bool yes)
+    {
+        if (powerOffQuestion is var (_, yesButton, noButton))
+            (yes ? yesButton : noButton).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     }
 
     void SetControl(bool on, string text)

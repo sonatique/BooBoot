@@ -60,6 +60,9 @@ cursor, and follows the output at each key.
   to the DUT, with each line break sent as Enter.
 - **View commands.** Page Up and Page Down still scroll. With Ctrl+Shift:
   Ctrl+Shift+A selects all, Ctrl+Shift+L clears, Ctrl+Shift+S saves.
+- **Power.** Next to "Take control", "Power on" or "Power off", after the
+  power state of the DUT, switches it. It works only in control. "Power off"
+  asks first. Power on also gives the SD card back to the DUT.
 - **Release.** "Release control" closes the session. Closing the window also
   does. When no key is sent for the session timeout (300 s by default), the
   session ends and the status bar says so.

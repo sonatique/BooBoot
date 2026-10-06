@@ -156,7 +156,7 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     await dut.PowerOffAsync();
 
     var settings = new Settings { LogFolder = tmp, LogOnConnect = true, NewLogAtPowerOn = true };
-    var window = new MainWindow(settings, url, persist: false) { Width = 1000, Height = 540 };
+    var window = new MainWindow(settings, url, persist: false) { Width = 1180, Height = 540 };
     created(window);
     window.Show();
     Check(window.Icon != null, "window icon");
@@ -253,7 +253,28 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     Check(!window.Terminal.Typing, "read only again");
     await window.TakeControl(force: true);
     await WaitFor(() => window.Status.Contains("in control"), "control taken over");
+
+    // The power button works in control. Power off asks first.
+    var powerButton = window.Power;
+    Func<Task<string?>> PowerState = async () =>
+        (await dut.StatusAsync()).GetProperty("power").GetProperty("state").GetString();
+    Action ClickPower = () => powerButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(
+        Avalonia.Controls.Button.ClickEvent));
+    Check(powerButton.IsEnabled && (string?)powerButton.Content == "Power off", "power button in control, DUT on");
+    ClickPower();
+    await WaitFor(() => window.AskingPowerOff, "power off asks first");
+    window.AnswerPowerOff(false);
+    Check(!window.AskingPowerOff && await PowerState() == "on", "power off canceled");
+    ClickPower();
+    await WaitFor(() => window.AskingPowerOff, "power off asks again");
+    window.AnswerPowerOff(true);
+    await WaitFor(() => (string?)powerButton.Content == "Power on" && powerButton.IsEnabled, "button after power off");
+    Check(await PowerState() == "off", "DUT off");
+    ClickPower();
+    await WaitFor(() => (string?)powerButton.Content == "Power off" && powerButton.IsEnabled, "button after power on");
+    Check(await PowerState() == "on", "DUT on");
     await window.ReleaseControl();
+    Check(!powerButton.IsEnabled, "power button off without control");
     Check(!(await dut.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(), "control released");
 
     await dut.OpenSessionAsync("console-check");

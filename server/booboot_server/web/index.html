@@ -27,6 +27,7 @@
   }
   button:hover { background: #45494e; }
   button.on { background: #0e639c; border-color: #1177bb; color: #ffffff; }
+  button:disabled, button:disabled:hover { background: #3a3d41; color: #777777; cursor: default; }
   #screen {
     flex: 1; overflow-y: auto; padding: 4px 6px; outline: none;
     font-family: "Cascadia Mono", Consolas, Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace;
@@ -56,6 +57,7 @@
   <span id="name">BooBoot</span>
   <span id="info">Connecting...</span>
   <button id="control" title="Open the session, to type into the console">Take control</button>
+  <button id="power" title="Switch the DUT power on or off, while in control" disabled>Power on</button>
   <button id="follow" class="on" title="Show new output as it comes (End)">Follow</button>
   <button id="clear" title="Clear the view">Clear</button>
   <button id="save" title="Save all the text to a file">Save</button>

@@ -115,11 +115,7 @@ public sealed class ConsoleInput : IDisposable
             }
             catch (BooBootException e) when (e.Code is "busy" or "no_session")
             {
-                client.Session = null;
-                keys.Clear();
-                var who = e.Info?.TryGetProperty("session", out var s) == true ? s.GetProperty("client").GetString() : "";
-                Lost?.Invoke(e.Code == "busy" ? "control lost: the DUT is used by " + who
-                    : "control ended after the idle time");
+                End(e);
             }
             catch (BooBootException e)
             {
@@ -127,6 +123,29 @@ public sealed class ConsoleInput : IDisposable
             }
         }
         sending = false;
+    }
+
+    /// <summary>Switches the DUT power with the session. Returns its state, or null when the control ended.</summary>
+    public async Task<string?> PowerAsync(bool on)
+    {
+        try
+        {
+            var r = on ? await client.PowerOnAsync() : await client.PowerOffAsync();
+            return r.GetProperty("power").GetString();
+        }
+        catch (BooBootException e) when (e.Code is "busy" or "no_session")
+        {
+            End(e);
+            return null;
+        }
+    }
+
+    /// <summary>Forgets a session that another client took, or that ended, and says why.</summary>
+    void End(BooBootException e)
+    {
+        Forget();
+        var who = e.Info?.TryGetProperty("session", out var s) == true ? s.GetProperty("client").GetString() : "";
+        Lost?.Invoke(e.Code == "busy" ? "control lost: the DUT is used by " + who : "control ended after the idle time");
     }
 
     /// <summary>Forgets the session, already ended on the server.</summary>

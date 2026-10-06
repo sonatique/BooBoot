@@ -3,13 +3,15 @@
         xmlns:local="using:BooBootConsole"
         x:Class="BooBootConsole.MainWindow"
         Title="BooBoot Console" Icon="/Assets/booboot.ico"
-        Width="1100" Height="700" MinWidth="400" MinHeight="200">
+        Width="1180" Height="700" MinWidth="400" MinHeight="200">
   <DockPanel>
     <WrapPanel DockPanel.Dock="Top" Margin="6" ItemSpacing="6" LineSpacing="6">
       <TextBox Name="UrlBox" Width="240" PlaceholderText="http://booboot.local:8080" VerticalAlignment="Center" />
       <Button Name="ConnectButton" Content="Connect" />
       <Button Name="ControlButton" Content="Take control" IsEnabled="False"
               ToolTip.Tip="Open the session, to type into the console" />
+      <Button Name="PowerButton" Content="Power on" IsEnabled="False"
+              ToolTip.Tip="Switch the DUT power on or off, while in control" />
       <Border Width="12" />
       <Button Name="ClearButton" Content="Clear" ToolTip.Tip="Clear the view (Ctrl+L, in control Ctrl+Shift+L)" />
       <Button Name="CopyButton" Content="Copy" ToolTip.Tip="Copy the selection (Ctrl+C)" />

@@ -143,7 +143,7 @@ browser: the [console web page](docs/web.md), served by the BooBoot board.
 [latest release](https://github.com/sonatique/BooBoot/releases/latest) has it
 ready to run for Windows and Linux. Both need no session to watch, so they
 can watch while an agent works. "Take control" in either
-opens the session, to type into the console.
+opens the session, to type into the console and switch the DUT power.
 
 ## Development
 

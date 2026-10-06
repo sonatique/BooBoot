@@ -60,6 +60,9 @@ While in control, the page sends a heartbeat every 10 s.
 - **Copy and paste.** Ctrl+C copies when text is selected; with no selection
   it goes to the DUT. Pasting (Ctrl+V) sends the text to the DUT, with each
   line break sent as Enter.
+- **Power.** Next to "Take control", "Power on" or "Power off", after the
+  power state of the DUT, switches it. It works only in control. "Power off"
+  asks first. Power on also gives the SD card back to the DUT.
 - **Release.** "Release control" closes the session. Closing or reloading the
   page also does. When no key is sent for the session timeout (300 s by
   default), the session ends and the status line says so.

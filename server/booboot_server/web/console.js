@@ -10,6 +10,7 @@
   const term = new T.Terminal(Number(params.get("lines")) || 50000);
   const $ = id => document.getElementById(id);
   const screen = $("screen"), panel = $("panel"), followButton = $("follow"), controlButton = $("control");
+  const powerButton = $("power");
   const BLOCK = 100;  // lines per block of the screen
   const PALETTE = [
     "#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
@@ -20,6 +21,8 @@
   let follow = true, holding = false, scheduled = false;
   // Control: the session token, and the keys waiting to be sent.
   let token = "", note = "", keys = "", sending = false;
+  // True while a power switch of the power button runs.
+  let switching = false;
 
   // Screen: line divs in blocks. nodes[i] shows line domFirst + i.
   let nodes = [], domFirst = 0, from = 0;
@@ -172,8 +175,11 @@
 
   function showInfo() {
     const parts = [connection, address && "also at " + address, power && "power " + power, session && "session " + session,
-      term.lines.length.toLocaleString("en") + " lines", token ? "in control" : note];
+      term.lines.length.toLocaleString("en") + " lines", token ? (note ? "in control, " + note : "in control") : note];
     $("info").textContent = parts.filter(Boolean).join("   ");
+    // The power button follows the power state, and works only in control.
+    powerButton.textContent = power === "on" ? "Power off" : "Power on";
+    powerButton.disabled = !token || switching;
     $("name").textContent = name || "BooBoot";
     document.title = name ? name + " - BooBoot" : "BooBoot";
   }
@@ -374,6 +380,32 @@
     }
   }
 
+  // The control ended on the server: another client took the session, or it ended after the idle time.
+  function lost(err) {
+    setControl("", err.code === "busy" ? "control lost: the DUT is used by " + err.info.session.client
+      : "control ended after the idle time");
+  }
+
+  async function switchPower() {
+    const on = power !== "on";
+    if (!on && !confirm("Switch the DUT off?"))
+      return;
+    switching = true;
+    schedule();
+    try {
+      power = (await api("PUT", "/power", { state: on ? "on" : "off" })).power;
+      note = "";
+    } catch (err) {
+      if (err.code === "busy" || err.code === "no_session")
+        lost(err);
+      else
+        note = `power ${on ? "on" : "off"} failed: ${err.message}`;
+    }
+    switching = false;
+    schedule();
+    screen.focus();
+  }
+
   async function releaseControl() {
     const t = token;
     setControl("", "");
@@ -404,8 +436,7 @@
         await api("POST", "/console/write", { text });
       } catch (err) {
         if (err.code === "busy" || err.code === "no_session")
-          setControl("", err.code === "busy" ? "control lost: the DUT is used by " + err.info.session.client
-            : "control ended after the idle time");
+          lost(err);
         else
           note = "keys not sent: " + err.message;
         schedule();
@@ -482,6 +513,7 @@
 
   followButton.onclick = () => setFollow(!follow);
   controlButton.onclick = () => (token ? releaseControl() : takeControl());
+  powerButton.onclick = switchPower;
   $("clear").onclick = () => {
     term.clear();
     setFollow(true);
