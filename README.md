@@ -14,6 +14,7 @@ and a Python library are included.
 - [Hardware](docs/hardware.md)
 - [Setup runbook for agents](docs/agent-setup.md)
 - [Usage runbook for agents](docs/agent-use.md)
+- [Update runbook for agents](docs/agent-update.md)
 - [Architecture](docs/architecture.md)
 - [HTTP API](docs/api.md)
 - [First bring-up](docs/bringup.md)
@@ -60,20 +61,6 @@ https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-use.md
 and follow it, with the unit at booboot.local.
 ```
 
-### Update
-
-To update a unit that you look after, and the BooBoot tools on your
-computer, to the latest release:
-
-```text
-Update BooBoot. I look after the unit at USER@booboot.local. Read
-https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-use.md
-and follow its section 6.
-```
-
-The agent says what is new, asks before it switches the DUT off for the
-update, and turns new features like scripts on only if you ask.
-
 The agent checks the unit without changing it, installs the client and
 BooBoot Console on your computer if needed, starts BooBoot Console for you,
 explains the basics, and goes on with the task. It treats the unit as shared
@@ -82,6 +69,20 @@ disturbs a DUT that is on, and holds the session only while it uses it. With
 an SSH login on the BooBoot board, write `USER@booboot.local`: the agent then
 also checks the service. The rules it follows are in
 [docs/agent-use.md](docs/agent-use.md).
+
+### Update
+
+To update a unit that you look after, and the BooBoot tools on your
+computer, to the latest release, point the agent to
+[docs/agent-update.md](docs/agent-update.md):
+
+```text
+Update BooBoot: https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-update.md
+The unit is at USER@booboot.local.
+```
+
+The agent says what is new, asks before it switches the DUT off for the
+update, and turns new features like scripts on only if you ask.
 
 ## Server setup (on the Raspberry Pi)
 

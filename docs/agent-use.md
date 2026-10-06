@@ -46,8 +46,9 @@ on the user's computer, follow section 6.
 5. **Do not change the unit.** No update, configuration change, service
    restart, reboot or log deletion. When something on the unit is wrong or
    old, tell the user, so that they tell whoever looks after it. Only if the
-   user says that they look after the unit themselves, follow section 6 for
-   an update, and [install.md](install.md) for other changes, with their
+   user says that they look after the unit themselves (pointing you to
+   [agent-update.md](agent-update.md) says it), follow section 6 for an
+   update, and [install.md](install.md) for other changes, with their
    consent for each step.
 6. **Look before you overwrite.** The card may hold a colleague's files.
    Before the first change to the SD card in a session, list the directory
@@ -363,9 +364,9 @@ Then go on with the task.
 ## 6. Update
 
 When the user asks for an update, or U2 found an older version and the user
-says that they look after the unit themselves (rule 5). Otherwise, tell the
-user that whoever looks after the unit can give an agent this file, with the
-message of the README, "Update".
+says that they look after the unit themselves (rule 5), or points you to
+[agent-update.md](agent-update.md). Otherwise, tell the user that whoever
+looks after the unit can point an agent to agent-update.md.
 
 1. **What is new.** `OLD` is the unit `version` (status): its tag is `vOLD`,
    or for a version like `0.3.0-2-gabc1234`, the commit after `-g`

@@ -218,7 +218,8 @@ It restarts the service, which switches the DUT off. With several DUTs on
 the board, run `install.sh` once per DUT, like `sudo server/install.sh dut2`:
 each run restarts the service of that DUT. New features that are off by
 default stay off, like scripts ([scripts.md](scripts.md)). An agent can do
-all this, with the tools on your computer: see the README, "Update".
+all this, with the tools on your computer: point it to
+[agent-update.md](agent-update.md).
 
 **A second DUT on the same Pi.** Connect its relay driver to another GPIO
 line, its mux and its UART adapter, then:
