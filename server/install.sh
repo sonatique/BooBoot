@@ -71,6 +71,17 @@ if [ ! -e "/etc/booboot/$NAME.ini" ]; then
     echo "Created /etc/booboot/$NAME.ini (port $PORT)"
 fi
 
+# Only root may change the server, its configuration and its data, whatever the defaults
+# of this system (like inherited ACLs): scripts of clients run here as another user.
+mkdir -p /var/lib/booboot
+for DIR in "$PREFIX" /etc/booboot /var/lib/booboot; do
+    # A file system without ACLs has none to remove.
+    if command -v setfacl > /dev/null; then
+        setfacl -R -b -k "$DIR" 2> /dev/null || true
+    fi
+    chmod -R go-w "$DIR"
+done
+
 install -m 644 "$SRC/booboot@.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable "booboot@$NAME"
