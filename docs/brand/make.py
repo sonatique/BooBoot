@@ -50,16 +50,6 @@ def ghost(x, y, w, h, r, cut, lobes):
     return path + f"V{y + r}A{r} {r} 0 0 1 {x + r} {y}Z"
 
 
-def power(cx, cy, r, width, gap, cursor_width, cursor_top, cursor_bottom, cursor_radius):
-    """Power symbol whose bar is a terminal block cursor."""
-    a = math.radians(gap)
-    x1, x2, y = cx - r * math.sin(a), cx + r * math.sin(a), cy - r * math.cos(a)
-    return (f'<path d="M{x1:.2f} {y:.2f}A{r} {r} 0 1 0 {x2:.2f} {y:.2f}" fill="none" stroke="{GREEN}" '
-            f'stroke-width="{width}" stroke-linecap="round"/>'
-            f'<rect x="{cx - cursor_width / 2:.2f}" y="{cursor_top}" width="{cursor_width}" '
-            f'height="{cursor_bottom - cursor_top}" rx="{cursor_radius}" fill="{LIGHT}"/>')
-
-
 def icon_body():
     """The ghost saying "Boo" on a 256 grid, with GRADIENT in the defs.
 
@@ -78,10 +68,12 @@ def icon_svg():
 
 
 def small_icon_svg():
-    """For 32 px and less: the ghost with the power symbol, thicker lines, and an edge for dark backgrounds."""
+    """The same ghost for 32 px and less: thicker eyes and mouth, and an edge for dark backgrounds."""
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
             f'<path d="{ghost(1, 0.5, 30, 31, 9, 8, 3)}" fill="#2B3139" stroke="#5A6470"/>'
-            + power(16, 15.5, 7.6, 3.4, 44, 4.6, 3.4, 13, 0.7) + '</svg>\n')
+            f'<rect x="7.5" y="8.5" width="5" height="8" rx="0.8" fill="{GREEN}"/>'
+            f'<rect x="17.5" y="14" width="5" height="2.5" rx="0.6" fill="{GREEN}"/>'
+            f'<ellipse cx="15.3" cy="21.6" rx="2.6" ry="3.2" fill="none" stroke="{LIGHT}" stroke-width="2"/></svg>\n')
 
 
 fonts = {}

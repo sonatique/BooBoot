@@ -4,9 +4,7 @@
 
 The icon is a ghost made of an SD card, saying "Boo!": a scarily good
 system. One eye is the block cursor of a terminal, the other winks as an
-underline cursor. At 32 px and less, the ghost shows the power symbol
-instead, its bar a block cursor: power, SD card and serial console, the
-three things that BooBoot controls.
+underline cursor.
 
 ## Files
 
@@ -16,7 +14,7 @@ three things that BooBoot controls.
 | `booboot-logo.svg`, `png/booboot-logo.png` | Icon and name, on light backgrounds |
 | `booboot-logo-dark.svg`, `png/booboot-logo-dark.png` | Icon and name, on dark backgrounds |
 | `booboot-icon.svg`, `png/booboot-icon-SIZE.png` | The icon, 48 px and more |
-| `booboot-icon-small.svg`, `png/booboot-icon-16.png` to `-32.png` | The icon, 32 px and less: power symbol, thicker lines, and an edge that shows on dark backgrounds |
+| `booboot-icon-small.svg`, `png/booboot-icon-16.png` to `-32.png` | The same icon for 32 px and less: thicker eyes and mouth, and an edge that shows on dark backgrounds |
 | `client/csharp/BooBootConsole/Assets/booboot.ico` | BooBoot Console program and window icon, 16 to 256 px |
 | `server/booboot_server/web/favicon.svg`, `favicon.ico` | Icon of the console web page in the browser tab |
 
@@ -27,9 +25,9 @@ everywhere, with no font to install.
 
 | Name | Value | Use |
 |---|---|---|
-| Green | `#23D18B` | power symbol; "Boot" on dark backgrounds |
+| Green | `#23D18B` | eyes; "Boot" on dark backgrounds |
 | Dark green | `#0E8A50` | "Boot" on light backgrounds |
-| Light | `#E6EDF3` | cursor; "Boo" on dark backgrounds |
+| Light | `#E6EDF3` | mouth; "Boo" on dark backgrounds |
 | Ink | `#1F2328` | "Boo" on light backgrounds |
 | Body | `#323A44` to `#1D2128` | ghost, top to bottom |
 | Silver | `#C9D1D9` | tagline: "Scarily good DUT control" |
