@@ -412,5 +412,6 @@ Give the user these steps (bringup.md step 6), and wait for each:
 | `pip` fails in `install.sh` | no access to PyPI | the network needs internet access during the install |
 | status: `power: unknown` | GPIO line wrong or busy | T2, then `line` in A5 |
 | no mux in `--probe` | cable, power, `sg` module | `pi 'lsusb'`, `pi 'sudo modprobe sg'`, T2 again |
+| output is shown but `console write` has no effect (`written` is only what the driver took) | TX path: adapter, TX wire to the DUT RX, or a faulty adapter | T5 loopback with the adapter off the DUT; if it fails, replace the adapter |
 | console `not connected` | adapter missing, or several adapters | T2; set `device` (A5) |
 | `busy` error, exit code 4 | another client has the session | ask the user; `session close` on that client, or wait |

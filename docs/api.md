@@ -193,6 +193,11 @@ With `format=raw`, the answer is the output bytes only, for terminals:
 Parameters: `text`, `newline` (add the line ending set on the server).
 Answer: `{"written": 5, "cursor": 5120}`.
 
+`written` is the number of bytes the serial driver of the BooBoot board
+accepted. It does not show that the DUT received them: a broken adapter, a
+missing TX wire or a DUT that does not listen all give the same answer. To
+know, wait for the reply with `console/expect` from `cursor`.
+
 ### POST /console/expect
 
 Waits for a regex in the output after a cursor.

@@ -294,7 +294,7 @@ Then go on with the task.
 | Write a whole image first (rule 6) | `bb deploy --image disk.img.xz --expect "login: " --timeout 600` |
 | Log in, then run a command | `bb console run root`, then `bb console run "uname -a" --timeout 30` |
 | Wait for a text | `bb console expect "REGEX" --timeout 60` |
-| Send text without waiting | `bb console write "text"` |
+| Send text without waiting | `bb console write "text"` (see Input below) |
 | Read the output | `bb console read --since boot --clean` (`-t`: time since power on on each line) |
 | Power | `bb power on`, `bb power off`, `bb power cycle` |
 | Boot time | `bb boottime "login: " --runs 5` |
@@ -308,6 +308,11 @@ Then go on with the task.
   command for the session timeout (300 s by default), the session ends; the
   next command opens a new one and warns that another client may have used
   the DUT meanwhile. `bb session close` releases it.
+- **Input.** `console write` and its `written` count only show that the
+  board's serial driver took the bytes, not that the DUT got them. Always
+  check the reaction: `bb console expect "REGEX"`, or `console run`, which
+  waits for the answer. Do not conclude from `written` that the input
+  arrived.
 - **Prompt.** `console run` waits for the prompt regex of the server
   configuration (`[#$>] $` by default), or `--prompt REGEX`.
 - **Timeouts.** On exit code 3, read the output
@@ -341,6 +346,7 @@ Then go on with the task.
 | `session expired, opening a new one` | no command for the session timeout | another client may have used the DUT meanwhile: check its state (U5) before going on |
 | DUT on, session free, output coming | a colleague's test runs without the session | rule 3 |
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
+| `console write` succeeds (`written`), the DUT never reacts, but its output is shown | the TX path to the DUT: adapter, TX wire to the DUT RX, or the adapter itself | report (rule 5); the unit's owner tests the adapter with a TX to RX loopback ([agent-setup.md](agent-setup.md), T5) |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
 | The release download fails with 404 | no release yet, or none for that version | the next way of the step |
