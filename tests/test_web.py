@@ -192,18 +192,15 @@ class WebTest(unittest.TestCase):
 
     def test_browser(self):
         chrome = find_chrome()
-        if not chrome:
-            self.skipTest("Chrome not found (set BOOBOOT_CHROME)")
+        if not chrome or not shutil.which("bash"):
+            self.skipTest("Chrome or bash not found (set BOOBOOT_CHROME)")
         self.boot()
-        profile = tempfile.mkdtemp()
-        try:
-            p = subprocess.run([chrome, "--headless", "--no-sandbox", "--disable-gpu", "--no-first-run",
-                                "--user-data-dir=" + profile, "--virtual-time-budget=5000", "--dump-dom",
-                                self.url + "/"], capture_output=True, text=True, timeout=120)
-        finally:
-            shutil.rmtree(profile, ignore_errors=True)
-        dom = p.stdout
-        self.assertIn('<span id="name">dut1</span>', dom, p.stderr[-2000:])
+        b = Browser(chrome)
+        self.addCleanup(b.close)
+        b.call("Page.navigate", session=True, url=self.url + "/")
+        b.wait("document.getElementById('screen').textContent.includes('root@fake:~# ')", "shell prompt")
+        dom = b.eval("document.documentElement.outerHTML")
+        self.assertIn('<span id="name">dut1</span>', dom)
         self.assertIn("Connected", dom)
         self.assertRegex(dom, r'<div class="m">---- power on \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} ----\n</div>')
         self.assertIn("<div>U-Boot 2024.01 (fake)\n</div>", dom)
