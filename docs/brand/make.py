@@ -30,19 +30,24 @@ GREEN = "#23D18B"
 DARK_GREEN = "#0E8A50"  # on light backgrounds
 LIGHT = "#E6EDF3"
 INK = "#1F2328"
-TAGLINE = "Power, SD card and serial console, over the network"
+TAGLINE = "Scarily good control of boards under test"
+SUBLINE = "Power, SD card and serial console, over the network"
 
 GRADIENT = ('<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">'
-            '<stop offset="0" stop-color="#323A44"/><stop offset="1" stop-color="#171A1F"/></linearGradient>')
+            '<stop offset="0" stop-color="#323A44"/><stop offset="1" stop-color="#1D2128"/></linearGradient>')
 
 
-def tile(s, r, cut):
-    """Path of a square of side s, corner radius r, with the cut corner of an SD card at the top right."""
+def ghost(x, y, w, h, r, cut, lobes):
+    """Path of a ghost made of an SD card: round top left corner, cut top right corner, scalloped hem."""
     k = min(r, cut) * 0.3
     d = k / math.sqrt(2)
-    return (f"M{r} 0H{s - cut - k:.2f}Q{s - cut} 0 {s - cut + d:.2f} {d:.2f}"
-            f"L{s - d:.2f} {cut - d:.2f}Q{s} {cut} {s} {cut + k:.2f}"
-            f"V{s - r}A{r} {r} 0 0 1 {s - r} {s}H{r}A{r} {r} 0 0 1 0 {s - r}V{r}A{r} {r} 0 0 1 {r} 0Z")
+    right, bottom = x + w, y + h
+    lobe = w / lobes / 2
+    path = (f"M{x + r} {y}H{right - cut - k:.2f}Q{right - cut} {y} {right - cut + d:.2f} {y + d:.2f}"
+            f"L{right - d:.2f} {y + cut - d:.2f}Q{right} {y + cut} {right} {y + cut + k:.2f}V{bottom - lobe:.2f}")
+    for i in range(1, lobes + 1):
+        path += f"A{lobe:.2f} {lobe:.2f} 0 0 1 {right - 2 * lobe * i:.2f} {bottom - lobe:.2f}"
+    return path + f"V{y + r}A{r} {r} 0 0 1 {x + r} {y}Z"
 
 
 def power(cx, cy, r, width, gap, cursor_width, cursor_top, cursor_bottom, cursor_radius):
@@ -56,11 +61,16 @@ def power(cx, cy, r, width, gap, cursor_width, cursor_top, cursor_bottom, cursor
 
 
 def icon_body():
-    """The icon on a 256 grid, with GRADIENT in the defs."""
-    shape = tile(224, 40, 64)
-    return (f'<g transform="translate(16 16)"><path d="{shape}" fill="url(#tile)"/>'
-            f'<path d="{shape}" fill="none" stroke="#FFFFFF" stroke-opacity="0.1" stroke-width="2"/></g>'
-            + power(128, 142, 58, 22, 42, 34, 46, 120, 4))
+    """The ghost saying "Boo" on a 256 grid, with GRADIENT in the defs.
+
+    One eye is a block cursor, the other winks as an underline cursor.
+    """
+    shape = ghost(16, 12, 224, 232, 72, 56, 4)
+    return (f'<path d="{shape}" fill="url(#tile)"/>'
+            f'<path d="{shape}" fill="none" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2.5"/>'
+            f'<rect x="74" y="82" width="32" height="50" rx="4" fill="{GREEN}"/>'
+            f'<rect x="140" y="118" width="32" height="14" rx="4" fill="{GREEN}"/>'
+            f'<ellipse cx="123" cy="174" rx="17" ry="21" fill="none" stroke="{LIGHT}" stroke-width="10"/>')
 
 
 def icon_svg():
@@ -68,10 +78,10 @@ def icon_svg():
 
 
 def small_icon_svg():
-    """For 32 px and less: thicker lines, plain tile with a light edge for dark taskbars."""
+    """For 32 px and less: the ghost with the power symbol, thicker lines, and an edge for dark backgrounds."""
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-            f'<path transform="translate(0.5 0.5)" d="{tile(31, 6, 9)}" fill="#2B3139" stroke="#5A6470"/>'
-            + power(16, 17.6, 8.4, 3.6, 44, 4.8, 4, 14.4, 0.7) + '</svg>\n')
+            f'<path d="{ghost(1, 0.5, 30, 31, 9, 8, 3)}" fill="#2B3139" stroke="#5A6470"/>'
+            + power(16, 15.5, 7.6, 3.4, 44, 4.6, 3.4, 13, 0.7) + '</svg>\n')
 
 
 fonts = {}
@@ -106,15 +116,16 @@ def logo_svg(boo, boot):
 
 
 def banner_svg():
-    words, _ = wordmark(332, 166, 124, LIGHT, GREEN)
-    tagline, _ = text(TAGLINE, SANS, 31, 336, 230)
+    words, _ = wordmark(332, 150, 124, LIGHT, GREEN)
+    tagline, _ = text(TAGLINE, SANS, 34, 336, 207)
+    subline, _ = text(SUBLINE, SANS, 26, 337, 252)
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320">'
             f'<defs>{GRADIENT}<linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">'
             '<stop offset="0" stop-color="#262C34"/><stop offset="1" stop-color="#121418"/></linearGradient></defs>'
             '<rect x="1" y="1" width="1278" height="318" rx="32" fill="url(#panel)" '
             'stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>'
             f'<g transform="translate(56 48) scale(0.875)">{icon_body()}</g>'
-            f'{words}<path d="{tagline}" fill="#9DA7B3"/></svg>\n')
+            f'{words}<path d="{tagline}" fill="#C9D1D9"/><path d="{subline}" fill="#9DA7B3"/></svg>\n')
 
 
 def chrome():

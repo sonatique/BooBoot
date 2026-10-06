@@ -2,8 +2,11 @@
 
 ![BooBoot](booboot-banner.svg)
 
-The icon is an SD card with a power symbol whose bar is the block cursor of
-a terminal: the three things that BooBoot controls.
+The icon is a ghost made of an SD card, saying "Boo!": a scarily good
+system. One eye is the block cursor of a terminal, the other winks as an
+underline cursor. At 32 px and less, the ghost shows the power symbol
+instead, its bar a block cursor: power, SD card and serial console, the
+three things that BooBoot controls.
 
 ## Files
 
@@ -13,7 +16,7 @@ a terminal: the three things that BooBoot controls.
 | `booboot-logo.svg`, `png/booboot-logo.png` | Icon and name, on light backgrounds |
 | `booboot-logo-dark.svg`, `png/booboot-logo-dark.png` | Icon and name, on dark backgrounds |
 | `booboot-icon.svg`, `png/booboot-icon-SIZE.png` | The icon, 48 px and more |
-| `booboot-icon-small.svg`, `png/booboot-icon-16.png` to `-32.png` | The icon, 32 px and less: thicker lines, and an edge that shows on dark backgrounds |
+| `booboot-icon-small.svg`, `png/booboot-icon-16.png` to `-32.png` | The icon, 32 px and less: power symbol, thicker lines, and an edge that shows on dark backgrounds |
 | `client/csharp/BooBootConsole/Assets/booboot.ico` | BooBoot Console program and window icon, 16 to 256 px |
 | `server/booboot_server/web/favicon.svg`, `favicon.ico` | Icon of the console web page in the browser tab |
 
@@ -28,10 +31,11 @@ everywhere, with no font to install.
 | Dark green | `#0E8A50` | "Boot" on light backgrounds |
 | Light | `#E6EDF3` | cursor; "Boo" on dark backgrounds |
 | Ink | `#1F2328` | "Boo" on light backgrounds |
-| Tile | `#323A44` to `#171A1F` | icon background, top to bottom |
-| Gray | `#9DA7B3` | tagline |
+| Body | `#323A44` to `#1D2128` | ghost, top to bottom |
+| Silver | `#C9D1D9` | tagline: "Scarily good control of boards under test" |
+| Gray | `#9DA7B3` | second line: "Power, SD card and serial console, over the network" |
 
-The name is in DejaVu Sans Mono Bold, the tagline in DejaVu Sans.
+The name is in DejaVu Sans Mono Bold, the taglines in DejaVu Sans.
 
 ## Making the files again
 

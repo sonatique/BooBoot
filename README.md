@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/brand/booboot-banner.svg" alt="BooBoot: power, SD card and serial console, over the network" width="720"></p>
+<p align="center"><img src="docs/brand/booboot-banner.svg" alt="BooBoot: scarily good control of boards under test" width="720"></p>
 
 Remote control of an embedded board that boots from an SD card: power, SD
 card content and serial console, over the network.
