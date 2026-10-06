@@ -78,12 +78,12 @@ stays available.
 
 ## How it works
 
-The page is three small files served by the BooBoot server itself
-(`server/booboot_server/web/`), with nothing loaded from the internet. It
-reads `GET /api/v1/console/stream` (see [api.md](api.md)) and lists the logs
-with `GET /api/v1/logs`. The server reads the serial port all the time;
-viewers only read its memory, so the DUT does not see them. Taking control
-opens a session (`POST /api/v1/session`), and the keys go through
+The page is three small files and its icon, served by the BooBoot server
+itself (`server/booboot_server/web/`), with nothing loaded from the
+internet. It reads `GET /api/v1/console/stream` (see [api.md](api.md)) and
+lists the logs with `GET /api/v1/logs`. The server reads the serial port all
+the time; viewers only read its memory, so the DUT does not see them. Taking
+control opens a session (`POST /api/v1/session`), and the keys go through
 `POST /api/v1/console/write`.
 
 ## Limits

@@ -155,6 +155,8 @@ class WebTest(unittest.TestCase):
         for name in ("terminal.js", "console.js"):
             status, kind, body = self.get("/" + name)
             self.assertEqual((status, kind), (200, "text/javascript; charset=utf-8"), name)
+        self.assertEqual(self.get("/favicon.svg")[:2], (200, "image/svg+xml"))
+        self.assertEqual(self.get("/favicon.ico")[:2], (200, "image/x-icon"))
         self.assertEqual(self.get("/nothing.js")[0], 404)
         self.assertEqual(self.get("/../server.py")[0], 404)
         self.server.web = False

@@ -27,7 +27,8 @@ MAX_WAIT = 60
 MAX_TIMEOUT = 3600
 PING = 10  # seconds between pings on an idle console stream
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-WEB_TYPES = {"html": "text/html", "js": "text/javascript", "css": "text/css"}
+WEB_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
+             "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "ico": "image/x-icon"}
 
 ROUTES = []
 
@@ -513,7 +514,7 @@ def get_log(r, m):
 
 # The console web page. Not under /api/v1.
 
-@route("GET", r"/([a-z]+\.(html|js|css))?", session=False, prefix="")
+@route("GET", r"/([a-z]+\.(%s))?" % "|".join(WEB_TYPES), session=False, prefix="")
 def web_file(r, m):
     if not r.server.web:
         raise NotFound("the web page is turned off ([server] web = no)")
@@ -523,8 +524,7 @@ def web_file(r, m):
             data = f.read()
     except FileNotFoundError:
         raise NotFound("no such file: /%s" % name) from None
-    r.send_data_headers(len(data), [("Cache-Control", "no-cache")],
-                        WEB_TYPES[name.rsplit(".", 1)[1]] + "; charset=utf-8")
+    r.send_data_headers(len(data), [("Cache-Control", "no-cache")], WEB_TYPES[name.rsplit(".", 1)[1]])
     r.wfile.write(data)
     return None
 

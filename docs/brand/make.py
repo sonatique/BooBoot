@@ -1,4 +1,4 @@
-"""Makes the BooBoot icon, logo and banner, and BooBoot Console's icon file.
+"""Makes the BooBoot icon, logo and banner, and the icons of BooBoot Console and of the web page.
 
 Needs fontTools and Pillow (pip install fonttools pillow), the DejaVu fonts,
 and Chrome or Chromium to draw the PNG files (CHROME, or chromium in PATH).
@@ -22,6 +22,7 @@ from PIL import Image
 
 BRAND = os.path.dirname(os.path.abspath(__file__))
 ICO = os.path.join(BRAND, "..", "..", "client", "csharp", "BooBootConsole", "Assets", "booboot.ico")
+WEB = os.path.join(BRAND, "..", "..", "server", "booboot_server", "web")
 MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
@@ -181,6 +182,10 @@ def main():
     os.makedirs(os.path.dirname(ICO), exist_ok=True)
     with open(ICO, "wb") as f:
         f.write(ico([(size, icon_png(size)) for size in (16, 20, 24, 32, 40, 48, 64, 128, 256)]))
+    with open(os.path.join(WEB, "favicon.svg"), "w") as f:
+        f.write(small)
+    with open(os.path.join(WEB, "favicon.ico"), "wb") as f:
+        f.write(ico([(size, icon_png(size)) for size in (16, 32, 48)]))
 
 
 if __name__ == "__main__":

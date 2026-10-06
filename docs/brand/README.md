@@ -15,6 +15,7 @@ a terminal: the three things that BooBoot controls.
 | `booboot-icon.svg`, `png/booboot-icon-SIZE.png` | The icon, 48 px and more |
 | `booboot-icon-small.svg`, `png/booboot-icon-16.png` to `-32.png` | The icon, 32 px and less: thicker lines, and an edge that shows on dark backgrounds |
 | `client/csharp/BooBootConsole/Assets/booboot.ico` | BooBoot Console program and window icon, 16 to 256 px |
+| `server/booboot_server/web/favicon.svg`, `favicon.ico` | Icon of the console web page in the browser tab |
 
 In the SVG files, the text is drawn as outlines: it looks the same
 everywhere, with no font to install.
@@ -34,9 +35,9 @@ The name is in DejaVu Sans Mono Bold, the tagline in DejaVu Sans.
 
 ## Making the files again
 
-`make.py` makes all the files above, the icon file of BooBoot Console
-included. It needs fontTools, Pillow, the DejaVu fonts and Chrome or
-Chromium:
+`make.py` makes all the files above, the icons of BooBoot Console and of
+the web page included. It needs fontTools, Pillow, the DejaVu fonts and
+Chrome or Chromium:
 
 ```sh
 pip install fonttools pillow
