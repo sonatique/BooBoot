@@ -101,8 +101,51 @@ booboot deploy BOOT.BIN image.ub --expect "login: " --timeout 120
 | Nothing at all | TX and RX swapped, GND, voltage level, `booboot console read --since boot`, or the web page `http://booboot.local:8080/` |
 | Garbage characters | Baud rate (`baudrate` in the configuration, 921600 by default) |
 | U-Boot does not start | Card content, card in the DUT slot (`booboot status`: sd card on dut) |
-| Keys have no effect | `line_ending` (`cr` by default; try `lf`) |
+| Keys have no effect | [When the DUT does not receive](#when-the-dut-does-not-receive) |
 | `run` times out | Prompt regex (`prompt` in the configuration, or `--prompt`) |
+
+Then check that the DUT receives: send a key and look for its answer. At a
+login prompt, the DUT echoes the user name:
+
+```sh
+booboot console write root
+booboot console expect root --timeout 5
+```
+
+On a DUT without a login prompt, stop U-Boot at its countdown instead:
+
+```sh
+booboot power cycle
+booboot console expect "Hit any key" --since boot --timeout 60
+booboot console write -n " "
+booboot console expect "> $" --timeout 5     # the U-Boot prompt
+```
+
+### When the DUT does not receive
+
+The DUT output shows, but keys have no effect. First, compare
+`console.written` in `booboot --json status` before and after a write. If it
+grows, the bytes leave the BooBoot board, and the cause is between the
+adapter and the DUT:
+
+- **Line ending**, when only Enter has no effect: `line_ending` (`cr` by
+  default; try `lf`).
+- **The wire** from the adapter TX to the DUT RX pin: continuity, right pin.
+  The loopback of step 5 tells whether the adapter sends.
+- **A part in series** on that line, against back-powering (step 6): a buffer
+  must be powered and enabled; a resistor must stay near 1 kOhm, as larger
+  ones round the signal too much at 921600 baud.
+- **Voltage**: an adapter below the DUT I/O voltage (1.8 V on a 3.3 V DUT) may
+  never give a high level.
+- **Another chip driving the DUT RX line**, like the on-board USB serial chip
+  of many evaluation boards: it holds the line, and the adapter cannot change
+  it. Use the board's own USB serial port instead of the adapter (`device` in
+  `[console]`), or cut the on-board path.
+
+With an oscilloscope or a logic analyzer on the DUT RX pin,
+`booboot console write -n UUUUUUUUUUUUUUUUUUUU` gives a train of pulses. No
+pulses: the wire. Pulses that do not go down to 0 V: another chip drives the
+line.
 
 ## 8. From your desktop
 

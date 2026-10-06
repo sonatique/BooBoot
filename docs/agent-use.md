@@ -341,6 +341,7 @@ Then go on with the task.
 | `session expired, opening a new one` | no command for the session timeout | another client may have used the DUT meanwhile: check its state (U5) before going on |
 | DUT on, session free, output coming | a colleague's test runs without the session | rule 3 |
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
+| The DUT does not react to `console write` | the bytes do not reach the DUT | compare `console.written` in `bb --json status` before and after a write. If it grows, the bytes left the BooBoot board: the cause is in the hardware; tell the user (bringup.md, "When the DUT does not receive"). The journal does not show successful writes |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
 | The release download fails with 404 | no release yet, or none for that version | the next way of the step |

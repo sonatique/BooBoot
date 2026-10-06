@@ -386,7 +386,18 @@ Give the user these steps (bringup.md step 6), and wait for each:
    Report the boot output and the time from power on to the expected text.
    On failure, use the table of bringup.md step 7 (nothing at all, garbage
    characters, ...), report, and ask.
-3. Optional, with consent: `pi 'booboot --url http://localhost:PORT boottime "login: " --runs 3'`.
+3. Check that the DUT receives. At a login prompt, send the user name (ask
+   the user for it; often `root`) and wait for its echo:
+
+   ```sh
+   pi 'booboot --url http://localhost:PORT console write root && booboot --url http://localhost:PORT console expect root --timeout 5'
+   ```
+
+   Without a login prompt, use the U-Boot check of bringup.md step 7. If
+   there is no echo, follow "When the DUT does not receive" in bringup.md
+   with the user: `console.written` in the status first, then the loopback
+   and the wiring. Report, and ask. F2 passes only when the DUT receives.
+4. Optional, with consent: `pi 'booboot --url http://localhost:PORT boottime "login: " --runs 3'`.
 
 ## 11. END: Final report
 
