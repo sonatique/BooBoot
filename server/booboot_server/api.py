@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import __version__, netinfo
 from .console import clean_text
 from .errors import ApiError, BadRequest, NotFound
+from .scripts import Scripts
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +123,8 @@ class Handler(BaseHTTPRequestHandler):
     def log_request(self, code="-", size="-"):
         # Reads, the writes of typed keys and heartbeats would fill the log.
         quiet = str(code).startswith("2") and (
-            (self.command == "GET" and self.path.startswith((PREFIX + "/console", PREFIX + "/status")))
+            (self.command == "GET" and self.path.startswith((PREFIX + "/console", PREFIX + "/status",
+                                                             PREFIX + "/scripts")))
             or (self.command == "POST" and self.path.startswith((PREFIX + "/console/write",
                                                                  PREFIX + "/session/heartbeat"))))
         if not quiet:
@@ -303,7 +305,7 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, dut, sessions, prompt, web=True):
+    def __init__(self, address, dut, sessions, prompt, web=True, scripts=None):
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
         super().__init__(address, Handler)
@@ -311,6 +313,11 @@ class Server(ThreadingHTTPServer):
         self.sessions = sessions
         self.prompt = prompt
         self.web = web
+        self.scripts = scripts if scripts is not None else Scripts("", sessions)
+        # Scripts reach this server on the board itself.
+        host, port = self.server_address[:2]
+        host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
+        self.scripts.url = "http://%s:%d" % ("[%s]" % host if ":" in host else host, port)
 
 
 # Session
@@ -320,6 +327,7 @@ def get_status(r, m):
     status = r.dut.status()
     status["session"] = r.server.sessions.status(r.token())
     status["network"] = netinfo.info()
+    status["script"] = r.server.scripts.running()
     return status
 
 
@@ -335,8 +343,10 @@ def open_session(r, m):
 
 @route("DELETE", "/session")
 def close_session(r, m):
-    r.server.sessions.close(r.token())
-    return {"closed": True}
+    if r.server.sessions.close(r.token()):
+        return {"closed": True}
+    # It ends when its script ends.
+    return {"closed": False, "script": r.server.scripts.running()}
 
 
 @route("POST", "/session/keepalive")
@@ -491,6 +501,44 @@ def _gone(sock):
         return not sock.recv(1, socket.MSG_PEEK)
     except OSError:
         return True
+
+
+# Scripts run on this board. Starting and stopping one needs the session; reading, not.
+
+@route("POST", "/scripts")
+def start_script(r, m):
+    token = r.token()
+    client = r.server.sessions.status(token)["client"]
+    return r.server.scripts.start(token, client, r.param("source"), str(r.param("name") or "script.py"),
+                                  r.param("args") or [], r.param_float("timeout"))
+
+
+@route("GET", "/scripts", session=False)
+def list_scripts(r, m):
+    return {"enabled": r.server.scripts.enabled, "scripts": r.server.scripts.list()}
+
+
+@route("GET", r"/scripts/(\d+)", session=False)
+def get_script(r, m):
+    return r.server.scripts.info(int(m.group(1)))
+
+
+@route("GET", r"/scripts/(\d+)/output", session=False)
+def script_output(r, m):
+    try:
+        since = int(r.param("since", 0))
+    except (TypeError, ValueError):
+        raise BadRequest("since must be a number") from None
+    wait = r.param_float("wait", 0.0, high=MAX_WAIT)
+    start, data, info = r.server.scripts.read(int(m.group(1)), since, int(r.param_float("max", CHUNK, low=1)), wait)
+    return {"cursor": start, "next": start + len(data), "lost": start > since >= 0, "text": _text(r, data),
+            "script": info}
+
+
+@route("POST", r"/scripts/(\d+)/stop")
+def stop_script(r, m):
+    client = r.server.sessions.status(r.token())["client"]
+    return r.server.scripts.stop(int(m.group(1)), "stopped by %s" % client)
 
 
 # Log files of the console on this board, one per boot. No session needed.

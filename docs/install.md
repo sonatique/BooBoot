@@ -113,6 +113,9 @@ the file. The defaults fit the wiring above. The ones most often changed:
 - `[console] baudrate`: the DUT serial speed (921600 by default),
 - `[console] device`: with several USB serial adapters, the path of the right
   one in `/dev/serial/by-id/`.
+- `[scripts] enabled`: lets clients run Python scripts on the board
+  ([scripts.md](scripts.md)). Off by default: turn it on only on a trusted
+  network.
 
 ```sh
 sudo nano /etc/booboot/dut1.ini

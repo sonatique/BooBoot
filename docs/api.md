@@ -11,10 +11,10 @@ Base URL: `http://HOST:PORT/api/v1` (default port 8080).
   `Content-Length` or chunked transfer encoding. Their parameters go in the
   query string.
 - **Session**: all endpoints except `GET /status`, `POST /session`,
-  `GET /console`, `GET /console/stream` and `GET /logs` need the header
-  `Authorization: Bearer TOKEN`. Reading the console needs no session, so
-  viewers do not stop other clients. With a valid token, `GET /console` also
-  keeps the session alive.
+  `GET /console`, `GET /console/stream`, `GET /logs` and `GET /scripts` need
+  the header `Authorization: Bearer TOKEN`. Reading the console needs no
+  session, so viewers do not stop other clients. With a valid token,
+  `GET /console` also keeps the session alive.
 - **Answers** are JSON objects, except file and raw console downloads.
 - **Errors** have an HTTP status and a JSON body:
   `{"error": "code", "message": "text", ...}`.
@@ -27,9 +27,11 @@ Base URL: `http://HOST:PORT/api/v1` (default port 8080).
 | 405 | `method_not_allowed` | Wrong HTTP method |
 | 409 | `power_on` | The operation needs the power off |
 | 409 | `operation_in_progress` | Another hardware operation runs (`operation` says which) |
+| 409 | `script_running`, `script_ended` | A script runs already; the script to stop has ended |
 | 423 | `busy` | Another client has the session (`session` says who, and when it expires) |
 | 500 | `hardware_error` | Relay, mux, card or serial port problem |
 | 503 | `unavailable` | Hardware missing or not configured |
+| 503 | `scripts_off` | Scripts are off on this unit |
 
 Some calls last long (image writes, `expect`, `run`): set the client timeout
 accordingly.
@@ -60,6 +62,9 @@ No session needed.
 (`POST /session/heartbeat`), `false` when it stopped for 30 s: the client is
 gone. `null` for clients that send none, like `booboot` commands.
 `session.heartbeat_age`: seconds since the last heartbeat, or `null`.
+`session.script`: name of the script that runs in the session, or `null`;
+`alive` is then `true`. `script`: the running script, as in
+`GET /scripts/ID`, or `null`.
 `power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off` or
 `unknown`. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
 `modified`. `operation`: running hardware operation or null.
@@ -95,7 +100,8 @@ after its idle time. Answer: session state.
 
 ### DELETE /session
 
-Ends the session.
+Ends the session: `{"closed": true}`. While a script of the session runs,
+the session ends when the script ends: `{"closed": false, "script": ...}`.
 
 ## Power
 
@@ -245,6 +251,56 @@ Parameters: `command`, `prompt` (regex, default set on the server:
 Answer: `{"matched": true, "next": 5120, "time": 15.678, "output": "..."}`.
 `output` has neither the echoed command nor the prompt line. `time` is as for
 expect, for the prompt.
+
+## Scripts
+
+Python scripts run on the BooBoot board ([scripts.md](scripts.md)), when the
+configuration of the unit allows them. Starting and stopping one needs the
+session; reading, not.
+
+### POST /scripts
+
+JSON body: `source` (the text of the script, 512 KB at most), `name` (file
+name ending in `.py`, default `script.py`), `args` (list of strings),
+`timeout` (seconds after which the script is stopped, default and maximum
+set on the server).
+
+The script runs in the session of the caller, with `BOOBOOT_URL` and
+`BOOBOOT_SESSION` set for it. Answer: the script, as in `GET /scripts/ID`.
+
+### GET /scripts
+
+`{"enabled": true, "scripts": [...]}`: the scripts kept, the newest first.
+
+### GET /scripts/ID
+
+```json
+{"id": 3, "name": "boots.py", "args": ["500"], "client": "me@desk", "state": "exited",
+ "exit_code": 0, "reason": "", "started": "2026-10-06T18:00:00", "ended": "2026-10-07T02:13:20",
+ "time": 29600.2, "timeout": 86400, "output": 52310}
+```
+
+`state`: `running`, `exited` (`exit_code` is the exit code of the script)
+or `stopped` (`reason` says why: stopped by a client, time limit, session
+taken over, server restarted; `exit_code` is minus the signal). `time`:
+seconds it ran. `output`: bytes of output since its start.
+
+### GET /scripts/ID/output
+
+Parameters: `since` (cursor, default 0, or a negative number of bytes
+before the end), `wait` (seconds to wait for new output while the script
+runs, at most 60), `max` (bytes, default 1 MB), `clean`.
+
+Answer: `{"cursor": 0, "next": 52310, "lost": false, "text": "...", "script": {...}}`.
+As for the console, every byte of output has a cursor, from 0 at the start
+of the script. The last 10 MB at least are kept: `lost` is true when the
+output from `since` was dropped. `script` is as in `GET /scripts/ID`. The
+whole output is read when `script.state` is not `running` and `next` is
+`script.output`.
+
+### POST /scripts/ID/stop
+
+Stops the script: SIGTERM, then SIGKILL 5 s later. Answer: the script.
 
 ## Log files
 

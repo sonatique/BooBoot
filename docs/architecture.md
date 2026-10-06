@@ -85,6 +85,7 @@ Automation GmbH (pure Python, no dependencies) to switch the mux. Also used:
 |---|---|
 | `api.py` | HTTP server (one thread per request), routes, parameters, errors |
 | `session.py` | One client at a time (see Sessions) |
+| `scripts.py` | Python scripts of clients, run on the board as another user ([scripts.md](scripts.md)) |
 | `dut.py` | State and safety rules; one hardware operation at a time |
 | `power.py`, `gpio.py` | Power backends; GPIO through the kernel character device (ioctl) |
 | `sdmux.py` | Finds the mux in sysfs, switches it with `usbsdmux` |
@@ -116,7 +117,8 @@ Only one client may use the DUT at a time.
 - Reading the console needs no session: viewers can watch while another
   client uses the DUT. To type, a viewer opens the session like any client.
 - A session never expires while one of its requests runs (like a long image
-  write or an expect).
+  write or an expect), or while a script of it runs on the board. Taking a
+  session over stops its script.
 
 ### Safety rules
 

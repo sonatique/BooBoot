@@ -331,6 +331,35 @@ public sealed class BooBootClient : IDisposable
         return (await ExpectAsync(pattern, since: "boot", timeout: timeout)).Time;
     }
 
+    // Scripts
+
+    /// <summary>
+    /// Starts a Python script on the BooBoot board, in this session. The script uses the DUT with
+    /// booboot.Client.from_env(), in this session. It goes on when this client disconnects: its output
+    /// is kept on the board.
+    /// </summary>
+    /// <param name="timeout">Seconds after which the script is stopped.</param>
+    public Task<JsonElement> RunScriptAsync(string source, string name = "script.py", IEnumerable<string>? args = null,
+        double? timeout = null) =>
+        SendJsonAsync(HttpMethod.Post, "/scripts", Body(("source", source), ("name", name),
+            ("args", args?.ToList() ?? new List<string>()), ("timeout", timeout)));
+
+    /// <summary>The scripts kept on the board, the newest first: enabled, scripts.</summary>
+    public Task<JsonElement> ScriptsAsync() => SendJsonAsync(HttpMethod.Get, "/scripts");
+
+    /// <summary>A script: state (running, exited or stopped), exit_code, reason, output (bytes), ...</summary>
+    public Task<JsonElement> ScriptAsync(int id) => SendJsonAsync(HttpMethod.Get, $"/scripts/{id}");
+
+    /// <summary>
+    /// Output of a script from a cursor, negative for bytes before the end: text, cursor, next, lost and
+    /// script. Waits up to wait seconds for new output while the script runs.
+    /// </summary>
+    public Task<JsonElement> ScriptOutputAsync(int id, long since = 0, double wait = 0) =>
+        SendJsonAsync(HttpMethod.Get, $"/scripts/{id}/output" + Query(("since", since), ("wait", wait > 0 ? wait : null)),
+            null, TimeSpan.FromSeconds(wait));
+
+    public Task<JsonElement> StopScriptAsync(int id) => SendJsonAsync(HttpMethod.Post, $"/scripts/{id}/stop");
+
     static MatchResult Match(JsonElement r, string textName) =>
         new MatchResult(r.GetProperty("matched").GetBoolean(), r.GetProperty(textName).GetString() ?? "",
             r.GetProperty("next").GetInt64(),
@@ -362,6 +391,12 @@ public sealed class BooBootClient : IDisposable
                         break;
                     case double d:
                         writer.WriteNumber(key, d);
+                        break;
+                    case IEnumerable<string> list:
+                        writer.WriteStartArray(key);
+                        foreach (var item in list)
+                            writer.WriteStringValue(item);
+                        writer.WriteEndArray();
                         break;
                     default:
                         throw new ArgumentException($"unsupported value for {key}: {value?.GetType()}");

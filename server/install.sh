@@ -35,6 +35,8 @@ PYTHONPATH=$PREFIX exec $PREFIX/venv/bin/python3 -m booboot_server "\$@"
 EOF
 chmod 755 /usr/local/bin/booboot-server
 install -m 755 "$SRC/../client/booboot.py" /usr/local/bin/booboot
+# The module for scripts run on this board.
+install -m 644 "$SRC/../client/booboot.py" "$PREFIX/booboot.py"
 
 # The version comes from git: the tag, like 0.3.0, or 0.3.0-2-gabc1234 for a later commit.
 # git runs as the owner of the clone: it refuses a repository of another user.
@@ -43,7 +45,13 @@ VERSION=$(su "$(stat -c %U "$REPO")" -s /bin/sh -c "git -C '$REPO' describe --ta
 case "$VERSION" in
     "" | *[!0-9A-Za-z.+-]*) VERSION=dev ;;
 esac
-sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" "$PREFIX/booboot_server/__init__.py" /usr/local/bin/booboot
+sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" "$PREFIX/booboot_server/__init__.py" /usr/local/bin/booboot \
+    "$PREFIX/booboot.py"
+
+# Scripts sent by clients run as this user, without access to the hardware.
+if ! id -u booboot-script > /dev/null 2>&1; then
+    useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin booboot-script
+fi
 
 # The USB-SD-Mux is controlled through the SCSI generic driver.
 echo sg > /etc/modules-load.d/booboot.conf

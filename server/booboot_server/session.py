@@ -3,6 +3,9 @@
 Clients that stay connected, like the viewers, send a heartbeat while they hold
 the session. When it stops, their client is gone: the session can be taken
 over with force "gone", which takes it only from such a client.
+
+A script running on the board holds the session of the client that started
+it: the session does not expire, and counts as alive, until the script ends.
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ class Sessions:
     def __init__(self, default_timeout=300, max_timeout=3600):
         self.default_timeout = default_timeout
         self.max_timeout = max_timeout
+        # Called with (token, client) when a session with a script is taken over by client.
+        self.on_takeover = None
         self._lock = threading.Lock()
         self._s = None
 
@@ -43,8 +48,9 @@ class Sessions:
             "idle": round(idle, 1),
             "expires_in": round(max(0.0, s["timeout"] - idle), 1),
             # None: the client sends no heartbeat.
-            "alive": None if beat is None else beat <= GONE_AFTER,
+            "alive": True if s["script"] else None if beat is None else beat <= GONE_AFTER,
             "heartbeat_age": None if beat is None else round(beat, 1),
+            "script": s["script"],
         }
 
     def _busy(self):
@@ -72,6 +78,7 @@ class Sessions:
             self._expire()
             if self._s and not (force is True or (force == "gone" and self._info(self._s)["alive"] is False)):
                 raise self._busy()
+            old = self._s
             s = {
                 "token": secrets.token_hex(16),
                 "client": client,
@@ -80,14 +87,24 @@ class Sessions:
                 "seen": time.monotonic(),
                 "beat": None,
                 "active": 0,
+                "script": None,  # name of the running script
+                "closing": False,  # closed while its script runs
             }
             self._s = s
-            return s["token"], self._info(s)
+            info = self._info(s)
+        if old and old["script"] and self.on_takeover:
+            self.on_takeover(old["token"], client)
+        return s["token"], info
 
     def close(self, token):
+        """End the session, or with a script running, when the script ends. Return True if ended now."""
         with self._lock:
-            self._check(token)
+            s = self._check(token)
+            if s["script"]:
+                s["closing"] = True
+                return False
             self._s = None
+            return True
 
     def check(self, token):
         with self._lock:
@@ -102,6 +119,25 @@ class Sessions:
             info["active"] = True
             info["yours"] = True
             return info
+
+    def hold(self, token, script):
+        """A script of the session starts. Until release, the session does not expire and counts as alive."""
+        with self._lock:
+            s = self._check(token)
+            s["active"] += 1
+            s["script"] = script
+            s["seen"] = time.monotonic()
+
+    def release(self, token):
+        """The script of the session ended. A session closed meanwhile ends now."""
+        with self._lock:
+            s = self._s
+            if s and s["token"] == token:
+                s["active"] -= 1
+                s["script"] = None
+                s["seen"] = time.monotonic()
+                if s["closing"]:
+                    self._s = None
 
     def begin(self, token):
         """Mark the start of a request. The session does not expire while requests run."""

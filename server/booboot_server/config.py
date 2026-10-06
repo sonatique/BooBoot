@@ -36,6 +36,16 @@ DEFAULTS = {
         "buffer_size": "8388608",
         "keep_logs": "100",
     },
+    "scripts": {
+        "enabled": "no",
+        "user": "booboot-script",
+        "dir": "/var/lib/booboot/{name}/scripts",
+        "max_time": "86400",
+        "memory": "512",
+        "output": "10",
+        "keep": "20",
+        "file_size": "100",
+    },
 }
 
 

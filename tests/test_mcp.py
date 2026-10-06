@@ -109,7 +109,7 @@ class McpServerTest(unittest.TestCase):
             for arg in t["inputSchema"]["required"]:
                 self.assertIn(arg, t["inputSchema"]["properties"], t["name"])
         read_only = {t["name"] for t in tools if t["annotations"]["readOnlyHint"]}
-        self.assertEqual(read_only, {"status", "console_read", "console_expect"})
+        self.assertEqual(read_only, {"status", "console_read", "console_expect", "script_output", "script_list"})
 
         self.assertEqual(self.mcp.request("resources/list")["error"]["code"], -32601)
         self.assertEqual(self.mcp.request("tools/call", {"name": "nothing"})["error"]["code"], -32602)
@@ -203,6 +203,31 @@ class McpServerTest(unittest.TestCase):
         self.assertFalse(failed)
         self.assertTrue(text.startswith("Note: the session had expired and was opened again."), text)
         self.assertEqual(m.tool("power", action="off"), (False, "Power off."))
+
+    def test_scripts(self):
+        m = self.mcp
+        m.start()
+        path = os.path.join(self.tmp, "power.py")
+        with open(path, "w") as f:
+            f.write("import sys, booboot\nprint(booboot.Client.from_env().power_off()['power'], sys.argv[1:])\n")
+        failed, text = m.tool("script_run", path=path, args=["a"])
+        self.assertFalse(failed, text)
+        self.assertRegex(text, r"^Script (\d+) \(power.py\) started.\nOutput from cursor 0 to 10:\noff \['a'\]\n\n"
+                               r"Script \1 exited with code 0 after [0-9.]+s.$")
+        failed, text = m.tool("script_run", source="import time\nprint('tick')\ntime.sleep(60)\n", wait=0)
+        sid = int(text.split()[1])
+        self.assertIn("Script %d is running" % sid, text)
+        self.assertIn("Script %d is running" % sid, m.tool("script_list")[1])
+        self.assertIn("tick", m.tool("script_output", wait=1)[1])
+        self.assertIn("Script %d stopped after" % sid, m.tool("script_stop")[1])
+        self.assertIn("exited with code 0", m.tool("script_output", id=sid - 1)[1])
+        # Released while a script runs, the session ends with the script.
+        m.tool("script_run", source="import time\ntime.sleep(60)\n", wait=0)
+        self.assertIn("ends when script %d (script.py) ends" % (sid + 1), m.tool("session", action="release")[1])
+        other = booboot.Client(self.url)
+        self.assertEqual(other.status()["session"]["script"], "script.py")
+        other.open_session("cleanup", force=True)
+        other.close_session()
 
     @mock.patch.object(session, "GONE_AFTER", 1.0)
     def test_gone_client(self):

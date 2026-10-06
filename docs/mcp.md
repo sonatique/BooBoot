@@ -46,6 +46,10 @@ On Windows, the command is usually `python` or `py`. Options go before `mcp`:
 | `console_expect` | Wait for a regex in the console output | no |
 | `console_run` | Send a command line and return its output | yes |
 | `boot_time` | Power cycle and measure the time to a regex, once or several times | yes |
+| `script_run` | Run a Python script on the BooBoot board ([scripts.md](scripts.md)); it goes on if the connection drops | yes |
+| `script_output` | Output of a script after a cursor, and its state | no |
+| `script_stop` | Stop the running script | yes |
+| `script_list` | The scripts kept on the board | no |
 | `session` | Open (or take) and release the session | no |
 
 Tools that only read are marked read-only, and the others destructive (MCP

@@ -118,7 +118,8 @@ def _copy(src, dst):
 class Client:
     """Access to one BooBoot server, that is one DUT.
 
-    All calls but status(), open_session(), read(), read_raw() and stream()
+    All calls but status(), open_session(), read(), read_raw(), stream() and
+    the script reads (scripts(), script(), script_output(), follow_script())
     need the session.
     Errors raise booboot.Error.
 
@@ -126,6 +127,18 @@ class Client:
     the client tries the name without .local, then the addresses given, and
     goes on with the first one that answers. on_note(text) is told which.
     """
+
+    @classmethod
+    def from_env(cls, **kwargs):
+        """Client of BOOBOOT_URL with the session BOOBOOT_SESSION, as a script run on the board gets them.
+
+        Without BOOBOOT_SESSION, like on a desktop computer, it opens a session.
+        """
+        c = cls(os.environ.get("BOOBOOT_URL", DEFAULT_URL), session=os.environ.get("BOOBOOT_SESSION") or None,
+                **kwargs)
+        if not c.session:
+            c.open_session()
+        return c
 
     def __init__(self, url=DEFAULT_URL, session=None, timeout=30.0, addresses=(), on_note=None):
         self.url = url.rstrip("/")
@@ -213,11 +226,13 @@ class Client:
         return info
 
     def close_session(self):
+        """Release the session. While a script of the session runs, it ends with the script: "closed" is false."""
         if self.session:
             try:
-                self.request("DELETE", "/session")
+                return self.request("DELETE", "/session")
             finally:
                 self.session = None
+        return None
 
     def keepalive(self):
         return self.request("POST", "/session/keepalive")
@@ -375,6 +390,49 @@ class Client:
         r = self.expect(pattern, since="boot", timeout=timeout)
         return r["time"] if r["matched"] else None
 
+    # Scripts
+
+    def run_script(self, source, name="script.py", args=(), timeout=None):
+        """Start a Python script on the BooBoot board, in this session. Return its information.
+
+        The script uses the DUT with Client.from_env(), in this session. It goes
+        on when this client disconnects: its output is kept on the board.
+        source: text of the script. args: its arguments.
+        timeout: seconds after which it is stopped.
+        """
+        return self.request("POST", "/scripts", json_body={
+            "source": source, "name": name, "args": list(args), "timeout": timeout})
+
+    def scripts(self):
+        """The scripts kept on the board, the newest first: {"enabled", "scripts"}."""
+        return self.request("GET", "/scripts")
+
+    def script(self, script_id):
+        """Information on a script: "state" (running, exited or stopped), "exit_code", "reason", ..."""
+        return self.request("GET", "/scripts/%d" % script_id)
+
+    def script_output(self, script_id, since=0, wait=0, clean=False, max_bytes=None):
+        """Output of a script from a cursor: {"text", "cursor", "next", "lost", "script"}.
+
+        since: cursor, or a negative number of bytes before the end.
+        wait: seconds to wait for new output while the script runs.
+        """
+        params = {"since": since, "wait": wait or None, "clean": 1 if clean else None, "max": max_bytes}
+        return self.request("GET", "/scripts/%d/output" % script_id, params=params, timeout=wait + self.timeout)
+
+    def follow_script(self, script_id, since=0):
+        """Yield the output of a script as (text, next cursor), until the script ends."""
+        while True:
+            r = self.script_output(script_id, since, wait=10)
+            since = r["next"]
+            if r["text"]:
+                yield r["text"], since
+            if r["script"]["state"] != "running" and since >= r["script"]["output"]:
+                return
+
+    def stop_script(self, script_id):
+        return self.request("POST", "/scripts/%d/stop" % script_id)
+
 
 # Command line
 
@@ -389,6 +447,7 @@ examples:
   booboot boottime "login: " --runs 5
   booboot sd put BOOT.BIN image.ub 1:/
   booboot console attach
+  booboot script run soak.py 500
 
 exit codes: 0 ok, 1 error, 2 bad arguments, 3 timeout (pattern not seen),
 4 busy (another client has the session)
@@ -543,7 +602,9 @@ def _print_text(text):
 def _holder(ses):
     """The client of a session, and its state, for messages."""
     state = "idle %gs, free in %gs at most" % (ses.get("idle", 0), ses.get("expires_in", 0))
-    if ses.get("alive") is True:
+    if ses.get("script"):
+        state = "running the script %s on the board" % ses["script"]
+    elif ses.get("alive") is True:
         state = "connected, " + state
     elif ses.get("alive") is False:
         state = "gone: no heartbeat for %gs; %s" % (ses.get("heartbeat_age", 0), state)
@@ -572,6 +633,8 @@ def _status_text(s):
     net = s.get("network")
     if net:
         lines.append("network: " + ", ".join([net["hostname"]] + net["addresses"]))
+    if s.get("script"):
+        lines.append("script:  %(name)s (%(id)d), running for %(time)gs, started by %(client)s" % s["script"])
     if s["operation"]:
         lines.append("busy:    " + s["operation"]["name"])
     return "\n".join(lines)
@@ -603,8 +666,11 @@ def cmd_session_close(args):
         print("no session")
         return
     try:
-        c.close_session()
-        print("session closed")
+        r = c.close_session()
+        if r.get("closed") is False and r.get("script"):
+            print("the session ends when script %(id)d (%(name)s) ends" % r["script"])
+        else:
+            print("session closed")
     except Error as e:
         if e.code not in ("no_session", "busy"):
             raise
@@ -844,6 +910,119 @@ def cmd_console_attach(args):
         sys.stderr.write("\r\n[closed]\r\n")
 
 
+def _script_name(path):
+    """A file name the server takes, from the name of a local file."""
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.basename(path))
+    if not name.endswith(".py"):
+        name += ".py"
+    return name if re.match(r"[A-Za-z0-9_]", name) and name != "booboot.py" else "_" + name
+
+
+def _script_id(c, given, running=False):
+    """The script given, or the latest one, or with running, the running one."""
+    if given is not None:
+        return given
+    for s in c.scripts()["scripts"]:
+        if not running or s["state"] == "running":
+            return s["id"]
+    raise Error("no script is running" if running else "no script on this board")
+
+
+def _script_end(info):
+    """Print how a script ended. Return the exit code for this command."""
+    if info["state"] == "exited":
+        _warn("script %d exited with code %d" % (info["id"], info["exit_code"]))
+        return None if info["exit_code"] == 0 else EXIT_ERROR
+    _warn("script %d stopped: %s" % (info["id"], info["reason"]))
+    return EXIT_ERROR
+
+
+def _follow_script(c, sid, since, show=True):
+    """Print the output of a script until it ends, through connection losses. Return its information."""
+    waiting = False
+    try:
+        while True:
+            try:
+                for text, cursor in c.follow_script(sid, since):
+                    since = cursor
+                    if show:
+                        sys.stdout.write(text)
+                        sys.stdout.flush()
+                return c.script(sid)
+            except Error as e:
+                if e.status:
+                    raise
+                if not waiting:
+                    _warn("%s; trying again until it answers (Ctrl-C to stop: the script goes on)" % e.message)
+                    waiting = True
+                time.sleep(5)
+    except KeyboardInterrupt:
+        _warn("script %d goes on. Follow it: booboot script output %d --since %d -f. Stop it: booboot script stop %d"
+              % (sid, sid, since, sid))
+        raise
+
+
+def cmd_script_run(args):
+    with open(args.file, encoding="utf-8") as f:
+        source = f.read()
+    c = _client(args)
+    info = c.run_script(source, _script_name(args.file), args.args, args.timeout)
+    if args.detach:
+        if args.json:
+            return _print_json(info)
+        print("script %d started" % info["id"])
+        return None
+    if not args.json:
+        _warn("script %d started" % info["id"])
+    info = _follow_script(c, info["id"], 0, show=not args.json)
+    if args.json:
+        _print_json(info)
+    return _script_end(info)
+
+
+def cmd_script_output(args):
+    c = _client(args, session=False)
+    sid = _script_id(c, args.id)
+    if args.json:
+        return _print_json(c.script_output(sid, args.since))
+    if args.follow:
+        return _script_end(_follow_script(c, sid, args.since))
+    since = args.since
+    while True:
+        r = c.script_output(sid, since)
+        sys.stdout.write(r["text"])
+        since = r["next"]
+        if not r["text"] or since >= r["script"]["output"]:
+            break
+    sys.stdout.flush()
+    return None
+
+
+def cmd_script_list(args):
+    c = _client(args, session=False)
+    r = c.scripts()
+    if args.json:
+        return _print_json(r)
+    if not r["enabled"]:
+        _warn("scripts are off on this unit")
+    for s in r["scripts"]:
+        state = "exited %d" % s["exit_code"] if s["state"] == "exited" else s["state"]
+        line = "%4d  %-9s %-20s %s %8gs  %s" % (s["id"], state, s["name"], s["started"], s["time"], s["client"])
+        print(line + ("  (%s)" % s["reason"] if s["reason"] else ""))
+    return None
+
+
+def cmd_script_stop(args):
+    c = _client(args)
+    sid = _script_id(c, args.id, running=True)
+    c.stop_script(sid)
+    info = _follow_script(c, sid, -1, show=False)
+    if args.json:
+        return _print_json(info)
+    print("script %d stopped" % sid)
+    return None
+
+
 def cmd_deploy(args):
     c = _client(args)
     result = {"power_off": c.power_off()}
@@ -911,7 +1090,10 @@ Card paths are N:/path, N being the partition number ("/path" means "1:/path"). 
 Local paths are files on this computer.
 Every byte of console output has a cursor. "since" takes a cursor or "boot" (last \
 power on), "last" (end of the last expect or run match), "now" or "start".
-The SD card can be used only while the power is off. Power on gives it back to the DUT."""
+The SD card can be used only while the power is off. Power on gives it back to the DUT.
+Long or unattended work, like a boot loop, can run on the BooBoot board as a Python \
+script (script_run): it goes on if this connection drops, and its output stays on \
+the board (script_output)."""
 
 
 class _McpSession:
@@ -976,9 +1158,9 @@ class _McpSession:
     def close(self):
         self._stop.set()
         try:
-            self.client.close_session()
+            return self.client.close_session()
         except Error:
-            pass
+            return None
 
 
 def _arg(a, name, default=_REQUIRED):
@@ -1179,7 +1361,9 @@ def _mcp_session(s, a, report):
     action = _arg(a, "action")
     c = s.client
     if action == "release":
-        s.close()
+        r = s.close() or {}
+        if r.get("closed") is False and r.get("script"):
+            return "The session ends when script %(id)d (%(name)s) ends." % r["script"]
         return "Session released: other clients can use the DUT."
     if action != "open":
         raise ValueError("action must be open or release")
@@ -1197,6 +1381,70 @@ def _mcp_session(s, a, report):
     return "Session opened. It ends after %gs without calls." % info["timeout"]
 
 
+def _script_state(info):
+    if info["state"] == "running":
+        return "Script %d is running (%gs)." % (info["id"], info["time"])
+    if info["state"] == "exited":
+        return "Script %d exited with code %d after %gs." % (info["id"], info["exit_code"], info["time"])
+    return "Script %d stopped after %gs: %s." % (info["id"], info["time"], info["reason"])
+
+
+def _mcp_script_text(c, sid, since, wait):
+    """Output of a script from a cursor, waiting up to wait seconds for its end, and its state."""
+    deadline = time.monotonic() + min(float(wait), 3600)
+    start, text = None, ""
+    while True:
+        r = c.script_output(sid, since, wait=max(0.0, min(30.0, deadline - time.monotonic())), clean=True)
+        start = r["cursor"] if start is None else start
+        text += r["text"]
+        since, info = r["next"], r["script"]
+        if (info["state"] != "running" and since >= info["output"]) or time.monotonic() >= deadline:
+            break
+    shown = _tail(text)
+    head = "Output from cursor %d to %d" % (start, since)
+    if shown != text:
+        head += " (cut: read the start with script_output, since=%d)" % start
+    more = " Read more with script_output, since=%d." % since if info["state"] == "running" else ""
+    return "%s:\n%s\n%s%s" % (head, shown or "(none)", _script_state(info), more)
+
+
+def _mcp_script_run(s, a, report):
+    if a.get("path"):
+        path = _local(a["path"])
+        with open(path, encoding="utf-8") as f:
+            source = f.read()
+        name = _script_name(path)
+    else:
+        source = str(_arg(a, "source"))
+        name = _script_name(str(a.get("name") or "script.py"))
+    c = s.dut()
+    info = c.run_script(source, name, [str(x) for x in a.get("args") or []], a.get("timeout"))
+    return "Script %d (%s) started.\n%s" % (info["id"], name, _mcp_script_text(c, info["id"], 0, a.get("wait", 10)))
+
+
+def _mcp_script_output(s, a, report):
+    c = s.client
+    sid = _script_id(c, a.get("id"))
+    return _mcp_script_text(c, sid, int(a.get("since", 0)), a.get("wait", 0))
+
+
+def _mcp_script_stop(s, a, report):
+    c = s.dut()
+    sid = _script_id(c, a.get("id"), running=True)
+    c.stop_script(sid)
+    for _ in c.follow_script(sid, -1):
+        pass
+    return _script_state(c.script(sid))
+
+
+def _mcp_script_list(s, a, report):
+    r = s.client.scripts()
+    lines = [] if r["enabled"] else ["Scripts are off on this unit: its configuration must allow them."]
+    for info in r["scripts"]:
+        lines.append("%s %s, started %s by %s." % (_script_state(info), info["name"], info["started"], info["client"]))
+    return "\n".join(lines) or "No scripts."
+
+
 def _mcp_error_text(e):
     if e.code == "busy":
         ses = e.info.get("session", {})
@@ -1204,6 +1452,8 @@ def _mcp_error_text(e):
         if ses.get("alive") is False:
             return text + ('That client is gone. Tell the user. If they agree, take the DUT with the session '
                            'tool (action open, force "gone").')
+        if ses.get("script"):
+            return text + "Wait for the end of the script, or tell the user."
         if ses.get("alive") is True:
             return text + "That client is connected: someone may be using the DUT. Wait and try again."
         return text + ("Wait and try again. Only if the user says that this client is gone, take the DUT with "
@@ -1314,6 +1564,31 @@ MCP_TOOLS = [
            "off_time": {"type": "number", "description": "Seconds off before each boot"},
            "timeout": dict(_TIMEOUT, description="Seconds to wait for each boot, default 120")},
           ["pattern"], _mcp_boot_time),
+    _tool("script_run", "Run a script on the BooBoot board",
+          "Run a Python script on the BooBoot board, in this session. It goes on if this connection drops; its "
+          "output stays on the board. In the script, booboot.Client.from_env() is the DUT, as in the booboot "
+          "Python module: power_cycle(), expect(), run(), boot_time(), ... It has no other access to the "
+          "hardware. One script runs at a time.",
+          {"path": {"type": "string", "description": "Local Python file"},
+           "source": {"type": "string", "description": "Text of the script, instead of path"},
+           "name": {"type": "string", "description": "File name for source, default script.py"},
+           "args": {"type": "array", "items": {"type": "string"}, "description": "Arguments of the script"},
+           "timeout": {"type": "number", "description": "Seconds after which the script is stopped"},
+           "wait": {"type": "number", "description": "Seconds to wait for its end and output, default 10"}},
+          [], _mcp_script_run),
+    _tool("script_output", "Read the output of a script",
+          "Read the output of a script from a cursor, while it runs or after it ended, and its state.",
+          {"id": {"type": "integer", "description": "Script number, default the latest"},
+           "since": {"type": "integer", "description": "Cursor, default 0 (the start); negative: bytes before the end"},
+           "wait": {"type": "number", "description": "Seconds to wait for the end of the script, default 0"}},
+          [], _mcp_script_output, read_only=True, destructive=False),
+    _tool("script_stop", "Stop a script",
+          "Stop a script running on the BooBoot board.",
+          {"id": {"type": "integer", "description": "Script number, default the running one"}},
+          [], _mcp_script_stop),
+    _tool("script_list", "List the scripts",
+          "List the scripts kept on the BooBoot board, the newest first, with their state.",
+          {}, [], _mcp_script_list, read_only=True, destructive=False),
     _tool("session", "Open or release the session",
           "Only one client can use the DUT at a time. The other tools open the session when needed. "
           "release lets other clients use the DUT. open with force takes the DUT from another client.",
@@ -1555,6 +1830,28 @@ def build_parser():
     sp.add_argument("--off-time", type=float, metavar="S", help="seconds off before each boot")
     sp.add_argument("--timeout", type=float, default=120.0, metavar="S")
     sp.set_defaults(func=cmd_boottime)
+
+    scr = sub.add_parser("script", help="run Python scripts on the BooBoot board").add_subparsers(
+        dest="action", metavar="ACTION")
+    scr.required = True
+    sp = scr.add_parser("run", help="send a script to the board and run it there, showing its output; "
+                                    "it goes on if this command stops")
+    sp.add_argument("--detach", action="store_true", help="only start the script")
+    sp.add_argument("--timeout", type=float, metavar="S", help="seconds after which the script is stopped")
+    sp.add_argument("file", help="the script, a Python file. Options of this command come before it.")
+    sp.add_argument("args", nargs=argparse.REMAINDER, help="arguments of the script")
+    sp.set_defaults(func=cmd_script_run)
+    sp = scr.add_parser("output", help="print the output of a script, while it runs or after")
+    sp.add_argument("id", type=int, nargs="?", help="script number (default: the latest)")
+    sp.add_argument("--since", type=int, default=0, metavar="CURSOR",
+                    help="from this cursor; negative: bytes before the end")
+    sp.add_argument("-f", "--follow", action="store_true", help="go on until the script ends")
+    sp.set_defaults(func=cmd_script_output)
+    sp = scr.add_parser("list", help="list the scripts kept on the board")
+    sp.set_defaults(func=cmd_script_list)
+    sp = scr.add_parser("stop", help="stop a script")
+    sp.add_argument("id", type=int, nargs="?", help="script number (default: the running one)")
+    sp.set_defaults(func=cmd_script_stop)
 
     sp = sub.add_parser("mcp", help="run as an MCP server on standard input and output")
     sp.set_defaults(func=cmd_mcp)

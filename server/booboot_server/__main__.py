@@ -16,6 +16,7 @@ from .api import Server
 from .console import Console, NoPort, SerialPort, find_serial_ports
 from .dut import Dut
 from .power import CommandPower, GpioPower, NoPower, SdmuxGpioPower
+from .scripts import Scripts
 from .sdmux import UsbSdMux, find_muxes
 from .session import Sessions
 from .storage import Storage
@@ -38,16 +39,18 @@ def make_power(p, mux):
 
 
 def build(cfg, fake_dir=None):
-    """Return (dut, sessions, (host, port), prompt) from the configuration."""
-    s, p, c = cfg["server"], cfg["power"], cfg["console"]
+    """Return (dut, sessions, scripts, (host, port), prompt) from the configuration."""
+    s, p, c, sc = cfg["server"], cfg["power"], cfg["console"], cfg["scripts"]
     name = s.get("name")
     log_dir = config.expand(s.get("log_dir"), name)
     run_dir = config.expand(s.get("run_dir"), name)
+    scripts_dir = config.expand(sc.get("dir"), name)
     if fake_dir is not None:
         from .fake import FakeBoard
         board = FakeBoard(fake_dir)
         power, mux, storage, port = board.power, board.mux, board.storage, board.port
         log_dir = os.path.join(fake_dir, "log")
+        scripts_dir = os.path.join(fake_dir, "scripts")
     else:
         mux = UsbSdMux(cfg.get("sdmux", "serial"))
         storage = Storage(mux.block_device, os.path.join(run_dir, "mnt"))
@@ -57,7 +60,10 @@ def build(cfg, fake_dir=None):
     console = Console(port, c.getint("buffer_size"), log_dir, c.getint("keep_logs"), c.get("line_ending"))
     dut = Dut(name, power, mux, storage, console, p.getfloat("off_time"))
     sessions = Sessions(s.getfloat("session_timeout"), s.getfloat("session_timeout_max"))
-    return dut, sessions, (s.get("host"), s.getint("port")), c.get("prompt")
+    scripts = Scripts(scripts_dir, sessions, sc.getboolean("enabled"), sc.get("user"), sc.getfloat("max_time"),
+                      sc.getint("memory") << 20, sc.getint("output") << 20, sc.getint("keep"),
+                      sc.getint("file_size") << 20)
+    return dut, sessions, scripts, (s.get("host"), s.getint("port")), c.get("prompt")
 
 
 def probe():
@@ -107,8 +113,8 @@ def main(argv=None):
         fake_dir = None
         if args.fake is not None:
             fake_dir = args.fake or tempfile.mkdtemp(prefix="booboot-fake-")
-        dut, sessions, address, prompt = build(cfg, fake_dir)
-        server = Server(address, dut, sessions, prompt, cfg["server"].getboolean("web"))
+        dut, sessions, scripts, address, prompt = build(cfg, fake_dir)
+        server = Server(address, dut, sessions, prompt, cfg["server"].getboolean("web"), scripts)
     except (OSError, ValueError, configparser.Error) as e:
         log.error("%s", e)
         return 1
@@ -125,10 +131,13 @@ def main(argv=None):
         log.info("console web page: http://%s:%d/", host, port)
     if fake_dir is not None:
         log.info("fake hardware in %s", fake_dir)
+    if scripts.enabled:
+        log.info("scripts are on, in %s", scripts.dir)
     try:
         server.serve_forever()
     finally:
         server.server_close()
+        scripts.close()
         dut.stop()
     return 0
 

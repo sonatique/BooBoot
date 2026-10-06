@@ -20,12 +20,14 @@ CLIENT = os.path.join(ROOT, "client", "booboot.py")
 logging.basicConfig(level=logging.CRITICAL)
 
 
-def start_fake_server(directory, session_timeout=300):
-    """Start a server with fake hardware. Return (server, dut, url)."""
+def start_fake_server(directory, session_timeout=300, **scripts):
+    """Start a server with fake hardware. Return (server, dut, url). scripts: [scripts] settings."""
     cfg = config.load(None)
     cfg["server"]["session_timeout"] = str(session_timeout)
-    dut, sessions, _, prompt = build(cfg, directory)
-    server = Server(("127.0.0.1", 0), dut, sessions, prompt)
+    cfg["scripts"].update(enabled="yes", user="")
+    cfg["scripts"].update({k: str(v) for k, v in scripts.items()})
+    dut, sessions, scripts, _, prompt = build(cfg, directory)
+    server = Server(("127.0.0.1", 0), dut, sessions, prompt, scripts=scripts)
     dut.start()
     threading.Thread(target=server.serve_forever, daemon=True).start()
     deadline = time.monotonic() + 5
@@ -37,4 +39,5 @@ def start_fake_server(directory, session_timeout=300):
 def stop_server(server, dut):
     server.shutdown()
     server.server_close()
+    server.scripts.close()
     dut.stop()

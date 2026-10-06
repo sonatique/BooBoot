@@ -71,5 +71,41 @@ echo "ok: power off at service stop"
 
 sudo systemctl start "$SERVICE"
 wait_up
+
+booboot --url "$URL" script list 2>&1 | grep -q "scripts are off" || fail "scripts not off by default"
+sudo sed -i 's/^enabled = no$/enabled = yes/' /etc/booboot/dut1.ini
+sudo systemctl restart "$SERVICE"
+wait_up
+SCRIPT=$(mktemp --suffix .py)
+cat > "$SCRIPT" <<'END'
+import glob, os, pwd, booboot
+print(pwd.getpwuid(os.getuid()).pw_name)
+for path in glob.glob("/dev/gpiochip*") + ["/opt/booboot/x"]:
+    try:
+        open(path, "ab")
+        print("opened", path)
+    except OSError:
+        pass
+print(booboot.Client.from_env().power_off()["power"])
+END
+OUT=$(booboot --url "$URL" script run "$SCRIPT")
+[ "$OUT" = "booboot-script
+off" ] || fail "script output: $OUT"
+echo "ok: scripts run as booboot-script, without access to the hardware"
+cat > "$SCRIPT" <<'END'
+import os
+first = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "1")
+for read in (lambda: open(os.path.join(first, "info.json")), lambda: os.listdir(os.path.join(first, "work"))):
+    try:
+        read()
+        print("read")
+    except OSError:
+        print("refused")
+END
+OUT=$(booboot --url "$URL" script run "$SCRIPT")
+[ "$OUT" = "refused
+refused" ] || fail "script read the files of another script: $OUT"
+echo "ok: scripts cannot read the files of other scripts"
+
 booboot --url "$URL" session close
 echo "all install checks passed"

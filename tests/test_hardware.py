@@ -469,9 +469,10 @@ class ServerSetupTest(unittest.TestCase):
         path = os.path.join(tmp, "b.ini")
         write(path, "[server]\nname = bench2\nport = 8081\nrun_dir = {0}/{{name}}\nlog_dir = {0}/log\n"
                     "[console]\ndevice = none\n[power]\nbackend = none\n".format(tmp))
-        dut, sessions, address, prompt = server_main.build(config.load(path))
+        dut, sessions, scripts, address, prompt = server_main.build(config.load(path))
         self.addCleanup(dut.console.stop)
         self.assertEqual((dut.name, address, prompt), ("bench2", ("0.0.0.0", 8081), "[#$>] $"))
+        self.assertEqual((scripts.enabled, scripts.dir), (False, "/var/lib/booboot/bench2/scripts"))
         self.assertIsInstance(dut.console.port, NoPort)
         self.assertEqual(dut.storage.mount_dir, os.path.join(tmp, "bench2", "mnt"))
         self.assertEqual(sessions.default_timeout, 300)

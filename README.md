@@ -21,6 +21,7 @@ and a Python library are included.
 - [BooBoot Console](docs/console.md)
 - [Console web page](docs/web.md)
 - [Remote access: VPN, other networks](docs/remote.md)
+- [Scripts on the BooBoot board](docs/scripts.md)
 - [Visuals: logo and icons](docs/brand/README.md)
 
 ## Start with an agent
@@ -106,6 +107,11 @@ booboot boottime "login: " --runs 5  # power on to login prompt, 5 boots
 booboot console attach              # interactive terminal, Ctrl-] to quit
 booboot session close
 ```
+
+Long work, like a boot loop over a night, can run on the BooBoot board as a
+Python script, which goes on if the connection drops:
+`booboot script run boots.py 500`. Scripts are off by default:
+[scripts.md](docs/scripts.md).
 
 Other commands: `booboot --help`, and `booboot COMMAND --help`.
 

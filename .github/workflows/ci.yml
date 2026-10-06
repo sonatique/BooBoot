@@ -101,7 +101,7 @@ jobs:
       - name: Start the server with a fake board
         run: |
           cd server
-          nohup python3 -m booboot_server --fake --host 127.0.0.1 --port 8080 > ../server.log 2>&1 &
+          nohup python3 -m booboot_server --fake -c ../tests/fake.ini --host 127.0.0.1 --port 8080 > ../server.log 2>&1 &
           for i in $(seq 20); do
             curl -sf http://127.0.0.1:8080/api/v1/status > /dev/null && exit 0
             sleep 0.5

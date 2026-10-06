@@ -1,5 +1,5 @@
-// Checks all calls of BooBootClient against a server with a fake board:
-//   cd server && python3 -m booboot_server --fake --port 8080
+// Checks all calls of BooBootClient against a server with a fake board, scripts on:
+//   cd server && python3 -m booboot_server --fake --port 8080 -c ../tests/fake.ini
 //   dotnet run --project client/csharp/Check -- http://127.0.0.1:8080
 
 using System.Globalization;
@@ -129,6 +129,17 @@ Check(bootTime > 0.1 && bootTime < 2, "boot time");
 Check(await dut.BootTimeAsync("never", timeout: 0.5, offTime: 0) == null, "boot time timeout");
 await dut.KeepaliveAsync();
 
+// Scripts
+var script = await dut.RunScriptAsync("import sys, booboot\nprint(booboot.Client.from_env().status()['name'], sys.argv[1])\n",
+    "check.py", new[] { "x" });
+var scriptId = script.GetProperty("id").GetInt32();
+var (scriptText, scriptEnd) = await ScriptOutput(dut, scriptId);
+Check(scriptText == "dut1 x\n" && scriptEnd.GetProperty("exit_code").GetInt32() == 0, "script run, output read");
+Check((await dut.ScriptsAsync()).GetProperty("scripts")[0].GetProperty("id").GetInt32() == scriptId, "script listed");
+var sleeper = (await dut.RunScriptAsync("import time\ntime.sleep(60)\n")).GetProperty("id").GetInt32();
+await dut.StopScriptAsync(sleeper);
+Check((await ScriptOutput(dut, sleeper)).Info.GetProperty("state").GetString() == "stopped", "script stopped");
+
 // Clean up and release
 await dut.PowerOffAsync();
 await dut.DeleteAsync("1:/BOOT.BIN");
@@ -176,4 +187,20 @@ static async Task<BooBootException> Fails(Func<Task> call)
         return e;
     }
     throw new Exception("no error");
+}
+
+// The whole output of a script, once it ended, and its information.
+static async Task<(string Text, System.Text.Json.JsonElement Info)> ScriptOutput(BooBootClient dut, int id)
+{
+    var text = "";
+    long since = 0;
+    while (true)
+    {
+        var r = await dut.ScriptOutputAsync(id, since, wait: 10);
+        text += r.GetProperty("text").GetString();
+        since = r.GetProperty("next").GetInt64();
+        var info = r.GetProperty("script");
+        if (info.GetProperty("state").GetString() != "running" && since >= info.GetProperty("output").GetInt64())
+            return (text, info);
+    }
 }

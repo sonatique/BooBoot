@@ -308,6 +308,7 @@ Then go on with the task.
 | Read the output | `bb console read --since boot --clean` (`-t`: time since power on on each line) |
 | Power | `bb power on`, `bb power off`, `bb power cycle` |
 | Boot time | `bb boottime "login: " --runs 5` |
+| Long or unattended work, on the board | `bb script run --detach FILE.py ARGS`, then `bb script output -f` |
 | Card files | `bb sd ls 1:/`, `bb sd get 1:/FILE LOCAL`, `bb sd put FILES 1:/` |
 | State | `bb status` |
 
@@ -331,11 +332,20 @@ Then go on with the task.
   command a long enough time limit.
 - **The user sees it too.** The boot and your console commands show in their
   viewer as they happen: you can refer to them.
+- **Scripts.** A Python script runs on the BooBoot board
+  ([scripts.md](scripts.md)) and goes on if you lose the connection: use one
+  for work that lasts long, like a boot loop over hours. It uses the DUT with
+  `booboot.Client.from_env()`, in your session, which it holds until it ends
+  (rule 4: tell the user how long it will run). Give the user its number;
+  `bb script output N --since CURSOR -f` goes on where you stopped. If the
+  unit answers `scripts_off`, tell the user: only whoever looks after the
+  unit turns scripts on (rule 5).
 - Do not use `bb console attach`: it is an interactive terminal for humans.
 
 ## 5. End
 
-1. `bb session close`.
+1. `bb session close`. If a script of yours still runs, the session ends
+   with it: say so, or stop it with `bb script stop` if the task is done.
 2. Say whether the DUT is on or off. Switch it off only if the user asks.
 3. Leave BooBoot Console running: it is the user's now.
 4. Once, offer for later, on the user's computer:
