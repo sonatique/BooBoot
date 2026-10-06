@@ -123,15 +123,16 @@ booboot console expect "> $" --timeout 5     # the U-Boot prompt
 
 ### When the DUT does not receive
 
-The DUT output shows, but keys have no effect. First, compare
-`console.written` in `booboot --json status` before and after a write. If it
-grows, the bytes leave the BooBoot board, and the cause is between the
-adapter and the DUT:
+The DUT output shows, but keys have no effect. `console.written` in
+`booboot --json status` grows at each write that reached the serial driver
+of the BooBoot board; from there, the cause is in the hardware:
 
 - **Line ending**, when only Enter has no effect: `line_ending` (`cr` by
   default; try `lf`).
+- **The adapter**: its transmit side can fail while it still receives. Run
+  the loopback of step 5, with the adapter off the DUT. If `hello` does not
+  come back, replace the adapter.
 - **The wire** from the adapter TX to the DUT RX pin: continuity, right pin.
-  The loopback of step 5 tells whether the adapter sends.
 - **A part in series** on that line, against back-powering (step 6): a buffer
   must be powered and enabled; a resistor must stay near 1 kOhm, as larger
   ones round the signal too much at 921600 baud.
