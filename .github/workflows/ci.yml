@@ -3,6 +3,12 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      version:
+        description: Version of the release to make, like 1.2.3 (from the Release workflow)
+        type: string
+        default: ""
 
 jobs:
   lint:
@@ -115,13 +121,18 @@ jobs:
             -p:PublishTrimmed=true -o publish/tests
           publish/tests/BooBootConsole.Tests http://127.0.0.1:8080
       - name: Build BooBoot Console as single files
+        env:
+          RELEASE: ${{ inputs.version }}
         run: |
-          # For a tag vX.Y.Z, the version is X.Y.Z.
+          # The version of a release, from the Release workflow or from a tag vX.Y.Z.
           version=0.0.0-dev
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+          if [[ -n $RELEASE ]]; then
+            version=$RELEASE
+          elif [[ $GITHUB_REF == refs/tags/v* ]]; then
             version=${GITHUB_REF_NAME#v}
-            [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || { echo "::error::tag $GITHUB_REF_NAME is not like v1.2.3"; exit 1; }
           fi
+          [[ $version == 0.0.0-dev || $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error::version $version is not like 1.2.3"; exit 1; }
           for rid in win-x64 linux-x64; do
             dotnet publish client/csharp/BooBootConsole -c Release -r $rid --self-contained \
               -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
@@ -163,8 +174,8 @@ jobs:
         run: cat server.log
 
   release:
-    # A tag vX.Y.Z publishes a GitHub release with the programs, once all checks pass.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # A tag vX.Y.Z, or the Release workflow, publishes a GitHub release with the programs, once all checks pass.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     needs: [lint, test, test-root, install, client, csharp]
     runs-on: ubuntu-latest
     permissions:
@@ -172,6 +183,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.version != '' && format('v{0}', inputs.version) || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v8
@@ -187,12 +199,13 @@ jobs:
           mkdir dist
           cp build/win-x64/BooBootConsole.exe dist/BooBootConsole-win-x64.exe
           cp build/linux-x64/BooBootConsole dist/BooBootConsole-linux-x64
-          sed "s/^__version__ = .*/__version__ = \"${GITHUB_REF_NAME#v}\"/" client/booboot.py > dist/booboot.py
-          [ "$(python3 dist/booboot.py --version)" = "${GITHUB_REF_NAME#v}" ]
+          sed "s/^__version__ = .*/__version__ = \"${TAG#v}\"/" client/booboot.py > dist/booboot.py
+          [ "$(python3 dist/booboot.py --version)" = "${TAG#v}" ]
           (cd dist && sha256sum * > SHA256SUMS)
           # The release exists already when it was made on the GitHub page, or by an earlier run.
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          # Otherwise, making it creates the tag on the commit that passed the checks.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "BooBoot ${GITHUB_REF_NAME#v}" --generate-notes
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "BooBoot ${TAG#v}" --generate-notes
           fi

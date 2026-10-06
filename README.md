@@ -155,6 +155,10 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
+Or run the Release workflow (Actions, "Release", "Run workflow") with the
+version, like `0.3.1`: it does the same from `main`, and creates the tag
+`v0.3.1` itself. Agents that can start workflows but not push tags use it.
+
 CI runs all the checks, then adds to the release BooBoot Console for Windows
 and Linux, `booboot.py`, and their SHA-256 sums in `SHA256SUMS`. The tag
 gives the version: no file needs editing. CI writes it into the released
