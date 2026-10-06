@@ -154,25 +154,41 @@ new session: offer it for later (section 5).
 ### U4: Viewer for the user
 
 The user watches the DUT console live while you work. Watching needs no
-session and does not disturb you.
+session and does not disturb you. Unless the user already runs the latest
+BooBoot Console for `URL`, start it or offer it: do not end this step with
+only "check your viewer".
 
-1. **Already running?** Windows:
-   `powershell -NoProfile -Command "Get-Process BooBootConsole -ErrorAction SilentlyContinue"`.
-   Linux and macOS: `pgrep -fl BooBootConsole`. If it runs, keep it, ask
-   the user to check that it shows `URL`, and go to step 4.
-2. **Get BooBoot Console**, the first way that works:
-   1. Windows x64 or Linux x64: the latest release, no login needed. Its
-      tag is the end of the address that this command prints (like
-      `.../tag/v0.1.0`); an address ending with `/releases` means that there
-      is no release yet, go to the next way:
+1. **What runs.** List the BooBoot Console programs running, with their file
+   and command line:
+   - Windows: `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object Name -like 'BooBootConsole*' | Format-List ExecutablePath, CommandLine"`
+   - Linux and macOS: `for p in $(pgrep BooBootConsole); do ps -o command= -p "$p"; done`
 
-      ```sh
-      curl -sSfLI -o /dev/null -w '%{url_effective}' https://github.com/sonatique/BooBoot/releases/latest
-      ```
+   The command line ends with the server address when one was given.
+   Without one, the program shows the last address it used.
+2. **Latest release.** Its tag is the end of the address that this command
+   prints (like `.../tag/v0.1.0`). An address ending with `/releases` means
+   that there is no release yet.
 
-      When `TOOLS/BooBootConsole/version.txt` holds this tag, keep the
-      program there. Otherwise download it, and write the tag in
-      `version.txt`:
+   ```sh
+   curl -sSfLI -o /dev/null -w '%{url_effective}' https://github.com/sonatique/BooBoot/releases/latest
+   ```
+
+   The version of the copy in `TOOLS` is in `TOOLS/BooBootConsole/version.txt`.
+   The version of other copies is not known.
+3. **Decide.**
+
+   | What runs | What to do |
+   |---|---|
+   | Nothing | steps 4 and 5, without asking |
+   | The `TOOLS` copy, at the latest release, with `URL` in its command line | keep it, go to step 6 |
+   | The `TOOLS` copy, at the latest release, without `URL` in its command line | ask the user whether it shows `URL`; if not, step 5 |
+   | Another copy, or an older version | tell the user what runs and offer the latest release, started for `URL`. If they agree: when the old one is the `TOOLS` copy, ask them to close it first (a running program cannot be replaced), then steps 4 and 5 |
+
+4. **Get BooBoot Console**, the first way that works:
+   1. Windows x64 or Linux x64, when there is a release (step 2): the latest
+      release, no login needed. When `TOOLS/BooBootConsole/version.txt` holds
+      its tag, keep the program there. Otherwise download it, and write the
+      tag in `version.txt`:
 
       ```sh
       curl -sSfL --create-dirs -o TOOLS/BooBootConsole/BooBootConsole.exe https://github.com/sonatique/BooBoot/releases/latest/download/BooBootConsole-win-x64.exe
@@ -199,16 +215,16 @@ session and does not disturb you.
           --self-contained -p:PublishSingleFile=true -o TOOLS/BooBootConsole
       ```
 
-   4. Otherwise: only the web page (step 4). Tell the user how to get the
+   4. Otherwise: only the web page (step 6). Tell the user how to get the
       program themselves, if they want it (install.md B3).
-3. **Start it**, detached from your shell, with the server address:
+5. **Start it**, detached from your shell, with the server address:
    - Windows: `powershell -NoProfile -Command "Start-Process -FilePath 'TOOLS\BooBootConsole\BooBootConsole.exe' -ArgumentList 'URL'"`
    - Linux and macOS: `nohup TOOLS/BooBootConsole/BooBootConsole URL >/dev/null 2>&1 &`.
      On Linux it needs a desktop session (`DISPLAY` or `WAYLAND_DISPLAY`
      set). Without one, use the web page.
 
    After 5 seconds, check that it runs (step 1).
-4. **Web page.** `http://HOST:PORT/` shows the same in any browser, phones
+6. **Web page.** `http://HOST:PORT/` shows the same in any browser, phones
    too. If BooBoot Console could not start, open the page for the user:
    Windows `powershell -NoProfile -Command "Start-Process 'URL/'"`, macOS
    `open URL/`, Linux `xdg-open URL/`.
@@ -232,7 +248,7 @@ BooBoot ready: URL (DUT NAME)
 Unit: power <on|off>, SD card <mode>, console <connected|error>, session <free|used by X>
 Version: <latest | differs from the latest | not checked, no SSH>
 Client: TOOLS/booboot.py (<from the unit | from GitHub>), used from my shell
-Viewer: BooBoot Console <started | already running | not available: why>; web page http://HOST:PORT/
+Viewer: BooBoot Console <version> <started | already running | user kept their copy | not available: why>; web page http://HOST:PORT/
 DUT now: <one line>
 ```
 
@@ -302,5 +318,5 @@ Then go on with the task.
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
-| The release download fails with 404 | no release yet | U4, step 2, next way |
+| The release download fails with 404 | no release yet | U4, step 4, next way |
 | BooBoot Console does not start on Linux | no desktop session, or missing libraries | the web page |
