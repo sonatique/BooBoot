@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 import common  # noqa: F401  (sets sys.path)
-from booboot_server import gpio, netinfo, storage
+from booboot_server import gpio, netinfo, session, storage
 from booboot_server.console import Console, clean_text
 from booboot_server.errors import BadRequest, Busy, Conflict, NoSession
 from booboot_server.session import Sessions
@@ -385,9 +385,32 @@ class SessionTest(unittest.TestCase):
         with self.assertRaises(BadRequest):
             s.open("a", timeout=11)
 
-
-if __name__ == "__main__":
-    unittest.main()
+    @mock.patch.object(session, "GONE_AFTER", 0.3)
+    def test_gone(self):
+        s = Sessions()
+        token, info = s.open("cli")
+        self.assertIsNone(info["alive"])  # no heartbeat
+        with self.assertRaises(Busy):
+            s.open("b", force="gone")
+        token, _ = s.open("viewer", force=True)
+        info = s.heartbeat(token)
+        self.assertTrue(info["alive"] and info["yours"])
+        s.begin(token)
+        s.end(token)
+        with self.assertRaises(Busy) as e:
+            s.open("b", force="gone")
+        self.assertTrue(e.exception.info["session"]["alive"])
+        self.assertEqual(s.status()["idle"], 0.0)
+        time.sleep(0.4)
+        self.assertGreater(s.status()["idle"], 0.3)  # a heartbeat is not activity
+        self.assertFalse(s.status()["alive"])
+        self.assertGreater(s.status()["heartbeat_age"], 0.3)
+        with self.assertRaises(Busy):
+            s.open("b")
+        token_b, _ = s.open("b", force="gone")
+        with self.assertRaises(Busy):
+            s.heartbeat(token)
+        self.assertEqual(s.status(token_b)["client"], "b")
 
 
 class NetInfoTest(unittest.TestCase):
@@ -409,3 +432,6 @@ class NetInfoTest(unittest.TestCase):
         self.assertEqual(netinfo._ipv6(path), ["2001:db8::5"])
         self.assertEqual(netinfo._ipv6(path + ".none"), [])
 
+
+if __name__ == "__main__":
+    unittest.main()

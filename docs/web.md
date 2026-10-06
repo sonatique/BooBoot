@@ -41,6 +41,18 @@ browser computer. While it is open, other clients that need the session
 (agents, `booboot` commands) get `busy`, as with any session. A blue frame
 shows that the keys go to the DUT, and the page shows the cursor.
 
+When another client has the session, the page asks before taking it over:
+
+- **Gone**: a viewer or MCP server that stopped its heartbeats 30 s ago or
+  more, like a page or program closed abruptly. The status shows
+  `used by NAME (gone)`. Taking over is safe.
+- **Connected**: a viewer or MCP server that still runs. Someone may be
+  using the DUT: taking over interrupts their work.
+- Other clients, like `booboot` commands, send no heartbeat: the page shows
+  their idle time only.
+
+While in control, the page sends a heartbeat every 10 s.
+
 - **Keys.** Text, Enter, Backspace, Tab, Escape, the arrows, Home, End,
   Insert and Delete are sent as a terminal sends them. Ctrl+letter sends the
   control character: Ctrl+C stops a program on the DUT, Ctrl+D ends a shell.

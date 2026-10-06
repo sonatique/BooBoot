@@ -58,8 +58,11 @@ writes the card.
   that needs it and releases it when it stops. If the session expired in
   between (no call for `--session-timeout` seconds), the next call opens it
   again and its result starts with a note: another client may have used the
-  DUT meanwhile. When another client has the DUT, tools fail with its name
-  and the time it may still keep it.
+  DUT meanwhile. When another client has the DUT, tools fail with its name,
+  the time it may still keep it, and whether it is connected or gone. The
+  MCP server sends heartbeats while it has the session. When a session is
+  left by a gone client of the same name, like an earlier run of the MCP
+  server that was killed, it takes it over by itself and says so.
 - **Paths**: card paths are `N:/path` (partition N, `/path` means `1:/path`).
   Local paths are on the computer that runs the MCP server, relative to its
   working directory.

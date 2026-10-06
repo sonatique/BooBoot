@@ -110,12 +110,15 @@ public sealed class BooBootClient : IDisposable
     /// <param name="client">Name shown to other clients.</param>
     /// <param name="timeout">Idle seconds after which the server ends the session.</param>
     /// <param name="force">Take the session from another client.</param>
-    public async Task<JsonElement> OpenSessionAsync(string? client = null, double? timeout = null, bool force = false)
+    /// <param name="ifGone">Take the session only from a client that is gone: one that sent heartbeats,
+    /// and stopped. force is then not needed.</param>
+    public async Task<JsonElement> OpenSessionAsync(string? client = null, double? timeout = null, bool force = false,
+        bool ifGone = false)
     {
         var info = await SendJsonAsync(HttpMethod.Post, "/session", Body(
             ("client", client ?? $"{Environment.UserName}@{Environment.MachineName}"),
             ("timeout", timeout),
-            ("force", force ? true : null)));
+            ("force", ifGone ? "gone" : force ? true : null)));
         Session = info.GetProperty("session").GetString();
         return info;
     }
@@ -135,6 +138,15 @@ public sealed class BooBootClient : IDisposable
     }
 
     public Task<JsonElement> KeepaliveAsync() => SendJsonAsync(HttpMethod.Post, "/session/keepalive");
+
+    /// <summary>Time between heartbeats.</summary>
+    public static readonly TimeSpan Heartbeat = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Tells the server that this client is still there. It does not count as activity. A client that
+    /// stays connected sends it every Heartbeat while it has the session, so that others see when it is gone.
+    /// </summary>
+    public Task<JsonElement> HeartbeatAsync() => SendJsonAsync(HttpMethod.Post, "/session/heartbeat");
 
     // Power
 

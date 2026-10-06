@@ -30,7 +30,11 @@ rule says to ask, and go on with the task.
    commands on its console. Do only what the task needs.
 2. **Never take the DUT from someone.** If another client has the session
    (`busy`, exit code 4), do not use `--force`. Tell the user who has it and
-   for how long it has been idle, and wait for their answer.
+   for how long it has been idle, and wait for their answer. When the
+   message says that the client is gone (a viewer or MCP server closed
+   abruptly), say so: with the user's OK, take the DUT with
+   `bb session open --force gone` (MCP: session tool, force `"gone"`), which
+   takes it only while that client is still gone.
 3. **Ask before you disturb.** A colleague may use the DUT without holding
    the session: a test that runs on its own, or someone watching. Before the
    first power switch or card change of your work, if the DUT is on, tell

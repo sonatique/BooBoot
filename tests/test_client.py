@@ -205,7 +205,11 @@ class ClientTest(unittest.TestCase):
         code, out, err = self.cli("status")
         self.assertEqual(code, 0, err)
         self.assertIn("power:   off", out)
-        self.assertIn("used by other@pc (idle 3s, expires in 297s)", out)
+        self.assertIn("used by other@pc (idle 3s, free in 297s at most)", out)
+        connected = json.loads(json.dumps(STATUS))
+        connected["session"].update(alive=True, heartbeat_age=2)
+        self.answer("GET", "/status", connected)
+        self.assertIn("used by other@pc (connected, idle 3s", self.cli("status")[1])
         self.assertIn("console: /dev/ttyUSB0 at 921600 baud\n", out)
         code, out, err = self.cli("--json", "status")
         self.assertEqual(json.loads(out)["name"], "dut1")
@@ -221,7 +225,13 @@ class ClientTest(unittest.TestCase):
                                          "session": {"client": "x", "idle": 1, "expires_in": 5}}, 423)
         code, out, err = self.cli("power", "off")
         self.assertEqual(code, booboot.EXIT_BUSY)
-        self.assertIn("used by x", err)
+        self.assertIn("used by x (idle 1s", err)
+        self.answer("POST", "/session", {"error": "busy", "message": "used", "session": {
+            "client": "x", "idle": 40, "expires_in": 260, "alive": False, "heartbeat_age": 35}}, 423)
+        code, out, err = self.cli("power", "off")
+        self.assertEqual(code, booboot.EXIT_BUSY)
+        self.assertIn("used by x (gone: no heartbeat for 35s; idle 40s", err)
+        self.assertIn("booboot session open --force gone", err)
         # Free: the token is kept and used by the next command.
         self.answer("POST", "/session", {"session": "t1", "client": "me", "timeout": 300})
         self.answer("POST", "/session/keepalive", {"active": True})
@@ -230,7 +240,7 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(self.cli("power", "off")[0], 0)
         auth = [r[2].get("Authorization") for r in self.server.requests if r[1] == "/api/v1/power"]
         self.assertEqual(auth, ["Bearer t1", "Bearer t1"])
-        self.assertEqual(sum(r[1] == "/api/v1/session" for r in self.server.requests), 2)
+        self.assertEqual(sum(r[1] == "/api/v1/session" for r in self.server.requests), 3)
         # Expired: a new session is opened, with a warning.
         self.answer("POST", "/session/keepalive", {"error": "no_session", "message": "expired"}, 401)
         code, out, err = self.cli("power", "off")

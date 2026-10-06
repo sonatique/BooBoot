@@ -107,8 +107,12 @@ Only one client may use the DUT at a time.
   of the client that has the session, its idle time and when it expires.
   `GET /api/v1/status` always works, so a client can see that the server is
   up but busy.
-- `force` takes the session from another client, for when it is known to be
-  gone.
+- Clients that stay connected (the viewers, the MCP server) send a heartbeat
+  every 10 s while they have the session. When it stops for 30 s, their
+  client is gone, and the status and `busy` say so (`alive` false).
+- `force` takes the session from another client. `force: "gone"` takes it
+  only from a client that is gone, so that a session left by a client that
+  was closed abruptly can be taken without waiting for its idle time.
 - Reading the console needs no session: viewers can watch while another
   client uses the DUT. To type, a viewer opens the session like any client.
 - A session never expires while one of its requests runs (like a long image

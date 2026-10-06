@@ -8,9 +8,11 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import common
 import booboot
+from booboot_server import session
 
 
 class Mcp:
@@ -201,6 +203,38 @@ class McpServerTest(unittest.TestCase):
         self.assertFalse(failed)
         self.assertTrue(text.startswith("Note: the session had expired and was opened again."), text)
         self.assertEqual(m.tool("power", action="off"), (False, "Power off."))
+
+    @mock.patch.object(session, "GONE_AFTER", 1.0)
+    def test_gone_client(self):
+        self.mcp.close()
+        self.mcp = m = Mcp(self.url, "--name", "agent")
+        m.start()
+        # A client that sends heartbeats is connected, and gone when they stop.
+        viewer = booboot.Client(self.url)
+        viewer.open_session("viewer")
+        viewer.heartbeat()
+        failed, text = m.tool("power", action="off")
+        self.assertTrue(failed)
+        self.assertIn("viewer (connected,", text)
+        viewer.heartbeat()
+        self.assertTrue(m.tool("session", action="open", force="gone")[0])
+        time.sleep(1.2)
+        failed, text = m.tool("power", action="off")
+        self.assertIn("viewer (gone: no heartbeat for", text)
+        self.assertIn('force "gone"', text)
+        self.assertIn("Session opened", m.tool("session", action="open", force="gone")[1])
+        self.assertTrue(viewer.status()["session"]["alive"])  # the MCP server sends heartbeats
+        # Killed, it leaves its session. The next run of the same name takes it over by itself.
+        m.proc.kill()
+        m.close()
+        time.sleep(1.2)
+        self.mcp = m = Mcp(self.url, "--name", "agent")
+        m.start()
+        failed, text = m.tool("power", action="off")
+        self.assertFalse(failed)
+        self.assertTrue(text.startswith("Note: took over the session of an earlier client of the same name: "
+                                        "agent (gone"), text)
+        self.assertTrue(text.endswith("Power off."), text)
 
 
 if __name__ == "__main__":

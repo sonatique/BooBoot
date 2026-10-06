@@ -288,13 +288,13 @@ public partial class MainWindow : Window
     // Control
 
     /// <summary>Opens the session to type. When another client has it, asks before taking it over.</summary>
-    public async Task TakeControl(bool force = false)
+    public async Task TakeControl(bool force = false, bool ifGone = false)
     {
         if (input == null)
             return;
         try
         {
-            if (await input.TakeAsync(force) is JsonElement busy)
+            if (await input.TakeAsync(force, ifGone) is JsonElement busy)
                 AskTakeOver(busy);
             else
                 SetControl(true, "");
@@ -325,7 +325,13 @@ public partial class MainWindow : Window
     {
         var who = busy.GetProperty("client").GetString();
         var idle = busy.GetProperty("idle").GetDouble();
-        var take = new Button { Content = "Take over" };
+        var gone = ConsoleInput.IsGone(busy);
+        var connected = busy.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.True;
+        var text = $"The DUT is used by {who}, " + (
+            gone ? $"which is gone: no heartbeat for {busy.GetProperty("heartbeat_age").GetDouble():0} s."
+            : connected ? $"which is connected. Last action {idle:0} s ago.\nTaking over interrupts their work."
+            : $"idle for {idle:0} s.");
+        var take = new Button { Content = connected ? "Take over anyway" : "Take over" };
         var cancel = new Button { Content = "Cancel" };
         var flyout = new Flyout
         {
@@ -334,7 +340,7 @@ public partial class MainWindow : Window
                 Spacing = 8,
                 Children =
                 {
-                    new TextBlock { Text = $"The DUT is used by {who}, idle for {idle:0} s." },
+                    new TextBlock { Text = text },
                     new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { take, cancel } },
                 },
             },
@@ -342,7 +348,8 @@ public partial class MainWindow : Window
         take.Click += async (_, _) =>
         {
             flyout.Hide();
-            await TakeControl(force: true);
+            // Taken only if its client is still gone, else asked again.
+            await TakeControl(force: !gone, ifGone: gone);
         };
         cancel.Click += (_, _) => flyout.Hide();
         flyout.ShowAt(ControlButton);

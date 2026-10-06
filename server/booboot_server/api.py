@@ -120,10 +120,11 @@ class Handler(BaseHTTPRequestHandler):
         self._handle()
 
     def log_request(self, code="-", size="-"):
-        # Reads, and the writes of typed keys, would fill the log.
+        # Reads, the writes of typed keys and heartbeats would fill the log.
         quiet = str(code).startswith("2") and (
             (self.command == "GET" and self.path.startswith((PREFIX + "/console", PREFIX + "/status")))
-            or (self.command == "POST" and self.path.startswith(PREFIX + "/console/write")))
+            or (self.command == "POST" and self.path.startswith((PREFIX + "/console/write",
+                                                                 PREFIX + "/session/heartbeat"))))
         if not quiet:
             log.info('%s "%s %s" %s', self.client_address[0], self.command, self.path, code)
 
@@ -326,7 +327,8 @@ def get_status(r, m):
 def open_session(r, m):
     client = str(r.param("client") or r.client_address[0])
     timeout = r.param_float("timeout")
-    token, info = r.server.sessions.open(client, timeout, r.param_bool("force"))
+    force = "gone" if r.param("force") == "gone" else r.param_bool("force")
+    token, info = r.server.sessions.open(client, timeout, force)
     info["session"] = token
     return info
 
@@ -340,6 +342,11 @@ def close_session(r, m):
 @route("POST", "/session/keepalive")
 def keepalive(r, m):
     return r.server.sessions.status(r.token())
+
+
+@route("POST", "/session/heartbeat", session=False)
+def heartbeat(r, m):
+    return r.server.sessions.heartbeat(r.token())
 
 
 # Power

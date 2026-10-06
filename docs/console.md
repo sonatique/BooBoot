@@ -44,6 +44,11 @@ them by itself when the name is not found: see [remote.md](remote.md).
 "Take control" opens the BooBoot session, in the name of
 `BooBoot Console USER@COMPUTER`. While it is open, other clients that need
 the session (agents, `booboot` commands) get `busy`, as with any session.
+When another client has the session, the program asks before taking it
+over, and says whether that client is gone (a viewer or MCP server that
+stopped its heartbeats, like a program closed abruptly: taking over is
+safe) or connected (someone may be using the DUT). A session left by this
+program on the same computer, after a crash, is taken over without asking.
 A blue frame shows that the keys go to the DUT. The view then shows the
 cursor, and follows the output at each key.
 

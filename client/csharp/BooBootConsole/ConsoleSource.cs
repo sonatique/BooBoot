@@ -180,8 +180,10 @@ public sealed class ConsoleSource : IDisposable
                 }
                 var session = status.GetProperty("session");
                 var yours = session.TryGetProperty("yours", out var y) && y.GetBoolean();
+                var gone = session.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.False;
                 var text = !session.GetProperty("active").GetBoolean() ? "free"
-                    : yours ? "yours" : "used by " + session.GetProperty("client").GetString();
+                    : yours ? "yours"
+                    : "used by " + session.GetProperty("client").GetString() + (gone ? " (gone)" : "");
                 if (text != last || (mine != null && !yours))
                     Post(new Session(last = text, mine, yours));
             }

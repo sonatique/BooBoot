@@ -39,6 +39,8 @@ __version__ = "dev"  # set by install.sh and in releases
 DEFAULT_URL = "http://booboot.local:8080"
 CHUNK = 1 << 20
 
+HEARTBEAT = 10  # seconds between heartbeats
+
 EXIT_ERROR = 1
 EXIT_TIMEOUT = 3
 EXIT_BUSY = 4
@@ -202,7 +204,8 @@ class Client:
 
         client: name shown to other clients.
         timeout: idle seconds after which the server ends the session.
-        force: take the session from another client.
+        force: True takes the session from another client. "gone" takes it only
+        from a client that is gone: one that sent heartbeats, and stopped.
         """
         info = self.request("POST", "/session", json_body={
             "client": client or default_client_name(), "timeout": timeout, "force": force or None})
@@ -218,6 +221,14 @@ class Client:
 
     def keepalive(self):
         return self.request("POST", "/session/keepalive")
+
+    def heartbeat(self):
+        """Tell the server that this client is still there. It does not count as activity.
+
+        A client that stays connected sends it every HEARTBEAT seconds while it
+        has the session, so that others see when it is gone.
+        """
+        return self.request("POST", "/session/heartbeat")
 
     # Power
 
@@ -529,6 +540,16 @@ def _print_text(text):
     sys.stdout.flush()
 
 
+def _holder(ses):
+    """The client of a session, and its state, for messages."""
+    state = "idle %gs, free in %gs at most" % (ses.get("idle", 0), ses.get("expires_in", 0))
+    if ses.get("alive") is True:
+        state = "connected, " + state
+    elif ses.get("alive") is False:
+        state = "gone: no heartbeat for %gs; %s" % (ses.get("heartbeat_age", 0), state)
+    return "%s (%s)" % (ses.get("client", "?"), state)
+
+
 def _status_text(s):
     ses = s["session"]
     if not ses["active"]:
@@ -536,7 +557,7 @@ def _status_text(s):
     elif ses.get("yours"):
         who = "yours (expires after %gs idle)" % ses["timeout"]
     else:
-        who = "used by %s (idle %gs, expires in %gs)" % (ses["client"], ses["idle"], ses["expires_in"])
+        who = "used by " + _holder(ses)
     con = s["console"]
     lines = [
         "%s, BooBoot %s" % (s["name"], s["version"]),
@@ -901,6 +922,17 @@ class _McpSession:
         self.name = name or "mcp " + default_client_name()
         self.timeout = timeout or 900
         self._note = ""
+        self._stop = threading.Event()
+        threading.Thread(target=self._beat, daemon=True).start()
+
+    def _beat(self):
+        while not self._stop.wait(HEARTBEAT):
+            if self.client.session:
+                try:
+                    self.client.heartbeat()
+                except Error as e:
+                    if e.code == "not_found":
+                        return  # a server older than heartbeats
 
     def _address_note(self, text):
         self._note += "Note: %s.\n" % text
@@ -917,14 +949,32 @@ class _McpSession:
                     raise
             self._note = ("Note: the session had expired and was opened again. "
                           "Another client may have used the DUT in between.\n")
-        c.open_session(self.name, self.timeout)
+        self.open()
         return c
+
+    def open(self, force=False):
+        """Open the session. Takes it from a gone client of the same name, like an earlier run that was killed."""
+        c = self.client
+        try:
+            info = c.open_session(self.name, self.timeout, force)
+        except Error as e:
+            ses = e.info.get("session", {})
+            if e.code != "busy" or force or ses.get("client") != self.name or ses.get("alive") is not False:
+                raise
+            info = c.open_session(self.name, self.timeout, "gone")
+            self._note += "Note: took over the session of an earlier client of the same name: %s.\n" % _holder(ses)
+        try:
+            c.heartbeat()
+        except Error:
+            pass
+        return info
 
     def take_note(self):
         note, self._note = self._note, ""
         return note
 
     def close(self):
+        self._stop.set()
         try:
             self.client.close_session()
         except Error:
@@ -1133,24 +1183,31 @@ def _mcp_session(s, a, report):
         return "Session released: other clients can use the DUT."
     if action != "open":
         raise ValueError("action must be open or release")
-    if c.session and not a.get("force"):
+    force = a.get("force") or False
+    if force not in (True, False, "gone"):
+        raise ValueError('force must be true, false or "gone"')
+    if c.session and force is not True:
         try:
             c.keepalive()
             return "The session is already open."
         except Error as e:
             if e.code != "no_session":
                 raise
-    info = c.open_session(s.name, s.timeout, bool(a.get("force")))
+    info = s.open(force)
     return "Session opened. It ends after %gs without calls." % info["timeout"]
 
 
 def _mcp_error_text(e):
     if e.code == "busy":
         ses = e.info.get("session", {})
-        return ("The DUT is used by another client: %s (idle %gs, free in %gs at most). Wait and try "
-                "again. Only if that client is known to be gone, take the DUT with the session tool "
-                "(action open, force true)." % (ses.get("client", "?"), ses.get("idle", 0),
-                                                ses.get("expires_in", 0)))
+        text = "The DUT is used by another client: %s. " % _holder(ses)
+        if ses.get("alive") is False:
+            return text + ('That client is gone. Tell the user. If they agree, take the DUT with the session '
+                           'tool (action open, force "gone").')
+        if ses.get("alive") is True:
+            return text + "That client is connected: someone may be using the DUT. Wait and try again."
+        return text + ("Wait and try again. Only if the user says that this client is gone, take the DUT with "
+                       "the session tool (action open, force true).")
     return "Error (%s): %s" % (e.code, e.message)
 
 
@@ -1261,7 +1318,9 @@ MCP_TOOLS = [
           "Only one client can use the DUT at a time. The other tools open the session when needed. "
           "release lets other clients use the DUT. open with force takes the DUT from another client.",
           {"action": {"type": "string", "enum": ["open", "release"]},
-           "force": {"type": "boolean", "description": "Take the session from another client"}},
+           "force": {"type": ["boolean", "string"],
+                     "description": 'Take the session from another client. "gone": only from a client that '
+                                    'is gone'}},
           ["action"], _mcp_session),
 ]
 MCP_FUNCTIONS = {tool["name"]: fn for tool, fn in MCP_TOOLS}
@@ -1404,7 +1463,8 @@ def build_parser():
     ses.required = True
     sp = ses.add_parser("open", help="open the session (other commands open one when needed)")
     sp.add_argument("--timeout", type=float, metavar="S", help="idle seconds before the server ends the session")
-    sp.add_argument("--force", action="store_true", help="take the session from another client")
+    sp.add_argument("--force", nargs="?", const=True, default=False, choices=["gone"], metavar="gone",
+                    help="take the session from another client; with gone, only from a client that is gone")
     sp.set_defaults(func=cmd_session_open)
     sp = ses.add_parser("close", help="release the session for other clients")
     sp.set_defaults(func=cmd_session_close)
@@ -1510,8 +1570,9 @@ def main(argv=None):
             _print_json(dict(e.info, error=e.code, message=e.message))
         if e.code == "busy":
             s = e.info.get("session", {})
-            _warn("busy: the DUT is used by %s (idle %gs, free in %gs at most)"
-                  % (s.get("client", "?"), s.get("idle", 0), s.get("expires_in", 0)))
+            _warn("busy: the DUT is used by " + _holder(s))
+            if s.get("alive") is False:
+                _warn("take it with: booboot session open --force gone")
             return EXIT_BUSY
         _warn(e.message)
         return EXIT_ERROR

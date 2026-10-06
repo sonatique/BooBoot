@@ -280,7 +280,8 @@
       try {
         const t = token;
         const s = await (await fetch("/api/v1/status", { cache: "no-store", headers: auth(t) })).json();
-        session = !s.session.active ? "free" : s.session.yours ? "yours" : "used by " + s.session.client;
+        session = !s.session.active ? "free" : s.session.yours ? "yours"
+          : "used by " + s.session.client + (s.session.alive === false ? " (gone)" : "");
         // Only an answer about the current session counts.
         if (t && t === token && !s.session.yours)
           setControl("", s.session.active ? "control lost: the DUT is used by " + s.session.client
@@ -330,23 +331,46 @@
     schedule();
   }
 
+  function takeOverText(s) {
+    if (s.alive === false)
+      return `The DUT is used by ${s.client}, which is gone: no heartbeat for ${Math.round(s.heartbeat_age)} s.`
+        + " Take it over?";
+    if (s.alive)
+      return `The DUT is used by ${s.client}, which is connected. Last action ${Math.round(s.idle)} s ago.`
+        + " Taking over interrupts their work. Take it over anyway?";
+    return `The DUT is used by ${s.client}, idle for ${Math.round(s.idle)} s. Take it over?`;
+  }
+
   async function takeControl() {
     try {
-      let r;
-      try {
-        r = await api("POST", "/session", {});
-      } catch (err) {
-        const s = err.info && err.info.session;
-        if (err.code !== "busy" || !s)
-          throw err;
-        if (!confirm(`The DUT is used by ${s.client}, idle for ${Math.round(s.idle)} s. Take it over?`))
-          return;
-        r = await api("POST", "/session", { force: true });
+      let r, force = false;
+      while (!r) {
+        try {
+          r = await api("POST", "/session", force ? { force } : {});
+        } catch (err) {
+          const s = err.info && err.info.session;
+          if (err.code !== "busy" || !s || force === true)
+            throw err;
+          if (!confirm(takeOverText(s)))
+            return;
+          // "gone" takes it only if its client is still gone, else the page asks again.
+          force = s.alive === false ? "gone" : true;
+        }
       }
       setControl(r.session, "");
+      heartbeat();
       screen.focus();
     } catch (err) {
       setControl("", "cannot take control: " + err.message);
+    }
+  }
+
+  // Tells the server that the page is still there, so that others see when it is gone.
+  async function heartbeat() {
+    try {
+      await api("POST", "/session/heartbeat");
+    } catch (err) {
+      // The status poll finds out when the control ends.
     }
   }
 
@@ -516,4 +540,8 @@
   showInfo();
   stream();
   poll();
+  setInterval(() => {
+    if (token)
+      heartbeat();
+  }, 10000);
 })();

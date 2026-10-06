@@ -50,11 +50,16 @@ No session needed.
               "cursor": 5120, "boot": 1024, "last": 4800, "written": 37, "error": ""},
   "operation": null,
   "session": {"active": true, "client": "me@desk", "opened": "2026-09-26T10:00:00",
-              "timeout": 300, "idle": 12.5, "expires_in": 287.5, "yours": false},
+              "timeout": 300, "idle": 12.5, "expires_in": 287.5, "alive": true,
+              "heartbeat_age": 4.2, "yours": false},
   "network": {"hostname": "booboot", "addresses": ["10.1.2.3", "2001:db8::5"]}
 }
 ```
 
+`session.alive`: `true` while the client of the session sends heartbeats
+(`POST /session/heartbeat`), `false` when it stopped for 30 s: the client is
+gone. `null` for clients that send none, like `booboot` commands.
+`session.heartbeat_age`: seconds since the last heartbeat, or `null`.
 `power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off` or
 `unknown`. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
 `modified`. `operation`: running hardware operation or null.
@@ -69,8 +74,9 @@ its `.local` name does not work, like over a VPN ([remote.md](remote.md)).
 ### POST /session
 
 Parameters: `client` (name shown to others), `timeout` (idle seconds before
-the session ends, default set on the server), `force` (take the session from
-another client).
+the session ends, default set on the server), `force`: `true` takes the
+session from another client, `"gone"` takes it only if its client is gone
+(`alive` false).
 
 Answer: `{"session": "TOKEN", "client": ..., "timeout": ..., ...}`.
 HTTP 423 `busy` if another client has the session.
@@ -78,6 +84,14 @@ HTTP 423 `busy` if another client has the session.
 ### POST /session/keepalive
 
 Keeps the session alive without doing anything. Answer: session state.
+
+### POST /session/heartbeat
+
+Says that the client is still there. Clients that stay connected (the
+viewers, the MCP server) send it every 10 s while they have the session, so
+that others see when they are gone: closed abruptly, or cut from the
+network. Unlike other calls, it is not activity: the session still ends
+after its idle time. Answer: session state.
 
 ### DELETE /session
 

@@ -44,6 +44,10 @@ Check(busy.Status == 423 && busy.Code == "busy", "second client is refused");
 Check(busy.Info?.GetProperty("session").GetProperty("client").GetString() == "csharp-check",
     "busy error names the client");
 Check((await Fails(() => other.PowerOnAsync())).Code == "busy", "calls without the session are refused");
+Check((await dut.HeartbeatAsync()).GetProperty("alive").GetBoolean(), "heartbeat");
+var connected = await Fails(() => other.OpenSessionAsync("other", ifGone: true));
+Check(connected.Code == "busy" && connected.Info?.GetProperty("session").GetProperty("alive").GetBoolean() == true,
+    "a connected client keeps the session");
 
 // Files
 await dut.PowerOffAsync();

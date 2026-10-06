@@ -9,10 +9,11 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import common
 import booboot
-from booboot_server import netinfo
+from booboot_server import netinfo, session
 
 
 def find_chrome():
@@ -232,6 +233,10 @@ class WebTest(unittest.TestCase):
         b.eval("document.getElementById('control').click()")
         b.wait(info + ".includes('in control')", "control taken")
         self.assertEqual(self.status()["client"], "127.0.0.1")
+        deadline = time.monotonic() + 5
+        while not self.status()["alive"] and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertTrue(self.status()["alive"], "heartbeat")
         b.type("echo typedd")
         b.key("Backspace")
         b.key("Enter")
@@ -250,8 +255,22 @@ class WebTest(unittest.TestCase):
         b.wait(info + ".includes('control lost: the DUT is used by colleague')", "control lost")
         # Taking it back asks first.
         b.eval("document.getElementById('control').click()")
-        self.assertIn("used by colleague", b.accept_dialog())
+        self.assertIn("used by colleague, idle for", b.accept_dialog())
         b.wait(info + ".includes('in control')", "control taken over")
+        # A client that sends heartbeats is connected, and gone when they stop.
+        other.open_session("colleague", force=True)
+        other.heartbeat()
+        b.wait(info + ".includes('control lost')", "control lost again")
+        b.eval("document.getElementById('control').click()")
+        self.assertIn("used by colleague, which is connected", b.accept_dialog())
+        b.wait(info + ".includes('in control')", "connected client taken over")
+        with mock.patch.object(session, "GONE_AFTER", 0.5):
+            other.open_session("colleague", force=True)
+            other.heartbeat()
+            b.wait(info + ".includes('used by colleague (gone)')", "gone client shown")
+            b.eval("document.getElementById('control').click()")
+            self.assertIn("used by colleague, which is gone", b.accept_dialog())
+            b.wait(info + ".includes('in control')", "gone client taken over")
         b.eval("document.getElementById('control').click()")
         b.wait(info + ".includes('session free')", "control released")
         self.assertFalse(self.status()["active"])

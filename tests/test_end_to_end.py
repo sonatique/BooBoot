@@ -14,9 +14,11 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 import common
 import booboot
+from booboot_server import session
 
 
 class EndToEnd(unittest.TestCase):
@@ -49,6 +51,25 @@ class EndToEnd(unittest.TestCase):
         self.assertTrue(status["session"]["active"])
         self.assertFalse(status["session"]["yours"])
         self.assertTrue(self.c.status()["session"]["yours"])
+
+    @mock.patch.object(session, "GONE_AFTER", 0.5)
+    def test_session_gone(self):
+        other = booboot.Client(self.url)
+        with self.assertRaises(booboot.Error) as e:
+            other.open_session("other", force="gone")
+        self.assertIsNone(e.exception.info["session"]["alive"])  # no heartbeat yet
+        with self.assertLogs("booboot_server.api") as logs:
+            self.assertTrue(self.c.heartbeat()["alive"])
+            self.c.keepalive()
+        self.assertEqual(len(logs.output), 1, logs.output)  # heartbeats are not logged
+        time.sleep(0.6)
+        self.assertFalse(other.status()["session"]["alive"])
+        other.open_session("other", force="gone")
+        with self.assertRaises(booboot.Error) as e:
+            self.c.heartbeat()
+        self.assertEqual(e.exception.code, "busy")
+        self.c.session = None
+        other.close_session()
 
     def test_boot_and_shell(self):
         c = self.c
@@ -270,6 +291,17 @@ class Cli(unittest.TestCase):
         self.assertEqual(p.returncode, code, p.stdout + p.stderr)
         return p.stdout
 
+    @mock.patch.object(session, "GONE_AFTER", 0.5)
+    def test_force_gone(self):
+        viewer = booboot.Client(self.url)
+        viewer.open_session("viewer", force=True)
+        viewer.heartbeat()
+        time.sleep(0.6)
+        self.assertIn("viewer (gone: no heartbeat for", self.cli("status"))
+        self.cli("session", "open", "--force", "gone")
+        self.assertIn("yours", self.cli("status"))
+        self.cli("session", "close")
+
     def test_flow(self):
         boot = os.path.join(self.tmp, "BOOT.BIN")
         with open(boot, "w") as f:
@@ -293,6 +325,7 @@ class Cli(unittest.TestCase):
         other = booboot.Client(self.url)
         other.open_session("other", force=True)
         self.cli("power", "off", code=4)
+        self.cli("session", "open", "--force", "gone", code=4)  # only from a client that is gone
         other.close_session()
         self.cli("power", "off")  # opens a new session
 

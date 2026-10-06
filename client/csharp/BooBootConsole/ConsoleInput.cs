@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using BooBoot;
 
@@ -11,13 +12,17 @@ namespace BooBootConsole;
 /// <summary>
 /// Typing into the console: holds the session, and sends the keys in order,
 /// one request at a time. Keys typed during a request go in the next one.
+/// While it holds the session, it sends heartbeats.
 /// Used on the UI thread only.
 /// </summary>
 public sealed class ConsoleInput : IDisposable
 {
+    static readonly string Name = $"BooBoot Console {Environment.UserName}@{Environment.MachineName}";
+
     readonly BooBootClient client;
     readonly StringBuilder keys = new();
     bool sending;
+    CancellationTokenSource? beat;
 
     public ConsoleInput(string url, IEnumerable<string> addresses)
     {
@@ -33,18 +38,58 @@ public sealed class ConsoleInput : IDisposable
     /// <summary>Raised when keys could not be sent, the control going on.</summary>
     public event Action<string>? Failed;
 
-    /// <summary>Opens the session. Returns null, or the session of the client that has the DUT.</summary>
-    public async Task<JsonElement?> TakeAsync(bool force)
+    /// <summary>
+    /// Opens the session. Returns null, or the session of the client that has the DUT. Takes it from a gone
+    /// client of the same name, like this program before a crash.
+    /// </summary>
+    /// <param name="force">Take the session from any client.</param>
+    /// <param name="ifGone">Take the session only from a client that is gone.</param>
+    public async Task<JsonElement?> TakeAsync(bool force = false, bool ifGone = false)
     {
         try
         {
-            await client.OpenSessionAsync($"BooBoot Console {Environment.UserName}@{Environment.MachineName}",
-                force: force);
-            return null;
+            await client.OpenSessionAsync(Name, force: force, ifGone: ifGone);
         }
         catch (BooBootException e) when (e.Code == "busy" && !force && e.Info?.TryGetProperty("session", out _) == true)
         {
-            return e.Info.Value.GetProperty("session");
+            var session = e.Info.Value.GetProperty("session");
+            if (ifGone || !IsGone(session) || session.GetProperty("client").GetString() != Name)
+                return session;
+            return await TakeAsync(ifGone: true);
+        }
+        beat?.Cancel();
+        beat = new CancellationTokenSource();
+        _ = BeatAsync(beat.Token);
+        return null;
+    }
+
+    /// <summary>True if the client of the session sent heartbeats, and stopped.</summary>
+    public static bool IsGone(JsonElement session) =>
+        session.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.False;
+
+    async Task BeatAsync(CancellationToken stop)
+    {
+        try
+        {
+            while (Token != null)
+            {
+                try
+                {
+                    await client.HeartbeatAsync();
+                }
+                catch (BooBootException e) when (e.Code == "not_found")
+                {
+                    return; // a server older than heartbeats
+                }
+                catch (BooBootException)
+                {
+                    // The status poll finds out when the control ends.
+                }
+                await Task.Delay(BooBootClient.Heartbeat, stop);
+            }
+        }
+        catch (Exception) when (stop.IsCancellationRequested)
+        {
         }
     }
 
@@ -87,12 +132,14 @@ public sealed class ConsoleInput : IDisposable
     /// <summary>Forgets the session, already ended on the server.</summary>
     public void Forget()
     {
+        beat?.Cancel();
         client.Session = null;
         keys.Clear();
     }
 
     public async Task ReleaseAsync()
     {
+        beat?.Cancel();
         keys.Clear();
         try
         {
@@ -104,5 +151,9 @@ public sealed class ConsoleInput : IDisposable
         }
     }
 
-    public void Dispose() => client.Dispose();
+    public void Dispose()
+    {
+        beat?.Cancel();
+        client.Dispose();
+    }
 }

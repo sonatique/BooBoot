@@ -3,6 +3,7 @@
 //   cd server && python3 -m booboot_server --fake --port 8080
 //   dotnet run --project client/csharp/BooBootConsole.Tests -- http://127.0.0.1:8080 [screenshot.png]
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Headless;
@@ -222,6 +223,13 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     await WaitFor(() => window.Status.Contains("session yours") && window.Status.Contains("in control"), "control taken");
     Check((await dut.StatusAsync()).GetProperty("session").GetProperty("client").GetString()!
         .StartsWith("BooBoot Console "), "session in the name of the program");
+    var alive = false;
+    for (var i = 0; i < 50 && !alive; i++)
+    {
+        alive = (await dut.StatusAsync()).GetProperty("session").GetProperty("alive").ValueKind == JsonValueKind.True;
+        await Task.Delay(100);
+    }
+    Check(alive, "heartbeat while in control");
     window.KeyTextInput("echo typedd");
     window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
     window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
