@@ -161,20 +161,35 @@ session and does not disturb you.
    Linux and macOS: `pgrep -fl BooBootConsole`. If it runs, keep it, ask
    the user to check that it shows `URL`, and go to step 4.
 2. **Get BooBoot Console**, the first way that works:
-   1. Windows x64 or Linux x64, with the GitHub CLI logged in
-      (`gh auth status`): the build of the latest successful CI run.
+   1. Windows x64 or Linux x64: the latest release, no login needed. Its
+      tag is the end of the address that this command prints (like
+      `.../tag/v0.1.0`); an address ending with `/releases` means that there
+      is no release yet, go to the next way:
+
+      ```sh
+      curl -sSfLI -o /dev/null -w '%{url_effective}' https://github.com/sonatique/BooBoot/releases/latest
+      ```
+
+      When `TOOLS/BooBootConsole/version.txt` holds this tag, keep the
+      program there. Otherwise download it, and write the tag in
+      `version.txt`:
+
+      ```sh
+      curl -sSfL --create-dirs -o TOOLS/BooBootConsole/BooBootConsole.exe https://github.com/sonatique/BooBoot/releases/latest/download/BooBootConsole-win-x64.exe
+      ```
+
+      On Linux, download `BooBootConsole-linux-x64` as
+      `TOOLS/BooBootConsole/BooBootConsole`, then `chmod +x` it.
+   2. Windows x64 or Linux x64, when there is no release yet, with the GitHub
+      CLI logged in (`gh auth status`): the build of the latest successful CI
+      run (kept 30 days). On Linux, use `BooBootConsole-linux-x64`, then
+      `chmod +x TOOLS/BooBootConsole/BooBootConsole`.
 
       ```sh
       RUN=$(gh run list -R sonatique/BooBoot -w CI -b main -s success -L 1 --json databaseId -q '.[0].databaseId')
       gh run download "$RUN" -R sonatique/BooBoot -n BooBootConsole-win-x64 -D TOOLS/BooBootConsole
       ```
-
-      Use `BooBootConsole-linux-x64` on Linux, then
-      `chmod +x TOOLS/BooBootConsole/BooBootConsole`. Write the run number in
-      `TOOLS/BooBootConsole/run.txt`; when it is already the latest run,
-      keep the program there and skip the download. CI keeps the builds for
-      30 days: when the download finds none, go to the next way.
-   2. With the .NET 10 SDK (`dotnet --list-sdks` lists a 10 version), on any
+   3. With the .NET 10 SDK (`dotnet --list-sdks` lists a 10 version), on any
       system: build it from the sources (RID: `win-x64`, `linux-x64`,
       `linux-arm64`, `osx-arm64`, `osx-x64`).
 
@@ -184,7 +199,7 @@ session and does not disturb you.
           --self-contained -p:PublishSingleFile=true -o TOOLS/BooBootConsole
       ```
 
-   3. Otherwise: only the web page (step 4). Tell the user how to get the
+   4. Otherwise: only the web page (step 4). Tell the user how to get the
       program themselves, if they want it (install.md B3).
 3. **Start it**, detached from your shell, with the server address:
    - Windows: `powershell -NoProfile -Command "Start-Process -FilePath 'TOOLS\BooBootConsole\BooBootConsole.exe' -ArgumentList 'URL'"`
@@ -287,5 +302,5 @@ Then go on with the task.
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
-| `gh run download` finds no artifact | CI keeps builds for 30 days | U4, step 2, next way |
+| The release download fails with 404 | no release yet | U4, step 2, next way |
 | BooBoot Console does not start on Linux | no desktop session, or missing libraries | the web page |

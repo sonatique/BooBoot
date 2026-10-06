@@ -187,13 +187,14 @@ Then `booboot --help` lists the commands.
 ### 3. BooBoot Console (optional)
 
 A desktop program to watch the console, with log files on the desktop (see
-[console.md](console.md)). On GitHub, open the Actions tab of the repository,
-the latest successful CI run, and download `BooBootConsole-win-x64` or
-`BooBootConsole-linux-x64` (a GitHub login is needed). Unzip and run.
+[console.md](console.md)). From the latest release,
+`https://github.com/sonatique/BooBoot/releases/latest`, download `BooBootConsole-win-x64.exe` (Windows) or
+`BooBootConsole-linux-x64` (Linux), and run it. It is one file, with nothing
+else to install.
 
 - Windows may warn that the program is not signed: "More info", then "Run
   anyway".
-- Linux: `chmod +x BooBootConsole` first.
+- Linux: `chmod +x BooBootConsole-linux-x64` first.
 - macOS: from the sources, with the .NET 10 SDK:
   `dotnet run --project client/csharp/BooBootConsole`.
 

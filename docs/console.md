@@ -61,11 +61,13 @@ cursor, and follows the output at each key.
 
 ## Run
 
-**Ready-built program.** CI builds a single program file for Windows and
-Linux at each push, with nothing else to install. On GitHub, open the latest
-run of the CI workflow, and download the artifact `BooBootConsole-win-x64` or
+**Ready-built program.** Each release has a single program file for Windows
+and Linux, with nothing else to install. From the
+[latest release](https://github.com/sonatique/BooBoot/releases/latest), download `BooBootConsole-win-x64.exe` or
 `BooBootConsole-linux-x64`. On Linux, make the file executable first:
-`chmod +x BooBootConsole`.
+`chmod +x BooBootConsole-linux-x64`. CI also builds them at each push: the
+artifacts of the latest CI run have the changes made since the release (a
+GitHub login is needed, and they are kept 30 days).
 
 **From the sources**, on any system with the .NET 10 SDK:
 

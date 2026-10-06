@@ -349,7 +349,7 @@ are in install.md, part B.
 |---|---|---|
 | B1 Web page | tell the user the address `http://HOST:PORT/` | T1 already got 200 |
 | B2 Command line tool on this computer | download `https://raw.githubusercontent.com/sonatique/BooBoot/main/client/booboot.py` to a folder the user chooses; if `HOST` or `PORT` differ from the defaults, tell them how to set `BOOBOOT_URL` (install.md B2) | `python3 booboot.py --url http://HOST:PORT status` (Windows: `python`) |
-| B3 BooBoot Console | give the user the download steps of install.md B3 (it needs their GitHub login) | the user confirms it shows the console |
+| B3 BooBoot Console | give the user the download link of install.md B3 | the user confirms it shows the console |
 | B4 MCP server | if your host supports MCP servers and the user wants it: register `python3 PATH/booboot.py --url http://HOST:PORT mcp` as a stdio server named `booboot` (mcp.md), after B2 | the server's `status` tool answers |
 | Web page off | `web = no` under `[server]` (A5 method) | `curl` of `/` gives 404 |
 | Session timeout | `session_timeout` in seconds (A5 method) | `status` shows it after a session is opened |

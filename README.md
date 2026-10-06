@@ -112,8 +112,10 @@ so that MCP clients can use the DUT through tools.
 To watch the serial console live, open `http://booboot.local:8080/` in any
 browser: the [console web page](docs/web.md), served by the BooBoot board.
 [BooBoot Console](docs/console.md) does the same as a desktop program
-(Windows, Linux, macOS), with log files on the desktop. Both need no session
-to watch, so they can watch while an agent works. "Take control" in either
+(Windows, Linux, macOS), with log files on the desktop. The
+[latest release](https://github.com/sonatique/BooBoot/releases/latest) has it
+ready to run for Windows and Linux. Both need no session to watch, so they
+can watch while an agent works. "Take control" in either
 opens the session, to type into the console.
 
 ## Development
@@ -136,3 +138,19 @@ tests on Windows and macOS, checks the C# client and BooBoot Console against a
 server with a simulated board, builds BooBoot Console for Windows and Linux,
 and runs `server/install.sh` on a machine with systemd, with the relay on a
 simulated GPIO chip.
+
+## Releases
+
+A tag `vX.Y.Z` makes a release: CI runs all the checks, then publishes the
+release on GitHub with BooBoot Console for Windows and Linux, `booboot.py`,
+and their SHA-256 sums in `SHA256SUMS`. The tag must match the version in
+`server/booboot_server/__init__.py`, `client/booboot.py` and
+`client/csharp/BooBootConsole/BooBootConsole.csproj`, or the release fails.
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+A release can also be made on the GitHub page (Releases, "Draft a new
+release", with a new tag): CI then adds the files to it.

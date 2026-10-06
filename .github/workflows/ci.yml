@@ -135,3 +135,45 @@ jobs:
           retention-days: 7
       - if: always()
         run: cat server.log
+
+  release:
+    # A tag vX.Y.Z publishes a GitHub release with the programs, once all checks pass.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, test, test-root, install, client, csharp]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check that the tag is the version in the code
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          bad=0
+          for f in server/booboot_server/__init__.py client/booboot.py client/csharp/BooBootConsole/BooBootConsole.csproj; do
+            grep -Fq -e "__version__ = \"$v\"" -e "<Version>$v</Version>" "$f" || { echo "::error file=$f::version is not $v"; bad=1; }
+          done
+          exit $bad
+      - uses: actions/download-artifact@v8
+        with:
+          name: BooBootConsole-win-x64
+          path: build/win-x64
+      - uses: actions/download-artifact@v8
+        with:
+          name: BooBootConsole-linux-x64
+          path: build/linux-x64
+      - name: Publish the release
+        run: |
+          mkdir dist
+          cp build/win-x64/BooBootConsole.exe dist/BooBootConsole-win-x64.exe
+          cp build/linux-x64/BooBootConsole dist/BooBootConsole-linux-x64
+          cp client/booboot.py dist/
+          (cd dist && sha256sum * > SHA256SUMS)
+          # The release exists already when it was made on the GitHub page, or by an earlier run.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "BooBoot ${GITHUB_REF_NAME#v}" --generate-notes
+          fi
