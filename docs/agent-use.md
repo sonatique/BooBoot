@@ -134,7 +134,7 @@ In the status of U1:
 | `console.connected` | `true` | UART adapter not found |
 | `operation` | `null` | a long operation (image write) is running: someone uses the DUT |
 | `session.active` | `false` | someone uses the DUT: rule 2 |
-| `version` | the latest release (its tag, without the `v`: U4, step 2) | an older version: tell the user (rule 5) |
+| `version` | the latest release (its tag without the `v`: U4, step 2), or later (like `0.3.0-2-gabc1234`) | an older release, or `dev`: tell the user (rule 5) |
 
 Report the errors (with the common problems of section 6), and do not fix
 them (rule 5). An error that does not matter for the task (for example no

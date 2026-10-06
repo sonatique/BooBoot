@@ -34,7 +34,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.2.0"
+__version__ = "dev"  # set by install.sh and in releases
 
 DEFAULT_URL = "http://booboot.local:8080"
 CHUNK = 1 << 20

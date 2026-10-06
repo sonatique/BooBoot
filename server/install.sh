@@ -36,6 +36,15 @@ EOF
 chmod 755 /usr/local/bin/booboot-server
 install -m 755 "$SRC/../client/booboot.py" /usr/local/bin/booboot
 
+# The version comes from git: the tag, like 0.3.0, or 0.3.0-2-gabc1234 for a later commit.
+# git runs as the owner of the clone: it refuses a repository of another user.
+REPO=$(cd "$SRC/.." && pwd)
+VERSION=$(su "$(stat -c %U "$REPO")" -s /bin/sh -c "git -C '$REPO' describe --tags --always" 2>/dev/null | sed 's/^v//')
+case "$VERSION" in
+    "" | *[!0-9A-Za-z.+-]*) VERSION=dev ;;
+esac
+sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" "$PREFIX/booboot_server/__init__.py" /usr/local/bin/booboot
+
 # The USB-SD-Mux is controlled through the SCSI generic driver.
 echo sg > /etc/modules-load.d/booboot.conf
 modprobe sg || true

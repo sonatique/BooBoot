@@ -116,11 +116,17 @@ jobs:
           publish/tests/BooBootConsole.Tests http://127.0.0.1:8080
       - name: Build BooBoot Console as single files
         run: |
+          # For a tag vX.Y.Z, the version is X.Y.Z.
+          version=0.0.0-dev
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}
+            [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || { echo "::error::tag $GITHUB_REF_NAME is not like v1.2.3"; exit 1; }
+          fi
           for rid in win-x64 linux-x64; do
             dotnet publish client/csharp/BooBootConsole -c Release -r $rid --self-contained \
               -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
               -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true \
-              -p:DebugType=none -o publish/$rid
+              -p:DebugType=none -p:Version=$version -o publish/$rid
           done
       - name: Start the Linux program, until it connects
         run: |
@@ -168,14 +174,6 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v5
-      - name: Check that the tag is the version in the code
-        run: |
-          v=${GITHUB_REF_NAME#v}
-          bad=0
-          for f in server/booboot_server/__init__.py client/booboot.py client/csharp/BooBootConsole/BooBootConsole.csproj; do
-            grep -Fq -e "__version__ = \"$v\"" -e "<Version>$v</Version>" "$f" || { echo "::error file=$f::version is not $v"; bad=1; }
-          done
-          exit $bad
       - uses: actions/download-artifact@v8
         with:
           name: BooBootConsole-win-x64
@@ -189,7 +187,8 @@ jobs:
           mkdir dist
           cp build/win-x64/BooBootConsole.exe dist/BooBootConsole-win-x64.exe
           cp build/linux-x64/BooBootConsole dist/BooBootConsole-linux-x64
-          cp client/booboot.py dist/
+          sed "s/^__version__ = .*/__version__ = \"${GITHUB_REF_NAME#v}\"/" client/booboot.py > dist/booboot.py
+          [ "$(python3 dist/booboot.py --version)" = "${GITHUB_REF_NAME#v}" ]
           (cd dist && sha256sum * > SHA256SUMS)
           # The release exists already when it was made on the GitHub page, or by an earlier run.
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then

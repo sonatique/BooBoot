@@ -147,16 +147,16 @@ simulated GPIO chip.
 
 ## Releases
 
-A tag `vX.Y.Z` makes a release: CI runs all the checks, then publishes the
-release on GitHub with BooBoot Console for Windows and Linux, `booboot.py`,
-and their SHA-256 sums in `SHA256SUMS`. The tag must match the version in
-`server/booboot_server/__init__.py`, `client/booboot.py` and
-`client/csharp/BooBootConsole/BooBootConsole.csproj`, or the release fails.
+Make a release on the GitHub page (Releases, "Draft a new release", with a
+new tag like `v0.3.0` on `main`), or push a tag:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
-A release can also be made on the GitHub page (Releases, "Draft a new
-release", with a new tag): CI then adds the files to it.
+CI runs all the checks, then adds to the release BooBoot Console for Windows
+and Linux, `booboot.py`, and their SHA-256 sums in `SHA256SUMS`. The tag
+gives the version: no file needs editing. CI writes it into the released
+files, and on the BooBoot board `install.sh` takes it from git: `0.3.0` for
+the tagged commit, `0.3.0-2-gabc1234` for a later one, `dev` without git.

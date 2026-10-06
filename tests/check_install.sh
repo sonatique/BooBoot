@@ -36,6 +36,11 @@ mountpoint -q /sys/kernel/debug || sudo mount -t debugfs none /sys/kernel/debug
 
 [ "$(systemctl is-enabled "$SERVICE")" = enabled ] || fail "service not enabled"
 wait_up
+# install.sh sets the version from git, the same for the server and the client.
+VERSION=$(booboot --version)
+[ "$VERSION" != dev ] || fail "version not set by install.sh"
+[ "$(booboot --url "$URL" --json status | python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])')" = "$VERSION" ] \
+    || fail "server version is not $VERSION"
 [ "$(power)" = off ] || fail "power not off at start"
 [ "$(level)" = lo ] || fail "relay line not low at start"
 echo "ok: service up, relay off"
