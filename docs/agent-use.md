@@ -227,7 +227,8 @@ only "check your viewer".
       ```sh
       git clone --depth 1 https://github.com/sonatique/BooBoot.git TOOLS/src    # if there: git -C TOOLS/src pull
       AVALONIA_TELEMETRY_OPTOUT=1 dotnet publish TOOLS/src/client/csharp/BooBootConsole -c Release -r RID \
-          --self-contained -p:PublishSingleFile=true -p:PublishReadyToRun=true -o TOOLS/BooBootConsole
+          --self-contained -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true \
+          -o TOOLS/BooBootConsole
       ```
 
    4. Otherwise: only the web page (step 6). Tell the user how to get the
@@ -346,7 +347,7 @@ Then go on with the task.
 | `session expired, opening a new one` | no command for the session timeout | another client may have used the DUT meanwhile: check its state (U5) before going on |
 | DUT on, session free, output coming | a colleague's test runs without the session | rule 3 |
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
-| `console write` succeeds (`written`), the DUT never reacts, but its output is shown | the TX path to the DUT: adapter, TX wire to the DUT RX, or the adapter itself | report (rule 5); the unit's owner tests the adapter with a TX to RX loopback ([agent-setup.md](agent-setup.md), T5) |
+| `console write` succeeds, the DUT never reacts, but its output is shown | the TX path: the adapter (a faulty one can still receive), the TX wire to the DUT RX, or another chip on that line | report (rule 5); whoever looks after the unit follows bringup.md, "When the DUT does not receive", starting with the adapter loopback. `written` and `console.written` only show that the serial driver took the bytes, and the journal does not show successful writes |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
 | The release download fails with 404 | no release yet, or none for that version | the next way of the step |

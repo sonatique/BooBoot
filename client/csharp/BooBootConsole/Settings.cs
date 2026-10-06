@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace BooBootConsole;
 
@@ -21,13 +22,12 @@ public sealed class Settings
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BooBootConsole", "settings.json");
 
-    static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
-    public static Settings Load()
+    public static Settings Load(string? path = null)
     {
         try
         {
-            return JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath), Options) ?? new Settings();
+            return JsonSerializer.Deserialize(File.ReadAllText(path ?? FilePath), SettingsJson.Default.Settings)
+                ?? new Settings();
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -35,15 +35,23 @@ public sealed class Settings
         }
     }
 
-    public void Save()
+    public void Save(string? path = null)
     {
+        path ??= FilePath;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Options));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(this, SettingsJson.Default.Settings));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
     }
+}
+
+// JSON code made at build time, as trimmed programs cannot use reflection.
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(Settings))]
+partial class SettingsJson : JsonSerializerContext
+{
 }

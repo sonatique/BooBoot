@@ -317,6 +317,35 @@ public sealed class BooBootClient : IDisposable
     static Dictionary<string, object?> Body(params (string Key, object? Value)[] items) =>
         items.Where(i => i.Value != null).ToDictionary(i => i.Key, i => i.Value);
 
+    // Written by hand rather than with JsonSerializer, which trimmed programs cannot use.
+    static string ToJson(Dictionary<string, object?> body)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var (key, value) in body)
+            {
+                switch (value)
+                {
+                    case string s:
+                        writer.WriteString(key, s);
+                        break;
+                    case bool b:
+                        writer.WriteBoolean(key, b);
+                        break;
+                    case double d:
+                        writer.WriteNumber(key, d);
+                        break;
+                    default:
+                        throw new ArgumentException($"unsupported value for {key}: {value?.GetType()}");
+                }
+            }
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
     static string Query(params (string Key, object? Value)[] items)
     {
         var parts = items.Where(i => i.Value != null).Select(i =>
@@ -342,7 +371,7 @@ public sealed class BooBootClient : IDisposable
     {
         var request = new HttpRequestMessage(method, Api(path));
         if (body != null)
-            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            request.Content = new StringContent(ToJson(body), Encoding.UTF8, "application/json");
         using var cts = new CancellationTokenSource(Timeout + (wait ?? TimeSpan.Zero));
         using var resp = await SendAsync(request, cts.Token);
         return await ReadJsonAsync(resp, cts.Token);

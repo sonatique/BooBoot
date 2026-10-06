@@ -14,6 +14,7 @@ using BooBoot;
 using BooBootConsole;
 
 CheckBuffer();
+CheckSettings();
 if (args.Length > 0)
 {
     TestApp.BuildAvaloniaApp().SetupWithoutStarting();
@@ -101,6 +102,25 @@ static void CheckBuffer()
     Check(small.GetAllText().EndsWith("line 998\nline 999\n"), "all text");
     small.Clear();
     Check(small.Count == 1 && small.Pending == "" && small.First > 1000, "clear");
+}
+
+static void CheckSettings()
+{
+    var dir = Directory.CreateTempSubdirectory("booboot-settings-");
+    try
+    {
+        var path = Path.Combine(dir.FullName, "settings.json");
+        new Settings { Url = "http://test:8081", LogPrefix = "lab", NewLogAtPowerOn = true, TextSize = 15.5 }.Save(path);
+        var s = Settings.Load(path);
+        Check(s.Url == "http://test:8081" && s.LogPrefix == "lab" && s.NewLogAtPowerOn && s.TextSize == 15.5
+            && s.ScrollbackLines == 200_000, "settings saved and loaded");
+        Check(File.ReadAllText(path).Contains("\n  \"LogPrefix\": \"lab\","), "settings file indented");
+        Check(Settings.Load(Path.Combine(dir.FullName, "none.json")).Url == new Settings().Url, "default settings");
+    }
+    finally
+    {
+        dir.Delete(true);
+    }
 }
 
 static async Task CheckAll(string url, string? screenshot)

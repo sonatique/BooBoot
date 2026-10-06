@@ -47,7 +47,7 @@ No session needed.
   "power": {"state": "off", "backend": "gpio", "error": ""},
   "sd": {"mode": "dut", "error": "", "card": {"state": "written", "sha256": "...", "bytes": 123, "time": 1790000000.0}},
   "console": {"connected": true, "device": "/dev/serial/by-id/...", "baudrate": 921600,
-              "cursor": 5120, "boot": 1024, "last": 4800, "error": ""},
+              "cursor": 5120, "boot": 1024, "last": 4800, "written": 37, "error": ""},
   "operation": null,
   "session": {"active": true, "client": "me@desk", "opened": "2026-09-26T10:00:00",
               "timeout": 300, "idle": 12.5, "expires_in": 287.5, "yours": false}
@@ -57,6 +57,10 @@ No session needed.
 `power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off` or
 `unknown`. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
 `modified`. `operation`: running hardware operation or null.
+`console.written`: bytes written to the serial port since the server
+started. It grows at each write that reached the port, so it tells whether
+a write left the BooBoot board. Successful writes are not logged, as each
+key typed in a viewer is a write.
 
 ### POST /session
 

@@ -117,6 +117,7 @@ class Dut:
                 "cursor": c.end,
                 "boot": c.boot,
                 "last": c.last,
+                "written": c.written,
                 "error": c.error,
             },
             "operation": self.operation,
