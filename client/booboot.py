@@ -119,10 +119,17 @@ class Client:
     All calls but status(), open_session(), read(), read_raw() and stream()
     need the session.
     Errors raise booboot.Error.
+
+    When the host name of url is not found, like a .local name over a VPN,
+    the client tries the name without .local, then the addresses given, and
+    goes on with the first one that answers. on_note(text) is told which.
     """
 
-    def __init__(self, url=DEFAULT_URL, session=None, timeout=30.0):
+    def __init__(self, url=DEFAULT_URL, session=None, timeout=30.0, addresses=(), on_note=None):
         self.url = url.rstrip("/")
+        self.base = self.url  # where the requests go: url, or another address of the server
+        self.addresses = list(addresses)
+        self.on_note = on_note
         self.session = session
         self.timeout = timeout
         # No proxy: the server is on the local network.
@@ -134,7 +141,7 @@ class Client:
 
         With stream=True, return the open response instead.
         """
-        url = self.url + "/api/v1" + path
+        url = self.base + "/api/v1" + path
         params = {k: v for k, v in (params or {}).items() if v is not None}
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -155,8 +162,34 @@ class Client:
         except urllib.error.HTTPError as e:
             raise _http_error(e) from None
         except (urllib.error.URLError, OSError) as e:
-            raise Error("cannot reach %s: %s" % (self.url, getattr(e, "reason", e))) from None
+            # The name was not found: nothing was sent, the request can go to another address.
+            if self._other_address(e):
+                return self.request(method, path, params, json_body, data, headers, timeout, stream)
+            hint = ""
+            if (urllib.parse.urlsplit(self.url).hostname or "").endswith(".local"):
+                hint = " (.local names work only on the local network: use the name or address of the board)"
+            raise Error("cannot reach %s: %s%s" % (self.url, getattr(e, "reason", e), hint)) from None
         return json.loads(answer.decode("utf-8")) if answer else None
+
+    def _other_address(self, error):
+        """After a failed name lookup, switch to the first other address of the server that answers."""
+        if self.base != self.url or not isinstance(getattr(error, "reason", error), socket.gaierror):
+            return False
+        parts = urllib.parse.urlsplit(self.url)
+        name = parts.hostname or ""
+        others = ([name[:-len(".local")]] if name.endswith(".local") else []) + self.addresses
+        for other in others:
+            host = "[%s]" % other if ":" in other else other
+            base = "%s://%s%s" % (parts.scheme, host, ":%d" % parts.port if parts.port else "")
+            try:
+                self._opener.open(base + "/api/v1/status", timeout=3).close()
+            except OSError:
+                continue
+            self.base = base
+            if self.on_note:
+                self.on_note("%s not found, using %s" % (name, other))
+            return True
+        return False
 
     # Session
 
@@ -366,18 +399,65 @@ def _load_store():
         return {}
 
 
+def _save_json(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f, indent=1)
+    os.replace(tmp, path)
+
+
 def _save_token(url, token):
     store = _load_store()
     if token:
         store[url] = token
     else:
         store.pop(url, None)
-    path = _store_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(store, f, indent=1)
-    os.replace(tmp, path)
+    _save_json(_store_path(), store)
+
+
+def _addresses_path():
+    return os.path.join(os.path.dirname(_store_path()), "addresses.json")
+
+
+def _load_addresses():
+    try:
+        with open(_addresses_path()) as f:
+            store = json.load(f)
+        return store if isinstance(store, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def known_addresses(url):
+    """The addresses that the server at url reported last."""
+    found = _load_addresses().get(url.rstrip("/"))
+    return [a for a in found if isinstance(a, str)] if isinstance(found, list) else []
+
+
+def remember_addresses(url, status):
+    """Keep the addresses of the server from its status, for when the host name of url is not found."""
+    url = url.rstrip("/")
+    addresses = (status.get("network") or {}).get("addresses") or []
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if not addresses or _is_address(host) or known_addresses(url) == addresses:
+        return
+    store = _load_addresses()
+    store[url] = addresses
+    try:
+        _save_json(_addresses_path(), store)
+    except OSError:
+        pass
+
+
+def _is_address(host):
+    for family in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(family, host)
+            return True
+        except OSError:
+            pass
+    return False
 
 
 def _saved_token(url):
@@ -391,7 +471,7 @@ def _warn(text):
 
 def _client(args, session=True):
     """Return a client. With session, make sure it has a valid session."""
-    c = Client(args.url)
+    c = Client(args.url, addresses=known_addresses(args.url), on_note=_warn)
     if not session:
         return c
     c.session = _saved_token(c.url)
@@ -405,6 +485,10 @@ def _client(args, session=True):
             _warn("session expired, opening a new one")
     c.open_session(args.name, args.session_timeout)
     _save_token(c.url, c.session)
+    try:
+        remember_addresses(c.url, c.status())
+    except Error:
+        pass  # only for later, when the name is not found
     return c
 
 
@@ -464,6 +548,9 @@ def _status_text(s):
         + (", %d bytes sent" % con["written"] if con.get("written") else ""),
         "session: " + who,
     ]
+    net = s.get("network")
+    if net:
+        lines.append("network: " + ", ".join([net["hostname"]] + net["addresses"]))
     if s["operation"]:
         lines.append("busy:    " + s["operation"]["name"])
     return "\n".join(lines)
@@ -473,6 +560,7 @@ def cmd_status(args):
     c = _client(args, session=False)
     c.session = _saved_token(c.url)
     s = c.status()
+    remember_addresses(c.url, s)
     if args.json:
         return _print_json(s)
     print(_status_text(s))
@@ -809,10 +897,13 @@ class _McpSession:
     """The BooBoot client of an MCP server, with a session opened when needed."""
 
     def __init__(self, url, name=None, timeout=None):
-        self.client = Client(url)
+        self.client = Client(url, addresses=known_addresses(url), on_note=self._address_note)
         self.name = name or "mcp " + default_client_name()
         self.timeout = timeout or 900
         self._note = ""
+
+    def _address_note(self, text):
+        self._note += "Note: %s.\n" % text
 
     def dut(self):
         """Return the client with a valid session."""
@@ -875,7 +966,9 @@ class _Total:
 
 
 def _mcp_status(s, a, report):
-    return _status_text(s.client.status())
+    status = s.client.status()
+    remember_addresses(s.client.url, status)
+    return _status_text(status)
 
 
 def _mcp_power(s, a, report):

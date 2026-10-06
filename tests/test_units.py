@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 import common  # noqa: F401  (sets sys.path)
-from booboot_server import gpio, storage
+from booboot_server import gpio, netinfo, storage
 from booboot_server.console import Console, clean_text
 from booboot_server.errors import BadRequest, Busy, Conflict, NoSession
 from booboot_server.session import Sessions
@@ -388,3 +388,24 @@ class SessionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NetInfoTest(unittest.TestCase):
+    def test_addresses(self):
+        found = netinfo.addresses()
+        self.assertFalse([a for a in found if a.startswith(("127.", "169.254.")) or a == "::1"])
+        info = netinfo.info()
+        self.assertEqual(set(info), {"hostname", "addresses"})
+        self.assertIs(netinfo.info(), info)  # kept for a while
+
+    def test_ipv6(self):
+        path = os.path.join(tempfile.mkdtemp(), "if_inet6")
+        self.addCleanup(shutil.rmtree, os.path.dirname(path))
+        with open(path, "w") as f:
+            f.write("20010db8000000000000000000000005 02 40 00 80 eth0\n"
+                    "fe800000000000000000000000000001 02 40 20 80 eth0\n"
+                    "00000000000000000000000000000001 01 80 10 80 lo\n"
+                    "fd7a115c000000000000000000000001 05 80 00 80 docker0\n")
+        self.assertEqual(netinfo._ipv6(path), ["2001:db8::5"])
+        self.assertEqual(netinfo._ipv6(path + ".none"), [])
+

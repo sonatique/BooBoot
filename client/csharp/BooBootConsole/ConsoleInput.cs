@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -17,9 +19,9 @@ public sealed class ConsoleInput : IDisposable
     readonly StringBuilder keys = new();
     bool sending;
 
-    public ConsoleInput(string url)
+    public ConsoleInput(string url, IEnumerable<string> addresses)
     {
-        client = new BooBootClient(url, TimeSpan.FromSeconds(10));
+        client = new BooBootClient(url, TimeSpan.FromSeconds(10)) { Addresses = addresses.ToList() };
     }
 
     /// <summary>The session token while in control, else null.</summary>

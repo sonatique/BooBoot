@@ -234,5 +234,8 @@ sudo rm -rf /opt/booboot /etc/booboot /var/log/booboot /usr/local/bin/booboot /u
 sudo systemctl daemon-reload
 ```
 
+**From home or another site.** Through a VPN, `booboot.local` is not found:
+use `booboot` or the address of the board. See [remote.md](remote.md).
+
 **Security.** The service runs as root and has no password: keep it on a
 trusted network, never reachable from the internet.

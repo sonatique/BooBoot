@@ -20,6 +20,7 @@ and a Python library are included.
 - [MCP server](docs/mcp.md)
 - [BooBoot Console](docs/console.md)
 - [Console web page](docs/web.md)
+- [Remote access: VPN, other networks](docs/remote.md)
 - [Visuals: logo and icons](docs/brand/README.md)
 
 ## Start with an agent

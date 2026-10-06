@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -24,6 +25,8 @@ public partial class MainWindow : Window
     ConsoleSource? source;
     ConsoleInput? input;
     string connection = "Not connected", dutName = "", power = "", session = "", note = "";
+    // Another address of the server, for where its name does not work.
+    string alsoAt = "";
     bool closing;
     // True while output from before the connection is added: it is not logged.
     bool history;
@@ -142,9 +145,10 @@ public partial class MainWindow : Window
         buffer.Clear();
         View.Refresh();
         connectedOnce = false;
-        source = new ConsoleSource(url);
+        var known = settings.Addresses.TryGetValue(url.TrimEnd('/'), out var list) ? list : new List<string>();
+        source = new ConsoleSource(url, known);
         source.Available += () => Dispatcher.UIThread.Post(Drain, DispatcherPriority.Background);
-        input = new ConsoleInput(url);
+        input = new ConsoleInput(url, known);
         input.Lost += reason => SetControl(false, reason);
         input.Failed += text =>
         {
@@ -170,7 +174,7 @@ public partial class MainWindow : Window
             input = null;
             SetControl(false, "");
         }
-        (connection, dutName, power, session) = ("Not connected", "", "", "");
+        (connection, dutName, power, session, alsoAt) = ("Not connected", "", "", "", "");
         ConnectButton.Content = "Connect";
         ControlButton.IsEnabled = false;
         Title = "BooBoot Console";
@@ -237,6 +241,20 @@ public partial class MainWindow : Window
             case ConsoleSource.Lost l:
                 buffer.AddMarker($"---- {l.Bytes} bytes lost ----");
                 break;
+            case ConsoleSource.Network n:
+                var server = new Uri(source!.Url);
+                alsoAt = n.Addresses.Count == 0 || n.Addresses.Contains(server.Host) ? "" : $"{n.Addresses[0]}:{server.Port}";
+                // Kept for when the name of the server is not found, like a .local name over a VPN.
+                if (server.HostNameType == UriHostNameType.Dns
+                    && !(settings.Addresses.TryGetValue(source.Url, out var old) && old.SequenceEqual(n.Addresses)))
+                {
+                    settings.Addresses[source.Url] = n.Addresses.ToList();
+                    SaveSettings();
+                }
+                break;
+            case ConsoleSource.AddressUsed a:
+                note = a.Note;
+                break;
             case ConsoleSource.Session s:
                 session = s.Text;
                 // Only an answer about the current session counts.
@@ -257,6 +275,7 @@ public partial class MainWindow : Window
         var parts = new[]
         {
             connection,
+            alsoAt != "" ? "also at " + alsoAt : "",
             dutName,
             power != "" ? "power " + power : "",
             session != "" ? "session " + session : "",

@@ -34,7 +34,10 @@ To watch with nothing to install, the BooBoot server also has a
   when the server was restarted.
 
 The status bar shows the connection, the DUT name, the power state, and which
-client has the session.
+client has the session. When the server address is a name, it also shows the
+address of the board (`also at 10.1.2.3:8080`), for where the name does not
+work, like over a VPN. The program keeps the addresses of the board, and uses
+them by itself when the name is not found: see [remote.md](remote.md).
 
 ## Typing
 

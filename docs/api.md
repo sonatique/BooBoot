@@ -50,7 +50,8 @@ No session needed.
               "cursor": 5120, "boot": 1024, "last": 4800, "written": 37, "error": ""},
   "operation": null,
   "session": {"active": true, "client": "me@desk", "opened": "2026-09-26T10:00:00",
-              "timeout": 300, "idle": 12.5, "expires_in": 287.5, "yours": false}
+              "timeout": 300, "idle": 12.5, "expires_in": 287.5, "yours": false},
+  "network": {"hostname": "booboot", "addresses": ["10.1.2.3", "2001:db8::5"]}
 }
 ```
 
@@ -61,7 +62,9 @@ No session needed.
 since the server started, from `console/write` and `console/run`. It shows
 that a write reached the driver, as successful writes are not logged (each
 key typed in a viewer is a write). Like `written` (`POST /console/write`),
-it does not show that the DUT received them.
+it does not show that the DUT received them. `network`: the host name of the
+BooBoot board and its addresses (IPv4, then global IPv6), for clients where
+its `.local` name does not work, like over a VPN ([remote.md](remote.md)).
 
 ### POST /session
 

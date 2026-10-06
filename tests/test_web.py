@@ -12,6 +12,7 @@ import unittest
 
 import common
 import booboot
+from booboot_server import netinfo
 
 
 def find_chrome():
@@ -220,6 +221,10 @@ class WebTest(unittest.TestCase):
         info = "document.getElementById('info').textContent"
         b.call("Page.navigate", session=True, url=self.url + "/")
         b.wait(screen + ".endsWith('root@fake:~# \\n')", "shell prompt")
+        # The page is at 127.0.0.1: it shows another address of the board.
+        address = netinfo.addresses()[:1]
+        if address:
+            b.wait("%s.includes('also at %s:%d')" % (info, address[0], self.server.server_address[1]), "address")
         b.type("x")
         time.sleep(0.3)
         self.assertNotIn("# x", b.eval(screen), "keys sent without control")

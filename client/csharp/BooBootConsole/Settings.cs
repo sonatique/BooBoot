@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,6 +19,8 @@ public sealed class Settings
     public int ScrollbackLines { get; set; } = 200_000;
     public double TextSize { get; set; } = 13;
     public string Fonts { get; set; } = TerminalView.DefaultFonts;
+    /// <summary>The addresses that each server reported, for when its name is not found.</summary>
+    public Dictionary<string, List<string>> Addresses { get; set; } = new();
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BooBootConsole", "settings.json");

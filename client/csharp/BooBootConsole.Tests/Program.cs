@@ -161,6 +161,12 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     Check(window.Icon != null, "window icon");
     await WaitFor(() => window.Status.Contains("Connected") && window.Status.Contains("session used by console-check"),
         "connected", () => window.Status);
+    // The window is at 127.0.0.1: it shows another address of the server, and keeps none for an address.
+    var addresses = (await dut.StatusAsync()).GetProperty("network").GetProperty("addresses");
+    if (addresses.GetArrayLength() > 0)
+        await WaitFor(() => window.Status.Contains($"also at {addresses[0].GetString()}:{new Uri(url).Port}"),
+            "other address of the server shown", () => window.Status);
+    Check(settings.Addresses.Count == 0, "no address kept for a server given by address");
     await WaitFor(() => window.Buffer.GetAllText().Contains("U-Boot 2024.01"), "output from before the viewer");
     var firstLog = window.LogPath;
     Check(firstLog != null && firstLog.StartsWith(Path.Combine(tmp, "dut1-")), "log started on connect");

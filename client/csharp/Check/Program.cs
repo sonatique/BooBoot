@@ -24,6 +24,20 @@ using var other = new BooBootClient(url);
 
 Check((await dut.StatusAsync()).GetProperty("version").GetString() != null, "status");
 
+// When the name of the server is not found, like a .local name over a VPN: its other addresses.
+var server = new Uri(url);
+using (var named = new BooBootClient($"http://booboot-none.invalid:{server.Port}") { Addresses = { server.Host } })
+{
+    var note = "";
+    named.AddressUsed += text => note = text;
+    Check((await named.StatusAsync()).GetProperty("name").GetString() == "dut1"
+        && named.Base == $"http://{server.Host}:{server.Port}"
+        && note == $"booboot-none.invalid not found, using {server.Host}", "other address when the name is not found");
+}
+using (var local = new BooBootClient($"http://booboot-none.local:{server.Port}"))
+    Check((await Fails(() => local.StatusAsync())).Message.Contains(".local names work only on the local network"),
+        "hint when a .local name is not found");
+
 await dut.OpenSessionAsync("csharp-check");
 var busy = await Fails(() => other.OpenSessionAsync("other"));
 Check(busy.Status == 423 && busy.Code == "busy", "second client is refused");

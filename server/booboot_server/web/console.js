@@ -16,7 +16,7 @@
     "#666666", "#f14c4c", "#23d18b", "#f5f543", "#3b8eea", "#d670d6", "#29b8db", "#ffffff",
   ];
 
-  let name = "", connection = "Connecting...", power = "", session = "";
+  let name = "", connection = "Connecting...", power = "", session = "", address = "";
   let follow = true, holding = false, scheduled = false;
   // Control: the session token, and the keys waiting to be sent.
   let token = "", note = "", keys = "", sending = false;
@@ -171,7 +171,7 @@
   }
 
   function showInfo() {
-    const parts = [connection, power && "power " + power, session && "session " + session,
+    const parts = [connection, address && "also at " + address, power && "power " + power, session && "session " + session,
       term.lines.length.toLocaleString("en") + " lines", token ? "in control" : note];
     $("info").textContent = parts.filter(Boolean).join("   ");
     $("name").textContent = name || "BooBoot";
@@ -287,6 +287,10 @@
             : "control ended after the idle time");
         power = s.power.state;
         name = s.name;
+        // Where the page uses a name, the address of the board, for where the name does not work.
+        const addresses = (s.network && s.network.addresses) || [];
+        address = addresses.length && !addresses.includes(location.hostname)
+          ? addresses[0] + (location.port ? ":" + location.port : "") : "";
         schedule();
       } catch (err) {
         // The stream shows the connection state.

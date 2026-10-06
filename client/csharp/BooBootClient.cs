@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -69,6 +70,7 @@ public sealed class BooBootClient : IDisposable
     public BooBootClient(string url = "http://booboot.local:8080", TimeSpan? timeout = null)
     {
         Url = url.TrimEnd('/');
+        Base = Url;
         Timeout = timeout ?? TimeSpan.FromSeconds(30);
         // No proxy: the server is on the local network.
         http = new HttpClient(new HttpClientHandler { UseProxy = false })
@@ -78,6 +80,18 @@ public sealed class BooBootClient : IDisposable
     }
 
     public string Url { get; }
+
+    /// <summary>Where the requests go: Url, or another address of the server when its name is not found.</summary>
+    public string Base { get; private set; }
+
+    /// <summary>
+    /// Other addresses of the server. When the host name of Url is not found, like a .local name over
+    /// a VPN, the client tries the name without .local, then these, and goes on with the first that answers.
+    /// </summary>
+    public IList<string> Addresses { get; set; } = new List<string>();
+
+    /// <summary>Raised with a note when the client goes on with another address.</summary>
+    public event Action<string>? AddressUsed;
 
     /// <summary>Time allowed for a request, on top of any wait asked from the server.</summary>
     public TimeSpan Timeout { get; set; }
@@ -312,7 +326,7 @@ public sealed class BooBootClient : IDisposable
 
     // HTTP
 
-    string Api(string path) => Url + "/api/v1" + path;
+    string Api(string path) => Base + "/api/v1" + path;
 
     static Dictionary<string, object?> Body(params (string Key, object? Value)[] items) =>
         items.Where(i => i.Value != null).ToDictionary(i => i.Key, i => i.Value);
@@ -398,7 +412,18 @@ public sealed class BooBootClient : IDisposable
         }
         catch (HttpRequestException e)
         {
-            throw new BooBootException($"cannot reach {Url}: {e.Message}");
+            if (NameNotFound(e) && Base == Url && await UseOtherAddressAsync())
+            {
+                // Nothing was sent: the same request goes to the other address.
+                var again = new HttpRequestMessage(request.Method, Base + request.RequestUri!.PathAndQuery)
+                {
+                    Content = request.Content,
+                };
+                return await SendAsync(again, token);
+            }
+            var hint = new Uri(Url).Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+                ? " (.local names work only on the local network: use the name or address of the board)" : "";
+            throw new BooBootException($"cannot reach {Url}: {e.Message}{hint}");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -428,6 +453,37 @@ public sealed class BooBootClient : IDisposable
         {
             throw new BooBootException($"no answer from {Url} in time");
         }
+    }
+
+    static bool NameNotFound(HttpRequestException e) =>
+        e.InnerException is SocketException { SocketErrorCode: SocketError.HostNotFound or SocketError.NoData };
+
+    async Task<bool> UseOtherAddressAsync()
+    {
+        var url = new Uri(Url);
+        var others = new List<string>();
+        if (url.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+            others.Add(url.Host[..^".local".Length]);
+        others.AddRange(Addresses);
+        foreach (var other in others)
+        {
+            var candidate = $"{url.Scheme}://{(other.Contains(':') ? $"[{other}]" : other)}:{url.Port}";
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                using var resp = await http.GetAsync(candidate + "/api/v1/status", cts.Token);
+                if (!resp.IsSuccessStatusCode)
+                    continue;
+            }
+            catch (Exception e) when (e is HttpRequestException or OperationCanceledException)
+            {
+                continue;
+            }
+            Base = candidate;
+            AddressUsed?.Invoke($"{url.Host} not found, using {other}");
+            return true;
+        }
+        return false;
     }
 
     static async Task<BooBootException> ErrorAsync(HttpResponseMessage resp)

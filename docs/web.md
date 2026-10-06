@@ -30,6 +30,9 @@ the console, take control: see [Typing](#typing).
 - **A- and A+** change the text size. The browser remembers it.
 - **Connection**: when the connection is lost, the page connects again and
   continues where it was. A line says when the server was restarted.
+- **Address**: opened with a name, the page shows the address of the board
+  (`also at 10.1.2.3:8080`), for where the name does not work, like over a
+  VPN ([remote.md](remote.md)).
 
 ## Typing
 

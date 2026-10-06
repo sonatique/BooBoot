@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -113,6 +114,42 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(booboot.Error) as e:
             booboot.Client("http://127.0.0.1:9", timeout=5).status()
         self.assertIn("cannot reach", e.exception.message)
+
+    def test_other_address(self):
+        # Names that end with .local or .invalid are not found, like .local names over a VPN.
+        real = socket.getaddrinfo
+
+        def getaddrinfo(host, *args, **kwargs):
+            if str(host).endswith((".local", ".invalid")):
+                raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+            return real(host, *args, **kwargs)
+
+        patcher = mock.patch("socket.getaddrinfo", getaddrinfo)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        port = self.server.server_address[1]
+        self.answer("GET", "/status", dict(STATUS, network={"hostname": "booboot", "addresses": ["127.0.0.1"]}))
+        # First the name without .local.
+        notes = []
+        c = booboot.Client("http://localhost.local:%d" % port, on_note=notes.append)
+        self.assertEqual(c.status()["name"], "dut1")
+        self.assertEqual(c.base, "http://localhost:%d" % port)
+        self.assertEqual(notes, ["localhost.local not found, using localhost"])
+        # Then the addresses given, the first one that answers.
+        c = booboot.Client("http://booboot.invalid:%d" % port, addresses=["127.0.0.1"])
+        c.status()
+        self.assertEqual(c.base, self.url)
+        with self.assertRaises(booboot.Error) as e:
+            booboot.Client("http://nothing.local:%d" % port).status()
+        self.assertIn(".local names work only on the local network", e.exception.message)
+        # The command line remembers the addresses that the board reports, not for an address.
+        url = "http://localhost.local:%d" % port
+        with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(booboot.main(["--url", url, "status"]), 0)
+        self.assertIn("network: booboot, 127.0.0.1", out.getvalue())
+        self.assertEqual(booboot.known_addresses(url), ["127.0.0.1"])
+        self.assertEqual(self.cli("status")[0], 0)
+        self.assertEqual(booboot.known_addresses(self.url), [])
 
     def test_files(self):
         local = os.path.join(self.tmp, "BOOT.BIN")

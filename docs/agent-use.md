@@ -107,9 +107,14 @@ curl -sS -m 10 URL/api/v1/status
 
 (In PowerShell: `curl.exe`.) JSON with `name` and `power`: go on.
 
-If it fails, tell the user that nothing answers at `URL`, and ask for the
-right address: whoever looks after the unit knows it. With `USER`, also look
-on the board, read only:
+If the name is not found, like `booboot.local` over a VPN, try the name
+without `.local` (`http://booboot:PORT`), then ask the user for the address
+of the board ([remote.md](remote.md)). Once the client is there (U3), it
+does this by itself, with the addresses that the board reported before.
+
+If nothing answers, tell the user, and ask for the right address: whoever
+looks after the unit knows it. With `USER`, also look on the board, read
+only:
 
 - `pi 'systemctl --no-pager list-units "booboot@*"; ls /etc/booboot'`
 - SSH fails: report the error, and go on without SSH.

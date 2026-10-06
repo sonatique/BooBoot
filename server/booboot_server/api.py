@@ -14,7 +14,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import __version__
+from . import __version__, netinfo
 from .console import clean_text
 from .errors import ApiError, BadRequest, NotFound
 
@@ -318,6 +318,7 @@ class Server(ThreadingHTTPServer):
 def get_status(r, m):
     status = r.dut.status()
     status["session"] = r.server.sessions.status(r.token())
+    status["network"] = netinfo.info()
     return status
 
 

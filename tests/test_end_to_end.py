@@ -276,6 +276,7 @@ class Cli(unittest.TestCase):
             f.write("boot")
         status = json.loads(self.cli("--json", "status"))
         self.assertEqual(status["power"]["state"], "off")
+        self.assertEqual(status["network"]["hostname"], socket.gethostname())
 
         out = self.cli("deploy", boot, "--expect", "login: ", "--timeout", "10")
         self.assertIn("fake login:", out)

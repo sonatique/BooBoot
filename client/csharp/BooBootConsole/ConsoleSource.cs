@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,14 +35,21 @@ public sealed class ConsoleSource : IDisposable
     /// <param name="Token">Session token sent with the poll; Yours tells if it holds the session.</param>
     public sealed record Session(string Text, string? Token, bool Yours) : Item;
 
+    /// <summary>The addresses of the server, from its status, when they change.</summary>
+    public sealed record Network(IReadOnlyList<string> Addresses) : Item;
+
+    /// <summary>The name of the server was not found: the client goes on with another address.</summary>
+    public sealed record AddressUsed(string Note) : Item;
+
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
     readonly ConcurrentQueue<Item> queue = new();
     int signaled;
 
-    public ConsoleSource(string url)
+    public ConsoleSource(string url, IEnumerable<string> addresses)
     {
-        client = new BooBootClient(url, TimeSpan.FromSeconds(10));
+        client = new BooBootClient(url, TimeSpan.FromSeconds(10)) { Addresses = addresses.ToList() };
+        client.AddressUsed += note => Post(new AddressUsed(note));
         Url = client.Url;
     }
 
@@ -153,13 +161,24 @@ public sealed class ConsoleSource : IDisposable
     async Task PollAsync(CancellationToken token)
     {
         var last = "";
+        var lastAddresses = "";
         while (!token.IsCancellationRequested)
         {
             try
             {
                 var mine = Token;
                 client.Session = mine;
-                var session = (await client.StatusAsync()).GetProperty("session");
+                var status = await client.StatusAsync();
+                if (status.TryGetProperty("network", out var network))
+                {
+                    var addresses = network.GetProperty("addresses").EnumerateArray().Select(a => a.GetString()!).ToList();
+                    if (string.Join(" ", addresses) != lastAddresses)
+                    {
+                        lastAddresses = string.Join(" ", addresses);
+                        Post(new Network(addresses));
+                    }
+                }
+                var session = status.GetProperty("session");
                 var yours = session.TryGetProperty("yours", out var y) && y.GetBoolean();
                 var text = !session.GetProperty("active").GetBoolean() ? "free"
                     : yours ? "yours" : "used by " + session.GetProperty("client").GetString();
