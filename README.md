@@ -1,4 +1,4 @@
-# BooBoot
+<p align="center"><img src="docs/brand/booboot-banner.svg" alt="BooBoot: power, SD card and serial console, over the network" width="720"></p>
 
 Remote control of an embedded board that boots from an SD card: power, SD
 card content and serial console, over the network.
@@ -20,6 +20,7 @@ and a Python library are included.
 - [MCP server](docs/mcp.md)
 - [BooBoot Console](docs/console.md)
 - [Console web page](docs/web.md)
+- [Visuals: logo and icons](docs/brand/README.md)
 
 ## Start with an agent
 

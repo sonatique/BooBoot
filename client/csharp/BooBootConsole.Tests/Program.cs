@@ -158,6 +158,7 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     var window = new MainWindow(settings, url, persist: false) { Width = 1000, Height = 540 };
     created(window);
     window.Show();
+    Check(window.Icon != null, "window icon");
     await WaitFor(() => window.Status.Contains("Connected") && window.Status.Contains("session used by console-check"),
         "connected", () => window.Status);
     await WaitFor(() => window.Buffer.GetAllText().Contains("U-Boot 2024.01"), "output from before the viewer");

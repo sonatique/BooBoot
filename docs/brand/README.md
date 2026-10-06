@@ -1,0 +1,44 @@
+# BooBoot visuals
+
+![BooBoot](booboot-banner.svg)
+
+The icon is an SD card with a power symbol whose bar is the block cursor of
+a terminal: the three things that BooBoot controls.
+
+## Files
+
+| File | Use |
+|---|---|
+| `booboot-banner.svg`, `png/booboot-banner.png`, `png/booboot-banner@2x.png` | Top of documents and pages. It has its own dark background, so it fits light and dark pages. |
+| `booboot-logo.svg`, `png/booboot-logo.png` | Icon and name, on light backgrounds |
+| `booboot-logo-dark.svg`, `png/booboot-logo-dark.png` | Icon and name, on dark backgrounds |
+| `booboot-icon.svg`, `png/booboot-icon-SIZE.png` | The icon, 48 px and more |
+| `booboot-icon-small.svg`, `png/booboot-icon-16.png` to `-32.png` | The icon, 32 px and less: thicker lines, and an edge that shows on dark backgrounds |
+| `client/csharp/BooBootConsole/Assets/booboot.ico` | BooBoot Console program and window icon, 16 to 256 px |
+
+In the SVG files, the text is drawn as outlines: it looks the same
+everywhere, with no font to install.
+
+## Colors and fonts
+
+| Name | Value | Use |
+|---|---|---|
+| Green | `#23D18B` | power symbol; "Boot" on dark backgrounds |
+| Dark green | `#0E8A50` | "Boot" on light backgrounds |
+| Light | `#E6EDF3` | cursor; "Boo" on dark backgrounds |
+| Ink | `#1F2328` | "Boo" on light backgrounds |
+| Tile | `#323A44` to `#171A1F` | icon background, top to bottom |
+| Gray | `#9DA7B3` | tagline |
+
+The name is in DejaVu Sans Mono Bold, the tagline in DejaVu Sans.
+
+## Making the files again
+
+`make.py` makes all the files above, the icon file of BooBoot Console
+included. It needs fontTools, Pillow, the DejaVu fonts and Chrome or
+Chromium:
+
+```sh
+pip install fonttools pillow
+CHROME=/path/to/chrome python3 docs/brand/make.py
+```

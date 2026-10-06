@@ -7,6 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/booboot.ico</ApplicationIcon>
     <Version>0.2.0</Version>
   </PropertyGroup>
 
@@ -18,6 +19,7 @@
 
   <ItemGroup>
     <Compile Include="../BooBootClient.cs" />
+    <AvaloniaResource Include="Assets/booboot.ico" />
   </ItemGroup>
 
 </Project>
