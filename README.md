@@ -13,6 +13,7 @@ and a Python library are included.
 - [Installation from zero](docs/install.md)
 - [Hardware](docs/hardware.md)
 - [Setup runbook for agents](docs/agent-setup.md)
+- [Usage runbook for agents](docs/agent-use.md)
 - [Architecture](docs/architecture.md)
 - [HTTP API](docs/api.md)
 - [First bring-up](docs/bringup.md)
@@ -48,12 +49,25 @@ To go on later, start a new session in the same folder with the same message:
 the agent finds the report file and continues from there. The rules the agent
 follows are in [docs/agent-setup.md](docs/agent-setup.md).
 
+To use a unit that is set up, tell the agent, even in the middle of a task:
+
+```text
+Start using BooBoot for testing this. Read
+https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-use.md
+and follow it, with the unit at USER@booboot.local.
+```
+
+The agent checks the unit, gets the client, starts BooBoot Console for you
+(or opens the web page), tells you what it found, and goes on with the task.
+The rules it follows are in [docs/agent-use.md](docs/agent-use.md).
+
 ## Server setup (on the Raspberry Pi)
 
 1. Write Raspberry Pi OS Lite (any model, 32 or 64 bit) with Raspberry Pi
    Imager, with hostname `booboot` and SSH on. Connect it to the network.
-2. Connect the relay driver to GPIO17, the USB-SD-Mux FAST and the USB UART
-   adapter.
+2. Connect the relay driver to GPIO17 (pin 11, see the pin table in
+   [Installation from zero](docs/install.md#2-wiring)), the USB-SD-Mux FAST
+   and the USB UART adapter.
 3. Install:
 
    ```sh

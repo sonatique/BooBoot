@@ -399,7 +399,8 @@ Give the user these steps (bringup.md step 6), and wait for each:
    - the addresses: `http://HOST:PORT/` (web page) and the API,
    - what is left to do, if anything,
    - how to update later: `cd ~/BooBoot && git pull && sudo server/install.sh NAME`
-     on the Pi.
+     on the Pi,
+   - how to use the unit from an agent later: [agent-use.md](agent-use.md).
 
 ## 12. Common problems
 
