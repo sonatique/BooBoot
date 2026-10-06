@@ -15,6 +15,7 @@ import struct
 import subprocess
 import tempfile
 
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
@@ -95,6 +96,24 @@ def text(s, font, size, x, baseline):
     return path, pos - x
 
 
+def ink(s, font, size):
+    """Left and right edges of the ink of text set at x 0."""
+    f = fonts.setdefault(font, TTFont(font))
+    glyphs, cmap = f.getGlyphSet(), f.getBestCmap()
+    scale = size / f["head"].unitsPerEm
+    left = right = None
+    pos = 0
+    for ch in s:
+        glyph = glyphs[cmap[ord(ch)]]
+        pen = BoundsPen(glyphs)
+        glyph.draw(TransformPen(pen, (scale, 0, 0, -scale, pos, 0)))
+        if pen.bounds:
+            left = pen.bounds[0] if left is None else min(left, pen.bounds[0])
+            right = pen.bounds[2] if right is None else max(right, pen.bounds[2])
+        pos += glyph.width * scale
+    return left, right
+
+
 def wordmark(x, baseline, size, boo, boot):
     d1, w1 = text("Boo", MONO, size, x, baseline)
     d2, w2 = text("Boot", MONO, size, x + w1, baseline)
@@ -109,8 +128,13 @@ def logo_svg(boo, boot):
 
 def banner_svg():
     words, _ = wordmark(332, 150, 124, LIGHT, GREEN)
-    tagline, _ = text(TAGLINE, SANS, 38, 335, 208)
-    subline, _ = text(SUBLINE, SANS, 26, 337, 252)
+    # The tagline spans the ink of the name, from the B to the t; the second line starts at the B.
+    left, right = (332 + edge for edge in ink("BooBoot", MONO, 124))
+    a, b = ink(TAGLINE, SANS, 38)
+    size = 38 * (right - left) / (b - a)
+    baseline = 172 + size * 0.95
+    tagline, _ = text(TAGLINE, SANS, size, left - a * size / 38, baseline)
+    subline, _ = text(SUBLINE, SANS, 26, left - ink(SUBLINE, SANS, 26)[0], baseline + 44)
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320">'
             f'<defs>{GRADIENT}<linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">'
             '<stop offset="0" stop-color="#262C34"/><stop offset="1" stop-color="#121418"/></linearGradient></defs>'
