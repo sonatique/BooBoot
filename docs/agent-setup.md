@@ -395,8 +395,8 @@ Give the user these steps (bringup.md step 6), and wait for each:
 
    Without a login prompt, use the U-Boot check of bringup.md step 7. If
    there is no echo, follow "When the DUT does not receive" in bringup.md
-   with the user: `console.written` in the status first, then the loopback
-   and the wiring. Report, and ask. F2 passes only when the DUT receives.
+   with the user, starting with the adapter loopback (T5). Report, and ask.
+   F2 passes only when the DUT receives.
 4. Optional, with consent: `pi 'booboot --url http://localhost:PORT boottime "login: " --runs 3'`.
 
 ## 11. END: Final report
@@ -423,6 +423,6 @@ Give the user these steps (bringup.md step 6), and wait for each:
 | `pip` fails in `install.sh` | no access to PyPI | the network needs internet access during the install |
 | status: `power: unknown` | GPIO line wrong or busy | T2, then `line` in A5 |
 | no mux in `--probe` | cable, power, `sg` module | `pi 'lsusb'`, `pi 'sudo modprobe sg'`, T2 again |
-| output is shown but `console write` has no effect (`written` is only what the driver took) | TX path: adapter, TX wire to the DUT RX, or a faulty adapter | T5 loopback with the adapter off the DUT; if it fails, replace the adapter |
+| output is shown but `console write` has no effect (`written` is only what the driver took) | TX path: adapter, TX wire to the DUT RX, or a faulty adapter | T5 loopback with the adapter off the DUT; if it fails, replace the adapter; if it passes, bringup.md, "When the DUT does not receive" |
 | console `not connected` | adapter missing, or several adapters | T2; set `device` (A5) |
 | `busy` error, exit code 4 | another client has the session | ask the user; `session close` on that client, or wait |

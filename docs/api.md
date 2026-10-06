@@ -57,10 +57,11 @@ No session needed.
 `power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off` or
 `unknown`. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
 `modified`. `operation`: running hardware operation or null.
-`console.written`: bytes written to the serial port since the server
-started. It grows at each write that reached the port, so it tells whether
-a write left the BooBoot board. Successful writes are not logged, as each
-key typed in a viewer is a write.
+`console.written`: bytes that the serial driver of the BooBoot board took
+since the server started, from `console/write` and `console/run`. It shows
+that a write reached the driver, as successful writes are not logged (each
+key typed in a viewer is a write). Like `written` (`POST /console/write`),
+it does not show that the DUT received them.
 
 ### POST /session
 
