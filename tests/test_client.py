@@ -169,8 +169,14 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("power:   off", out)
         self.assertIn("used by other@pc (idle 3s, expires in 297s)", out)
+        self.assertIn("console: /dev/ttyUSB0 at 921600 baud\n", out)
         code, out, err = self.cli("--json", "status")
         self.assertEqual(json.loads(out)["name"], "dut1")
+        written = json.loads(json.dumps(STATUS))
+        written["console"]["written"] = 37
+        self.answer("GET", "/status", written)
+        code, out, err = self.cli("status")
+        self.assertIn("921600 baud, 37 bytes sent", out)
 
     def test_cli_session(self):
         # Busy: exit code 4, and no token is kept.

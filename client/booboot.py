@@ -460,7 +460,8 @@ def _status_text(s):
         "sd card: %s" % s["sd"]["mode"] + (" (%s)" % s["sd"]["error"] if s["sd"]["error"] else "")
         + ", content %s" % s["sd"]["card"]["state"],
         "console: %s at %s baud" % (con["device"], con["baudrate"])
-        + ("" if con["connected"] else " (not connected: %s)" % con["error"]),
+        + ("" if con["connected"] else " (not connected: %s)" % con["error"])
+        + (", %d bytes sent" % con["written"] if con.get("written") else ""),
         "session: " + who,
     ]
     if s["operation"]:

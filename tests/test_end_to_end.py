@@ -282,8 +282,10 @@ class Cli(unittest.TestCase):
         self.assertIn("yours", self.cli("status"))
         self.assertEqual(self.cli("console", "run", "root"), "")
         self.assertEqual(self.cli("console", "run", "uname -a"), "Linux fake 6.6.0-fake #1 SMP armv7l GNU/Linux\n")
+        written = json.loads(self.cli("--json", "status"))["console"]["written"]
         self.cli("console", "write", "echo from write")
         self.assertIn("from write", self.cli("console", "expect", "(?s)write.*# $", "--timeout", "5"))
+        self.assertEqual(json.loads(self.cli("--json", "status"))["console"]["written"], written + 16)
         self.cli("console", "expect", "nothing", "--timeout", "0.3", code=3)
 
         # Another client holds the session: exit code 4.

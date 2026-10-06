@@ -234,6 +234,7 @@ class Console:
         self.error = ""
         self.boot = 0  # cursor at the last power on
         self.last = 0  # cursor after the last expect or run match
+        self.written = 0  # bytes written to the serial port
         self.started = time.time()  # cursors count from here
         self._size = buffer_size
         self._buf = bytearray()
@@ -387,6 +388,7 @@ class Console:
                 self.port.write(data)
             except OSError as e:
                 raise HardwareError("console write failed: %s" % e) from e
+            self.written += len(data)
 
     def mark_boot(self, switch=None):
         """Start a new boot: mark the cursor, call switch (the power on), note the time.

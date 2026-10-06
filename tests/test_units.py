@@ -212,6 +212,12 @@ class ConsoleTest(unittest.TestCase):
         self.assertEqual(nxt, len(data))
         self.assertEqual(self.c.last, nxt)
 
+    def test_written(self):
+        self.assertEqual(self.c.written, 0)
+        self.c.write(b"abc")
+        self.c.run("", re.compile(b"[#$>] $"), 0.1)
+        self.assertEqual(self.c.written, 4)
+
     def test_expect_timeout(self):
         self.feed(b"nothing here")
         matched, start, data, m, nxt = self.c.expect(re.compile(b"login"), 0, 0.3)
