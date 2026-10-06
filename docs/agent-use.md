@@ -3,9 +3,16 @@
 This file is written for an agent that works with a user, can run shell
 commands on the user's computer, and is asked to use a BooBoot unit that is
 already set up, often in the middle of a task: "Start using BooBoot for
-testing this. Read this file and use the unit at pi@booboot.local." The agent
-checks the unit, gets the client, opens a console viewer for the user, and
-then uses the DUT for the task.
+testing this. Read this file and use the unit at booboot.local."
+
+Expect two things:
+
+- **The unit is shared.** Colleagues use the same DUT, watch its console, and
+  may be in the middle of a test. Someone else looks after the unit. You use
+  it as a guest: you check it, but you never change it.
+- **The user's computer may have nothing.** The user may use BooBoot for the
+  first time, on a computer with no BooBoot software. You install what is
+  needed on it, in a tool folder, and explain the basics.
 
 To set up a new unit, use [agent-setup.md](agent-setup.md) instead. If you
 only have this file, the other guides are at
@@ -21,24 +28,33 @@ rule says to ask, and go on with the task.
 1. **The task decides.** The user's message allows you to use the DUT for
    the current task: switch its power, copy the build to the SD card, and run
    commands on its console. Do only what the task needs.
-2. **Look before you overwrite.** Before the first change to the SD card in
-   a session, list the directory you will write to and say which files you
-   will replace. The card is readable only while the DUT is off:
-   `bb power off`, then `bb sd ls 1:/`. Never write a whole image (`sd flash`,
-   `deploy --image`) or delete card files unless the task needs it and the
-   user agreed in this session.
-3. **Never take the DUT from someone.** If another client has the session
+2. **Never take the DUT from someone.** If another client has the session
    (`busy`, exit code 4), do not use `--force`. Tell the user who has it and
    for how long it has been idle, and wait for their answer.
-4. **Do not change the unit.** No update, configuration change, service
-   restart or reboot of the BooBoot board without the user's consent: other
-   people may use it. Checks that only read are fine.
-5. **Keep the user's project clean.** The client and BooBoot Console go to
-   the tool folder (`TOOLS`, section 2), not into the user's project.
-6. **No secrets.** Never ask for, type or store passwords. If SSH asks for a
-   password, skip the SSH checks and say so.
-7. **Release the DUT.** Close the session when the task is done, or before a
-   long pause: other clients wait while you hold it.
+3. **Ask before you disturb.** A colleague may use the DUT without holding
+   the session: a test that runs on its own, or someone watching. Before the
+   first power switch or card change of your work, if the DUT is on, tell
+   the user what it shows (U5) and ask whether you may take it.
+4. **Hold the session only while you use it.** Close it when the task is
+   done, and before any pause of more than a few minutes (a long build,
+   waiting for the user): colleagues get `busy` while you hold it.
+5. **Do not change the unit.** No update, configuration change, service
+   restart, reboot or log deletion. When something on the unit is wrong or
+   old, tell the user, so that they tell whoever looks after it. Only if the
+   user says that they look after the unit themselves, follow
+   [install.md](install.md) for the change, with their consent for each step.
+6. **Look before you overwrite.** The card may hold a colleague's files.
+   Before the first change to the SD card in a session, list the directory
+   you will write to and say which files you will replace. The card is
+   readable only while the DUT is off: `bb power off`, then `bb sd ls 1:/`.
+   Never write a whole image (`sd flash`, `deploy --image`) or delete card
+   files unless the task needs it and the user agreed in this session.
+7. **Change the user's computer only in `TOOLS`.** The client and BooBoot
+   Console go to the tool folder (section 2), not into the user's project or
+   system folders. Anything else on their computer (Python, the `PATH`, an
+   MCP server) only with their consent.
+8. **No secrets.** Never ask for, type or store passwords. SSH is optional:
+   if SSH asks for a password, skip the SSH checks and say so.
 
 ## 2. Values
 
@@ -47,14 +63,17 @@ do not work.
 
 | Name | Default | Meaning |
 |---|---|---|
-| `HOST` | `booboot.local` | BooBoot board hostname or IP address, from the SSH address `USER@HOST` or from the URL |
-| `USER` | none | user name on the BooBoot board; without it, skip the SSH checks |
+| `HOST` | `booboot.local` | BooBoot board hostname or IP address, from the user's message (a name, a URL, or an SSH address `USER@HOST`) |
 | `PORT` | `8080` | server port: 8081 for a second DUT on the same board, and so on |
-| `NAME` | `dut1` | DUT name, as given by `status` |
 | `URL` | `http://HOST:PORT` | server address |
+| `NAME` | from `status` | DUT name |
+| `USER` | none | SSH user on the BooBoot board, only when the user gave an SSH address; most users of a shared unit have none, and it is not needed |
 | `TOOLS` | `%LOCALAPPDATA%\BooBoot` on Windows, `~/.local/share/booboot` elsewhere | tool folder on the user's computer |
+| `ME` | the user's login name | for the session name |
+| `COMPUTER` | the computer name | for the session name |
 
-Commands on the BooBoot board run through SSH, without password:
+With `USER`, read-only checks on the BooBoot board run through SSH, without
+password:
 
 ```sh
 ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new USER@HOST '<command>'
@@ -63,22 +82,22 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new US
 Below, `pi '<command>'` means that, and `bb` means:
 
 ```sh
-python3 TOOLS/booboot.py --url URL --name "agent on COMPUTER"
+python3 TOOLS/booboot.py --url URL --name "agent of ME on COMPUTER"
 ```
 
-`COMPUTER` is the name of the user's computer: viewers show it as the client
-that has the session. On Windows, use `python` or `py` instead of `python3`.
+Viewers and `busy` errors show this name to colleagues, so that they know
+whom to ask. On Windows, use `python` or `py` instead of `python3`.
 
 ## 3. The steps
 
-| Id | Title | Done when |
-|---|---|---|
-| U1 | Reach the unit | the status answers |
-| U2 | Check the unit | no error in the status; version checked if SSH works |
-| U3 | Client | `bb status` answers |
-| U4 | Viewer for the user | BooBoot Console or the web page is open |
-| U5 | Look at the DUT | its state is known |
-| U6 | Start report | sent to the user |
+| Id | Title | Where | Done when |
+|---|---|---|---|
+| U1 | Reach the unit | unit | the status answers |
+| U2 | Check the unit | unit, read only | state and version known |
+| U3 | Client | user's computer | `bb status` answers |
+| U4 | Viewer | user's computer | BooBoot Console or the web page is open |
+| U5 | Look at the DUT | unit | its state and use are known |
+| U6 | Start report | | sent to the user |
 
 ### U1: Reach the unit
 
@@ -88,21 +107,21 @@ curl -sS -m 10 URL/api/v1/status
 
 (In PowerShell: `curl.exe`.) JSON with `name` and `power`: go on.
 
-If it fails:
+If it fails, tell the user that nothing answers at `URL`, and ask for the
+right address: whoever looks after the unit knows it. With `USER`, also look
+on the board, read only:
 
-- Without SSH: tell the user that nothing answers at `URL`, and ask for the
-  right address.
-- With SSH: `pi 'systemctl --no-pager list-units "booboot@*"; ls /etc/booboot'`
-  - SSH fails: report the error. The address or the SSH key is wrong
-    (agent-setup.md step A3 sets up the key).
-  - No `booboot@` service and no `/etc/booboot`: BooBoot is not installed.
-    Stop, and offer to set it up with [agent-setup.md](agent-setup.md).
-  - The service failed: `pi 'journalctl -u booboot@NAME -n 30 --no-pager'`.
-    Report the lines that matter, and ask before restarting it.
+- `pi 'systemctl --no-pager list-units "booboot@*"; ls /etc/booboot'`
+- SSH fails: report the error, and go on without SSH.
+- No `booboot@` service and no `/etc/booboot`: BooBoot is not installed
+  there. Stop, and tell the user ([agent-setup.md](agent-setup.md) sets up a
+  unit).
+- The service failed: `pi 'journalctl -u booboot@NAME -n 30 --no-pager'`.
+  Report the lines that matter (rule 5).
 
-**Several DUTs.** If `/etc/booboot` holds more than one `.ini` file and the
-user gave no port, ask which DUT. `pi 'grep -H "^port" /etc/booboot/*.ini'`
-gives each port.
+**Several DUTs.** One board can serve several DUTs, one port each, from
+8080 up. If the user names a DUT, try the ports in turn until the `name` in
+the status is that DUT; stop at the first port that does not answer.
 
 ### U2: Check the unit
 
@@ -113,37 +132,33 @@ In the status of U1:
 | `power.error` | empty | relay line problem |
 | `sd.error` | empty | mux not found |
 | `console.connected` | `true` | UART adapter not found |
-| `operation` | `null` | a long operation (image write) is running |
-| `session.active` | `false` | someone uses the DUT: rule 3 |
+| `operation` | `null` | a long operation (image write) is running: someone uses the DUT |
+| `session.active` | `false` | someone uses the DUT: rule 2 |
+| `version` | the latest release (its tag, without the `v`: U4, step 2) | an older version: tell the user (rule 5) |
 
-With SSH, also compare the installed version with the latest one, on the
-BooBoot board:
-
-```sh
-pi 'systemctl is-active booboot@NAME; sha256sum /usr/local/bin/booboot; curl -sSfL https://raw.githubusercontent.com/sonatique/BooBoot/main/client/booboot.py | sha256sum'
-```
-
-Different sums mean that the unit runs another version than the latest (no
-second sum: the board has no internet access, the version is not checked).
-Tell the user, and offer the update. Run it only with their consent and
-while the session is free, because it restarts the service:
-`pi 'cd ~/BooBoot && git pull && sudo server/install.sh NAME'`.
-
-For an error, use the common problems of [agent-setup.md](agent-setup.md)
-(section 12) and of section 6 below, report, and ask before fixing. An error
-that does not matter for the task (for example no mux, when the task only
-uses the console) does not stop you: report it and go on.
+Report the errors (with the common problems of section 6), and do not fix
+them (rule 5). An error that does not matter for the task (for example no
+mux, when the task only uses the console) does not stop you.
 
 ### U3: Client
+
+On the user's computer:
 
 1. Python 3.9 or later: `python3 --version` (Windows: `python --version` or
    `py --version`). Without it, tell the user and offer to install it
    (install.md B2).
-2. Create `TOOLS` if needed, and get `booboot.py` into it:
-   - with SSH, from the unit, so that it matches the server version:
-     `scp USER@HOST:/usr/local/bin/booboot TOOLS/booboot.py`
-   - otherwise from GitHub:
-     `curl -sSfL -o TOOLS/booboot.py https://raw.githubusercontent.com/sonatique/BooBoot/main/client/booboot.py`
+2. Create `TOOLS` if needed. When `TOOLS/booboot.py` exists and
+   `python3 TOOLS/booboot.py --version` gives the unit `version` (from the
+   status), keep it. Otherwise get the client of that version, from its
+   release:
+
+   ```sh
+   curl -sSfL -o TOOLS/booboot.py https://github.com/sonatique/BooBoot/releases/download/vVERSION/booboot.py
+   ```
+
+   If there is no such release (404), take the latest release
+   (`.../releases/latest/download/booboot.py`), then the main branch
+   (`https://raw.githubusercontent.com/sonatique/BooBoot/main/client/booboot.py`).
 3. Check: `bb status`.
 
 **Command line or MCP.** Use the command line tool through your shell: it
@@ -237,29 +252,35 @@ bb console read --since boot --clean
 ```
 
 Neither needs the session. Read the end of the output: the DUT may be off,
-in U-Boot, at a login prompt, or in a shell.
+in U-Boot, at a login prompt, or in a shell. To see whether something runs
+on it now, compare `console.cursor` in two `bb --json status` taken 10 s
+apart: a change means new output.
 
 ### U6: Start report
 
 Send the user a short report:
 
 ```
-BooBoot ready: URL (DUT NAME)
+BooBoot ready: URL (DUT NAME, BooBoot VERSION)
 Unit: power <on|off>, SD card <mode>, console <connected|error>, session <free|used by X>
-Version: <latest | differs from the latest | not checked, no SSH>
-Client: TOOLS/booboot.py (<from the unit | from GitHub>), used from my shell
+Unit notes: <none | errors, older version: tell whoever looks after the unit>
+Client: TOOLS/booboot.py, version <V>, used from my shell
 Viewer: BooBoot Console <version> <started | already running | user kept their copy | not available: why>; web page http://HOST:PORT/
-DUT now: <one line>
+DUT now: <one line; and "output is coming now" if U5 saw it>
 ```
 
-Then tell them, once:
+Then tell them, once, in a few lines:
 
-- Watching in BooBoot Console or on the web page is free and does not
-  disturb you.
-- "Take control" in either takes the DUT from you: they should tell you
-  before, and click "Release control" after.
-- You hold the session while you test, so other clients get "busy"
-  meanwhile. You release it when done.
+- BooBoot Console (or the web page) shows the DUT serial console live, with
+  the output from before. Watching is free: colleagues may watch too, and it
+  disturbs nobody.
+- One client at a time uses the DUT, through the session. While you test,
+  you hold it as "agent of ME on COMPUTER", and others get `busy`. You
+  release it when you are done or pause.
+- "Take control" in BooBoot Console or on the web page opens the session to
+  type into the console: it takes the DUT from you, or from a colleague. They
+  should tell you first, and click "Release control" after.
+- If the DUT is on (rule 3), ask whether you may take it.
 
 Then go on with the task.
 
@@ -270,7 +291,7 @@ Then go on with the task.
 | Goal | Command |
 |---|---|
 | Copy boot files to the card, power on, wait for the boot | `bb deploy BOOT.BIN image.ub --expect "login: " --timeout 120` |
-| Write a whole image first (rule 2) | `bb deploy --image disk.img.xz --expect "login: " --timeout 600` |
+| Write a whole image first (rule 6) | `bb deploy --image disk.img.xz --expect "login: " --timeout 600` |
 | Log in, then run a command | `bb console run root`, then `bb console run "uname -a" --timeout 30` |
 | Wait for a text | `bb console expect "REGEX" --timeout 60` |
 | Send text without waiting | `bb console write "text"` |
@@ -302,21 +323,26 @@ Then go on with the task.
 1. `bb session close`.
 2. Say whether the DUT is on or off. Switch it off only if the user asks.
 3. Leave BooBoot Console running: it is the user's now.
-4. Once, offer for later sessions the MCP server, for agent hosts that
-   support it: register `python3 TOOLS/booboot.py --url URL mcp` as a stdio
-   server named `booboot` ([mcp.md](mcp.md)). Its tools are marked read-only
-   or destructive, so that the host can ask before a power switch or a card
-   write.
+4. Once, offer for later, on the user's computer:
+   - the `booboot` command, with the address set once (install.md B2:
+     `TOOLS/booboot.py` and `BOOBOOT_URL=URL`),
+   - the MCP server, for agent hosts that support it: register
+     `python3 TOOLS/booboot.py --url URL mcp` as a stdio server named
+     `booboot` ([mcp.md](mcp.md)). Its tools are marked read-only or
+     destructive, so that the host can ask before a power switch or a card
+     write.
 
 ## 6. Common problems
 
 | Seen | Likely cause | What to do |
 |---|---|---|
 | `cannot reach URL` | wrong address or port, unit off, other network | U1 |
-| `busy`, exit code 4 | another client has the session | rule 3 |
-| `session expired, opening a new one` | no command for the session timeout | normal; check the DUT state before going on |
+| `busy`, exit code 4 | another client has the session | rule 2 |
+| `session expired, opening a new one` | no command for the session timeout | another client may have used the DUT meanwhile: check its state (U5) before going on |
+| DUT on, session free, output coming | a colleague's test runs without the session | rule 3 |
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
-| The release download fails with 404 | no release yet | U4, step 4, next way |
+| The release download fails with 404 | no release yet, or none for that version | the next way of the step |
 | BooBoot Console does not start on Linux | no desktop session, or missing libraries | the web page |
+| `status` errors on power, mux or console | hardware or configuration of the unit | report (rule 5); [bringup.md](bringup.md) helps whoever looks after the unit |

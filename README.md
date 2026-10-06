@@ -54,12 +54,17 @@ To use a unit that is set up, tell the agent, even in the middle of a task:
 ```text
 Start using BooBoot for testing this. Read
 https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-use.md
-and follow it, with the unit at USER@booboot.local.
+and follow it, with the unit at booboot.local.
 ```
 
-The agent checks the unit, gets the client, starts BooBoot Console for you
-(or opens the web page), tells you what it found, and goes on with the task.
-The rules it follows are in [docs/agent-use.md](docs/agent-use.md).
+The agent checks the unit without changing it, installs the client and
+BooBoot Console on your computer if needed, starts BooBoot Console for you,
+explains the basics, and goes on with the task. It treats the unit as shared
+with colleagues: it never takes the DUT from someone, asks before it
+disturbs a DUT that is on, and holds the session only while it uses it. With
+an SSH login on the BooBoot board, write `USER@booboot.local`: the agent then
+also checks the service. The rules it follows are in
+[docs/agent-use.md](docs/agent-use.md).
 
 ## Server setup (on the Raspberry Pi)
 
