@@ -109,13 +109,33 @@ jobs:
       - name: Fonts for the headless window
         run: fc-list | grep -qi dejavu || (sudo apt-get update && sudo apt-get install -y fonts-dejavu-core)
       - run: dotnet run --project client/csharp/BooBootConsole.Tests -- http://127.0.0.1:8080 console.png
+      - name: Run the checks of BooBoot Console trimmed, like the program
+        run: |
+          dotnet publish client/csharp/BooBootConsole.Tests -c Release -r linux-x64 --self-contained \
+            -p:PublishTrimmed=true -o publish/tests
+          publish/tests/BooBootConsole.Tests http://127.0.0.1:8080
       - name: Build BooBoot Console as single files
         run: |
           for rid in win-x64 linux-x64; do
             dotnet publish client/csharp/BooBootConsole -c Release -r $rid --self-contained \
               -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-              -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o publish/$rid
+              -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true \
+              -p:DebugType=none -o publish/$rid
           done
+      - name: Start the Linux program, until it connects
+        run: |
+          command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
+          export XDG_CONFIG_HOME=$(mktemp -d)
+          settings=$XDG_CONFIG_HOME/BooBootConsole/settings.json
+          xvfb-run -a publish/linux-x64/BooBootConsole http://127.0.0.1:8080 &
+          for i in $(seq 60); do
+            grep -qs '"Url": "http://127.0.0.1:8080"' "$settings" && break
+            sleep 0.5
+          done
+          sleep 2
+          pgrep -x BooBootConsole
+          grep '"Url": "http://127.0.0.1:8080"' "$settings"
+          pkill -x BooBootConsole
       - uses: actions/upload-artifact@v7
         with:
           name: BooBootConsole-win-x64

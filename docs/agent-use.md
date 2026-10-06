@@ -227,7 +227,8 @@ only "check your viewer".
       ```sh
       git clone --depth 1 https://github.com/sonatique/BooBoot.git TOOLS/src    # if there: git -C TOOLS/src pull
       AVALONIA_TELEMETRY_OPTOUT=1 dotnet publish TOOLS/src/client/csharp/BooBootConsole -c Release -r RID \
-          --self-contained -p:PublishSingleFile=true -p:PublishReadyToRun=true -o TOOLS/BooBootConsole
+          --self-contained -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true \
+          -o TOOLS/BooBootConsole
       ```
 
    4. Otherwise: only the web page (step 6). Tell the user how to get the
