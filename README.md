@@ -60,6 +60,20 @@ https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-use.md
 and follow it, with the unit at booboot.local.
 ```
 
+### Update
+
+To update a unit that you look after, and the BooBoot tools on your
+computer, to the latest release:
+
+```text
+Update BooBoot. I look after the unit at USER@booboot.local. Read
+https://raw.githubusercontent.com/sonatique/BooBoot/main/docs/agent-use.md
+and follow its section 6.
+```
+
+The agent says what is new, asks before it switches the DUT off for the
+update, and turns new features like scripts on only if you ask.
+
 The agent checks the unit without changing it, installs the client and
 BooBoot Console on your computer if needed, starts BooBoot Console for you,
 explains the basics, and goes on with the task. It treats the unit as shared

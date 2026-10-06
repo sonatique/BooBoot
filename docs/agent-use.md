@@ -21,7 +21,8 @@ without a shell uses the MCP server instead, set up by the user
 ([mcp.md](mcp.md)).
 
 Read the whole file. Then do steps U1 to U6 in one go, stopping only where a
-rule says to ask, and go on with the task.
+rule says to ask, and go on with the task. To update the unit and the tools
+on the user's computer, follow section 6.
 
 ## 1. Rules
 
@@ -45,8 +46,9 @@ rule says to ask, and go on with the task.
 5. **Do not change the unit.** No update, configuration change, service
    restart, reboot or log deletion. When something on the unit is wrong or
    old, tell the user, so that they tell whoever looks after it. Only if the
-   user says that they look after the unit themselves, follow
-   [install.md](install.md) for the change, with their consent for each step.
+   user says that they look after the unit themselves, follow section 6 for
+   an update, and [install.md](install.md) for other changes, with their
+   consent for each step.
 6. **Look before you overwrite.** The card may hold a colleague's files.
    Before the first change to the SD card in a session, list the directory
    you will write to and say which files you will replace. The card is
@@ -143,9 +145,9 @@ In the status of U1:
 | `console.connected` | `true` | UART adapter not found |
 | `operation` | `null` | a long operation (image write) is running: someone uses the DUT |
 | `session.active` | `false` | someone uses the DUT: rule 2 |
-| `version` | the latest release (its tag without the `v`: U4, step 2), or later (like `0.3.0-2-gabc1234`) | an older release, or `dev`: tell the user (rule 5) |
+| `version` | the latest release (its tag without the `v`: U4, step 2), or later (like `0.3.0-2-gabc1234`) | an older release, or `dev`: tell the user (rule 5, section 6) |
 
-Report the errors (with the common problems of section 6), and do not fix
+Report the errors (with the common problems of section 7), and do not fix
 them (rule 5). An error that does not matter for the task (for example no
 mux, when the task only uses the console) does not stop you.
 
@@ -357,7 +359,77 @@ Then go on with the task.
      destructive, so that the host can ask before a power switch or a card
      write.
 
-## 6. Common problems
+## 6. Update
+
+When the user asks for an update, or U2 found an older version and the user
+says that they look after the unit themselves (rule 5). Otherwise, tell the
+user that whoever looks after the unit can give an agent this file, with the
+message of the README, "Update".
+
+1. **What is new.** `OLD` is the unit `version` (status): its tag is `vOLD`,
+   or for a version like `0.3.0-2-gabc1234`, the commit after `-g`
+   (`abc1234`). `NEW` is the latest release (U4, step 2). The commit
+   messages between the two say what changed:
+
+   ```sh
+   curl -sS https://api.github.com/repos/sonatique/BooBoot/compare/vOLD...vNEW | python3 -c "import json, sys; print('\n\n'.join(c['commit']['message'] for c in json.load(sys.stdin)['commits']))"
+   ```
+
+   Tell the user in a few lines what is new for them. When `OLD` is `NEW`,
+   the unit is up to date: go to step 6. When `OLD` is `dev`, the changes
+   are not known: say so.
+2. **Access.** The update needs SSH with `USER` and sudo without password:
+   `pi 'sudo -n true && echo ok'` prints `ok`. The clone of the repository is
+   usually `~/BooBoot`: `pi 'test -d BooBoot/.git && echo ok'`. Without these,
+   give the user the commands of step 4 to run on the board, and go on with
+   step 5 when they are done.
+3. **The DUT is free.** The update restarts the service: it switches the DUT
+   off, ends the session and stops a running script. Check the status of
+   each DUT of the board (U1, several DUTs): session free, `script` null.
+   Tell the user that the DUT will be switched off, and wait for their OK.
+4. **Update the unit.** The configuration is kept. Run `install.sh` once per
+   DUT of the board (`pi 'ls /etc/booboot'` lists them, as `NAME.ini`): each
+   run restarts the service of that DUT.
+
+   ```sh
+   pi 'git -C BooBoot pull && sudo BooBoot/server/install.sh NAME'
+   ```
+
+   Check that the status answers (U1) with the new `version`. If not:
+   `pi 'journalctl -u booboot@NAME -n 30 --no-pager'`.
+5. **New settings.** New settings of a release start with their default
+   value: the new features that are off by default, like scripts, stay off.
+   Turn one on only when the user asks. For scripts, read
+   [scripts.md](scripts.md) with the user first: anyone who reaches the unit
+   can then run programs on it. A configuration made before scripts existed
+   has no `[scripts]` section (`pi 'grep -n "^\[scripts\]" /etc/booboot/NAME.ini'`
+   prints nothing); then:
+
+   ```sh
+   pi 'printf "\n[scripts]\nenabled = yes\n" | sudo tee -a /etc/booboot/NAME.ini > /dev/null && sudo systemctl restart booboot@NAME'
+   ```
+
+   With a `[scripts]` section, set `enabled = yes` in it instead. Check that
+   `bb script list` does not say that scripts are off.
+6. **The user's computer.** Steps U3 and U4 again: U3 gets the client of the
+   new version, and U4 offers the new BooBoot Console. When the user runs
+   the MCP server, tell them to restart it, or their agent host: it runs
+   `TOOLS/booboot.py`, and only shows the new tools after a restart.
+7. **Read again.** Fetch this file again from the main branch, read it whole
+   (its rules may have changed), and the guides it names for the new
+   features, like [scripts.md](scripts.md).
+8. **Report.**
+
+   ```
+   BooBoot updated: URL, from OLD to NEW
+   New for you: <a few lines>
+   Unit: <DUTs updated, settings turned on>
+   Client: TOOLS/booboot.py, version <V>
+   Viewer: BooBoot Console <version>
+   MCP server: <restart it | not used>
+   ```
+
+## 7. Common problems
 
 | Seen | Likely cause | What to do |
 |---|---|---|
