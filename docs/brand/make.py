@@ -30,7 +30,7 @@ GREEN = "#23D18B"
 DARK_GREEN = "#0E8A50"  # on light backgrounds
 LIGHT = "#E6EDF3"
 INK = "#1F2328"
-TAGLINE = "Scarily good control of boards under test"
+TAGLINE = "Scarily good DUT control"
 SUBLINE = "Power, SD card and serial console, over the network"
 
 GRADIENT = ('<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">'
@@ -117,7 +117,7 @@ def logo_svg(boo, boot):
 
 def banner_svg():
     words, _ = wordmark(332, 150, 124, LIGHT, GREEN)
-    tagline, _ = text(TAGLINE, SANS, 34, 336, 207)
+    tagline, _ = text(TAGLINE, SANS, 38, 335, 208)
     subline, _ = text(SUBLINE, SANS, 26, 337, 252)
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320">'
             f'<defs>{GRADIENT}<linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">'

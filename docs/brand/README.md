@@ -32,7 +32,7 @@ everywhere, with no font to install.
 | Light | `#E6EDF3` | cursor; "Boo" on dark backgrounds |
 | Ink | `#1F2328` | "Boo" on light backgrounds |
 | Body | `#323A44` to `#1D2128` | ghost, top to bottom |
-| Silver | `#C9D1D9` | tagline: "Scarily good control of boards under test" |
+| Silver | `#C9D1D9` | tagline: "Scarily good DUT control" |
 | Gray | `#9DA7B3` | second line: "Power, SD card and serial console, over the network" |
 
 The name is in DejaVu Sans Mono Bold, the taglines in DejaVu Sans.
