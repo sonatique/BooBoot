@@ -97,16 +97,20 @@ class LoopStorage(unittest.TestCase):
             self.st.write_image(io.BytesIO(b"\1" * (33 << 20)))
 
     def test_partitions(self):
-        # Some kernels (like minimal VM kernels) do not read MBR tables. Wait for the partition in sysfs,
-        # which card_info reads: the /dev node can be left over from the loop device of an earlier test.
+        # Some kernels (like minimal VM kernels) do not read MBR tables. Where they do, udev can make
+        # the kernel read the table again after losetup, which removes the partitions for a moment.
         name = os.path.basename(self.loop)
         entry = os.path.join(self.st.sys_block, name, name + "p1")
-        deadline = time.monotonic() + 2
-        while not os.path.exists(entry) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        if not os.path.exists(entry):
+        deadline = time.monotonic() + 5
+        seen, parts = False, []
+        while not parts and time.monotonic() < deadline:
+            seen = seen or os.path.exists(entry)
+            parts = self.st.card_info()["partitions"]
+            if not parts:
+                time.sleep(0.05)
+        if not seen and not parts:
             self.skipTest("kernel does not show loop partitions")
-        [part] = self.st.card_info()["partitions"]
+        [part] = parts
         self.assertEqual((part["number"], part["start"], part["size"]), (1, 2048 * 512, 30720 * 512))
 
     def test_mount_and_files(self):
