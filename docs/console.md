@@ -81,8 +81,11 @@ To build a single program file yourself (RID: `win-x64`, `linux-x64`,
 ```sh
 dotnet publish client/csharp/BooBootConsole -c Release -r win-x64 --self-contained \
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-    -p:EnableCompressionInSingleFile=true -o publish
+    -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -o publish
 ```
+
+`PublishReadyToRun` compiles the program ahead of time: it starts in about
+half the time, for a file about 30% larger.
 
 The build uses Avalonia, which sends anonymous usage data while building. Set
 `AVALONIA_TELEMETRY_OPTOUT=1` to turn this off.

@@ -114,7 +114,7 @@ jobs:
           for rid in win-x64 linux-x64; do
             dotnet publish client/csharp/BooBootConsole -c Release -r $rid --self-contained \
               -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-              -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish/$rid
+              -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o publish/$rid
           done
       - uses: actions/upload-artifact@v7
         with:
