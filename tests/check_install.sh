@@ -54,9 +54,15 @@ VERSION=$(booboot --version)
 [ "$(level)" = lo ] || fail "relay line not low at start"
 echo "ok: service up, relay off"
 
-curl -sf "$URL/" | grep -q 'src="console.js"' || fail "no console web page"
-curl -sf "$URL/console.js" > /dev/null || fail "no console.js"
-echo "ok: console web page"
+curl -sf "$URL/duts/dut1/" | grep -q 'src="console.js"' || fail "no console web page"
+curl -sf "$URL/duts/dut1/console.js" > /dev/null || fail "no console.js"
+# With several DUTs, the root lists them.
+if [ -n "$LINE2" ]; then
+    curl -sf "$URL/" | grep -q 'api/v1/duts' || fail "no list of the DUTs at the root"
+else
+    curl -sf "$URL/" | grep -q 'src="console.js"' || fail "no console web page at the root"
+fi
+echo "ok: web pages"
 
 booboot --url "$URL" power on
 [ "$(level)" = hi ] || fail "relay line not high after power on"
