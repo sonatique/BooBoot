@@ -14,6 +14,7 @@ import threading
 import time
 from array import array
 
+from .board import named_log
 from .errors import BadRequest, HardwareError, Unavailable
 
 log = logging.getLogger(__name__)
@@ -225,10 +226,11 @@ class Console:
     Clients read, or wait for text, from a cursor.
     """
 
-    def __init__(self, port, buffer_size=8 << 20, log_dir="", keep_logs=100, line_ending="cr"):
+    def __init__(self, port, buffer_size=8 << 20, log_dir="", keep_logs=100, line_ending="cr", name=""):
         if line_ending not in LINE_ENDINGS:
             raise ValueError("line_ending must be one of: " + ", ".join(LINE_ENDINGS))
         self.port = port
+        self._log = named_log(log, name)
         self.eol = LINE_ENDINGS[line_ending]
         self.connected = False
         self.error = ""
@@ -276,17 +278,17 @@ class Console:
                     self.port.open()
                 except OSError as e:
                     if self.error != str(e):
-                        log.warning("console: %s", e)
+                        self._log.warning("console: %s", e)
                     self.error = str(e)
                     self._stop.wait(1.0)
                     continue
                 self.connected = True
                 self.error = ""
-                log.info("console on %s at %d baud", self.port.path, self.port.baudrate)
+                self._log.info("console on %s at %d baud", self.port.path, self.port.baudrate)
             try:
                 data = self.port.read(0.2)
             except OSError as e:
-                log.warning("console lost: %s", e)
+                self._log.warning("console lost: %s", e)
                 self.connected = False
                 self.error = str(e)
                 self.port.close()

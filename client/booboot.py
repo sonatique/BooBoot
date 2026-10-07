@@ -69,6 +69,11 @@ def split_path(remote):
     return 1, remote or "/"
 
 
+def dut_url(url, name):
+    """The URL of DUT name of the board at url: URL/duts/NAME."""
+    return re.sub(r"/duts/[^/]+/?$", "", url.rstrip("/")) + "/duts/" + urllib.parse.quote(name)
+
+
 def default_client_name():
     try:
         user = getpass.getuser()
@@ -195,7 +200,8 @@ class Client:
         others = ([name[:-len(".local")]] if name.endswith(".local") else []) + self.addresses
         for other in others:
             host = "[%s]" % other if ":" in other else other
-            base = "%s://%s%s" % (parts.scheme, host, ":%d" % parts.port if parts.port else "")
+            base = "%s://%s%s%s" % (parts.scheme, host, ":%d" % parts.port if parts.port else "",
+                                    parts.path.rstrip("/"))
             try:
                 self._opener.open(base + "/api/v1/status", timeout=3).close()
             except OSError:
@@ -211,6 +217,13 @@ class Client:
     def status(self):
         """Return the state of power, SD card, console and session."""
         return self.request("GET", "/status")
+
+    def duts(self):
+        """The DUTs of the board: {"duts": [{"name", "url", "power", "session", ...}]}.
+
+        "url" is the path of the DUT on the board, like /duts/dut2: see dut_url().
+        """
+        return self.request("GET", "/duts")
 
     def open_session(self, client=None, timeout=None, force=False):
         """Open the session needed by all other calls.
@@ -633,11 +646,36 @@ def _status_text(s):
     net = s.get("network")
     if net:
         lines.append("network: " + ", ".join([net["hostname"]] + net["addresses"]))
+    others = [d for d in s.get("duts", []) if d != s["name"]]
+    if others:
+        lines.append("other DUTs of the board: %s (booboot duts)" % ", ".join(others))
     if s.get("script"):
         lines.append("script:  %(name)s (%(id)d), running for %(time)gs, started by %(client)s" % s["script"])
     if s["operation"]:
         lines.append("busy:    " + s["operation"]["name"])
     return "\n".join(lines)
+
+
+def cmd_duts(args):
+    c = _client(args, session=False)
+    try:
+        r = c.duts()
+    except Error as e:
+        if e.status != 404:
+            raise
+        # A server older than several DUTs per board.
+        r = {"duts": [{"name": c.status()["name"], "url": ""}]}
+    if args.json:
+        return _print_json(r)
+    board = re.sub(r"/duts/[^/]+$", "", c.url)
+    for d in r["duts"]:
+        if d.get("error"):
+            state = "not running: " + d["error"]
+        else:
+            ses = d.get("session") or {}
+            state = "power %s, %s" % (d.get("power"), "used by " + _holder(ses) if ses.get("active") else "free")
+        print("%-10s %s%-20s %s" % (d["name"], board, d["url"], state))
+    return None
 
 
 def cmd_status(args):
@@ -1723,6 +1761,8 @@ def build_parser():
         epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("-u", "--url", default=os.environ.get("BOOBOOT_URL", DEFAULT_URL),
                    help="server URL (env BOOBOOT_URL, default %(default)s)")
+    p.add_argument("--dut", default=os.environ.get("BOOBOOT_DUT") or None,
+                   help="DUT of the board, when it has several (env BOOBOOT_DUT): its URL is URL/duts/DUT")
     p.add_argument("--json", action="store_true", help="print results as JSON")
     p.add_argument("--name", help="client name shown to other clients (default user@host)")
     p.add_argument("--session-timeout", type=float, metavar="S",
@@ -1733,6 +1773,8 @@ def build_parser():
 
     sp = sub.add_parser("status", help="show power, SD card, console and session state")
     sp.set_defaults(func=cmd_status)
+    sp = sub.add_parser("duts", help="list the DUTs of the board, with their state")
+    sp.set_defaults(func=cmd_duts)
 
     ses = sub.add_parser("session", help="open or close the session").add_subparsers(dest="action", metavar="ACTION")
     ses.required = True
@@ -1860,6 +1902,8 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.dut:
+        args.url = dut_url(args.url, args.dut)
     try:
         return args.func(args) or 0
     except Error as e:

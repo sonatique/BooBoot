@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import configparser
+import glob
+import os
+
+# Settings of the board, in a configuration directory. The other .ini files are the DUTs.
+SERVER_FILE = "server.ini"
 
 DEFAULTS = {
     "server": {
@@ -49,14 +54,47 @@ DEFAULTS = {
 }
 
 
-def load(path=None):
-    """Return a ConfigParser with defaults, updated from the file if given."""
+def load(*paths):
+    """Return a ConfigParser with defaults, updated from the files given, in order. None is skipped."""
     cp = configparser.ConfigParser(interpolation=None)
     cp.read_dict(DEFAULTS)
-    if path:
-        with open(path) as f:
-            cp.read_file(f)
+    for path in paths:
+        if path:
+            with open(path) as f:
+                cp.read_file(f)
     return cp
+
+
+def load_dir(directory):
+    """Return (board, duts) from a configuration directory: server.ini, and one NAME.ini per DUT.
+
+    board: the defaults, then server.ini. duts: (name, cfg, port, error) for each DUT file, in file
+    name order. cfg: the defaults, server.ini, then the file of the DUT, which names the DUT (default:
+    its file name). port: the port that the file of the DUT names, or None. error: why the file cannot
+    be read, or "".
+    """
+    server = os.path.join(directory, SERVER_FILE)
+    server = server if os.path.exists(server) else None
+    board = load(server)
+    duts = []
+    for path in sorted(glob.glob(os.path.join(directory, "*.ini"))):
+        if os.path.basename(path) == SERVER_FILE:
+            continue
+        name = os.path.splitext(os.path.basename(path))[0]
+        try:
+            own = configparser.ConfigParser(interpolation=None)
+            with open(path) as f:
+                own.read_file(f)
+            cfg = load(server, path)
+            if own.has_option("server", "name"):
+                name = own.get("server", "name")
+            cfg["server"]["name"] = name
+            port = own.getint("server", "port") if own.has_option("server", "port") else None
+        except (OSError, ValueError, configparser.Error) as e:
+            duts.append((name, None, None, "%s: %s" % (path, e)))
+            continue
+        duts.append((name, cfg, port, ""))
+    return board, duts
 
 
 def expand(value, name):

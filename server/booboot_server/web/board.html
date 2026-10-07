@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BooBoot</title>
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  body { margin: 0; background: #1e1e1e; color: #cccccc; font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 8px; background: #2d2d2d; border-bottom: 1px solid #3c3c3c; }
+  #title { font-weight: 600; color: #ffffff; margin-right: 12px; }
+  #info { color: #a0a0a0; }
+  main { padding: 8px; overflow-x: auto; }
+  table { border-collapse: collapse; }
+  th { text-align: left; font-weight: normal; color: #a0a0a0; }
+  th, td { padding: 6px 20px 6px 0; white-space: nowrap; }
+  a { color: #4fc1ff; font-weight: 600; }
+  .on { color: #0dbc79; }
+  .error { color: #f14c4c; white-space: normal; }
+</style>
+</head>
+<body>
+<header><span id="title">BooBoot</span><span id="info">Connecting...</span></header>
+<main>
+<table>
+  <thead><tr><th>DUT</th><th>Power</th><th>Session</th><th>Script</th></tr></thead>
+  <tbody id="duts"></tbody>
+</table>
+</main>
+<script>
+// The DUTs of the board, with a link to the console web page of each.
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+
+  function cell(row, text, cls) {
+    const td = row.insertCell();
+    td.textContent = text;
+    if (cls)
+      td.className = cls;
+    return td;
+  }
+
+  function session(s) {
+    if (!s.active)
+      return "free";
+    return "used by " + s.client + (s.script ? " (script " + s.script + ")" : s.alive === false ? " (gone)" : "");
+  }
+
+  function show(duts) {
+    const body = $("duts");
+    body.replaceChildren();
+    for (const d of duts) {
+      const row = body.insertRow();
+      const a = document.createElement("a");
+      a.href = d.url + "/";
+      a.textContent = d.name;
+      row.insertCell().append(a);
+      if (d.error) {
+        cell(row, "not running: " + d.error, "error").colSpan = 3;
+        continue;
+      }
+      cell(row, d.power, d.power === "on" ? "on" : "");
+      cell(row, session(d.session));
+      cell(row, d.script ? d.script.name + " (" + d.script.id + ")" : "");
+    }
+  }
+
+  async function poll() {
+    for (;;) {
+      try {
+        const r = await (await fetch("api/v1/duts", { cache: "no-store" })).json();
+        show(r.duts);
+        $("info").textContent = r.duts.length + " DUTs";
+      } catch (err) {
+        $("info").textContent = "No connection, trying again: " + err.message;
+      }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+
+  $("title").textContent = "BooBoot " + location.hostname;
+  document.title = "BooBoot " + location.hostname;
+  poll();
+})();
+</script>
+</body>
+</html>

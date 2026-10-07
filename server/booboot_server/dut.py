@@ -15,6 +15,7 @@ import time
 
 from . import __version__
 from . import storage as st
+from .board import named_log
 from .errors import ApiError, BadRequest, Conflict, HardwareError, Unavailable
 from .sdmux import MODES
 
@@ -24,6 +25,7 @@ log = logging.getLogger(__name__)
 class Dut:
     def __init__(self, name, power, mux, storage, console, off_time=2.0):
         self.name = name
+        self.log = named_log(log, name)
         self.power = power
         self.mux = mux
         self.storage = storage
@@ -55,13 +57,13 @@ class Dut:
             try:
                 action()
             except ApiError as e:
-                log.error("%s", e.message)
+                self.log.error("%s", e.message)
 
     def stop(self):
         try:
             self._set_power(False)
         except ApiError as e:
-            log.error("%s", e.message)
+            self.log.error("%s", e.message)
         self.power.close()
         self.console.stop()
 
@@ -78,7 +80,7 @@ class Dut:
             self.console.mark_off()
         self.power_state = "on" if on else "off"
         self.power_error = ""
-        log.info("power %s", self.power_state)
+        self.log.info("power %s", self.power_state)
 
     def _set_mux(self, mode):
         try:
@@ -91,7 +93,7 @@ class Dut:
             raise HardwareError("sdmux: %s" % e) from e
         self.mux_mode = mode
         self.mux_error = ""
-        log.info("sd card to %s", mode)
+        self.log.info("sd card to %s", mode)
 
     def _refresh_mux(self):
         try:
@@ -143,7 +145,7 @@ class Dut:
             try:
                 self._set_mux("dut")
             except Unavailable as e:
-                log.warning("power on without SD card switch: %s", e.message)
+                self.log.warning("power on without SD card switch: %s", e.message)
         # Console times count from the moment the relay is switched on.
         boot = self.console.mark_boot(lambda: self._set_power(True))
         return {"power": "on", "boot": boot}

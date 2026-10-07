@@ -1,10 +1,10 @@
 [Unit]
-Description=BooBoot DUT control (%i)
+Description=BooBoot DUT control
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/booboot-server --config /etc/booboot/%i.ini
+ExecStart=/usr/local/bin/booboot-server --config-dir /etc/booboot
 Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=2

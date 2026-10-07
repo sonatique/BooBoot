@@ -1,4 +1,5 @@
-// The console web page: reads /api/v1/console/stream and shows it.
+// The console web page of a DUT: reads api/v1/console/stream and shows it. Its paths are relative:
+// the page of a DUT of the board is at /duts/NAME/.
 // Watching needs no session. "Take control" opens the session, to type into the console.
 // ?lines=N sets the number of lines kept (default 50000).
 
@@ -18,6 +19,8 @@
   ];
 
   let name = "", connection = "Connecting...", power = "", session = "", address = "";
+  // Names of the DUTs of the board, as last shown in the list.
+  let dutNames = "";
   let follow = true, holding = false, scheduled = false;
   // Control: the session token, and the keys waiting to be sent.
   let token = "", note = "", keys = "", sending = false;
@@ -223,7 +226,7 @@
       let restart = false;
       try {
         watch();
-        const resp = await fetch("/api/v1/console/stream?since=" + encodeURIComponent(since),
+        const resp = await fetch("api/v1/console/stream?since=" + encodeURIComponent(since),
           { signal: abort.signal, cache: "no-store" });
         if (!resp.ok)
           throw new Error("HTTP " + resp.status);
@@ -285,7 +288,7 @@
     for (;;) {
       try {
         const t = token;
-        const s = await (await fetch("/api/v1/status", { cache: "no-store", headers: auth(t) })).json();
+        const s = await (await fetch("api/v1/status", { cache: "no-store", headers: auth(t) })).json();
         session = !s.session.active ? "free" : s.session.yours ? "yours"
           : "used by " + s.session.client + (s.session.alive === false ? " (gone)" : "");
         // Only an answer about the current session counts.
@@ -294,6 +297,10 @@
             : "control ended after the idle time");
         power = s.power.state;
         name = s.name;
+        if (s.duts && s.duts.join() !== dutNames) {
+          dutNames = s.duts.join();
+          showDuts(s.duts);
+        }
         // Where the page uses a name, the address of the board, for where the name does not work.
         const addresses = (s.network && s.network.addresses) || [];
         address = addresses.length && !addresses.includes(location.hostname)
@@ -306,6 +313,14 @@
     }
   }
 
+  // With several DUTs on the board, a list in place of the name goes to the page of another one.
+  function showDuts(names) {
+    const select = $("duts");
+    select.replaceChildren(...names.map(n => new Option(n, "/duts/" + encodeURIComponent(n) + "/", false, n === name)));
+    select.hidden = names.length < 2;
+    $("name").hidden = !select.hidden;
+  }
+
   // Control
 
   function auth(t) {
@@ -313,7 +328,7 @@
   }
 
   async function api(method, path, body) {
-    const resp = await fetch("/api/v1" + path, {
+    const resp = await fetch("api/v1" + path, {
       method, cache: "no-store", body: body && JSON.stringify(body),
       headers: Object.assign({ "Content-Type": "application/json" }, auth(token)),
     });
@@ -411,7 +426,7 @@
     setControl("", "");
     session = "free";
     try {
-      await fetch("/api/v1/session", { method: "DELETE", headers: auth(t) });
+      await fetch("api/v1/session", { method: "DELETE", headers: auth(t) });
     } catch (err) {
       // The session ends by itself after the idle time.
     }
@@ -470,7 +485,7 @@
     panel.textContent = "Loading...";
     panel.hidden = false;
     try {
-      const resp = await fetch("/api/v1/logs", { cache: "no-store" });
+      const resp = await fetch("api/v1/logs", { cache: "no-store" });
       const r = await resp.json();
       panel.textContent = "";
       const p = document.createElement("p");
@@ -480,7 +495,7 @@
       for (const f of r.files) {
         const row = table.insertRow();
         const a = document.createElement("a");
-        a.href = "/api/v1/logs/" + encodeURIComponent(f.name);
+        a.href = "api/v1/logs/" + encodeURIComponent(f.name);
         a.download = f.name;
         a.textContent = f.name;
         row.insertCell().append(a);
@@ -513,6 +528,7 @@
 
   followButton.onclick = () => setFollow(!follow);
   controlButton.onclick = () => (token ? releaseControl() : takeControl());
+  $("duts").onchange = e => { location.href = e.target.value; };
   powerButton.onclick = switchPower;
   $("clear").onclick = () => {
     term.clear();
@@ -560,7 +576,7 @@
   // Release the session when the page is closed or reloaded.
   window.addEventListener("pagehide", () => {
     if (token)
-      fetch("/api/v1/session", { method: "DELETE", headers: auth(token), keepalive: true });
+      fetch("api/v1/session", { method: "DELETE", headers: auth(token), keepalive: true });
   });
   document.addEventListener("click", e => {
     if (!panel.hidden && !panel.contains(e.target) && e.target !== $("logs"))

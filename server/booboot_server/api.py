@@ -10,14 +10,14 @@ import re
 import select
 import shutil
 import socket
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from . import __version__, netinfo
 from .console import clean_text
-from .errors import ApiError, BadRequest, NotFound
-from .scripts import Scripts
+from .errors import ApiError, BadRequest, NotFound, Unavailable
 
 log = logging.getLogger(__name__)
 
@@ -32,18 +32,21 @@ WEB_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset
              "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "ico": "image/x-icon"}
 
 ROUTES = []
+# Each DUT of the board is at /duts/NAME: its API at /duts/NAME/api/v1, its web page at /duts/NAME/.
+DUT_PATH = re.compile(r"^/duts/([^/]+)(/.*)?$")
 
 
-def route(method, pattern, session=True, raw=False, prefix=PREFIX):
+def route(method, pattern, session=True, raw=False, prefix=PREFIX, board=False):
     """Register a handler for a path regex, under prefix.
 
     session: the request needs the session token. "optional": a valid token
     keeps the session alive, but none is needed.
     raw: the request body is data, not JSON parameters.
+    board: the handler works for a DUT that could not start.
     Handlers get (request, match) and return a dict to send, or None.
     """
     def deco(fn):
-        ROUTES.append((method, re.compile(prefix + pattern + "$"), fn, session, raw))
+        ROUTES.append((method, re.compile(prefix + pattern + "$"), fn, session, raw, board))
         return fn
     return deco
 
@@ -99,10 +102,18 @@ class Handler(BaseHTTPRequestHandler):
 
     _body = None
     _sent = False
+    _unit = None
+    _prefix = ""  # /duts/NAME, or "" for the default DUT of the server
+    _local = None  # the path after the prefix
+
+    @property
+    def unit(self):
+        """The DUT of the request, with its session and scripts."""
+        return self._unit
 
     @property
     def dut(self):
-        return self.server.dut
+        return self._unit.dut
 
     @property
     def body(self):
@@ -122,11 +133,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_request(self, code="-", size="-"):
         # Reads, the writes of typed keys and heartbeats would fill the log.
+        path = self._local or self.path
         quiet = str(code).startswith("2") and (
-            (self.command == "GET" and self.path.startswith((PREFIX + "/console", PREFIX + "/status",
-                                                             PREFIX + "/scripts")))
-            or (self.command == "POST" and self.path.startswith((PREFIX + "/console/write",
-                                                                 PREFIX + "/session/heartbeat"))))
+            (self.command == "GET" and path.startswith((PREFIX + "/console", PREFIX + "/status",
+                                                        PREFIX + "/scripts", PREFIX + "/duts")))
+            or (self.command == "POST" and path.startswith((PREFIX + "/console/write",
+                                                            PREFIX + "/session/heartbeat"))))
         if not quiet:
             log.info('%s "%s %s" %s', self.client_address[0], self.command, self.path, code)
 
@@ -138,12 +150,24 @@ class Handler(BaseHTTPRequestHandler):
         return auth[7:].strip() if auth[:7].lower() == "bearer " else ""
 
     def _route(self):
+        """Find the DUT and the handler of the request. Return (fn, match, session, raw, url)."""
         url = urlsplit(self.path)
+        path, unit, prefix = url.path, self.server.default, ""
+        dm = DUT_PATH.match(path)
+        if dm:
+            name = unquote(dm.group(1))
+            unit = self.server.units.get(name)
+            if unit is None:
+                raise NotFound("no DUT named %s on this board" % name)
+            path, prefix = dm.group(2) or "", "/duts/" + dm.group(1)
+        self._unit, self._prefix, self._local = unit, prefix, path
         found = False
-        for method, rx, fn, session, raw in ROUTES:
-            m = rx.match(url.path)
+        for method, rx, fn, session, raw, board in ROUTES:
+            m = rx.match(path)
             if m:
                 if method == self.command:
+                    if unit.error and not board:
+                        raise Unavailable("%s is not running: %s" % (unit.name, unit.error), code="dut_unavailable")
                     return fn, m, session, raw, url
                 found = True
         if found:
@@ -157,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             session = self._route()[2]
             if session is True:
-                self.server.sessions.check(self.token())
+                self.unit.sessions.check(self.token())
         except ApiError as e:
             self._fail(e)
             return False
@@ -178,12 +202,12 @@ class Handler(BaseHTTPRequestHandler):
             if session == "optional":
                 if token:
                     try:
-                        self.server.sessions.begin(token)
+                        self.unit.sessions.begin(token)
                         begun = True
                     except ApiError:
                         pass
             elif session:
-                self.server.sessions.begin(token)
+                self.unit.sessions.begin(token)
                 begun = True
             result = fn(self, m)
             if result is not None:
@@ -197,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
             self._fail(ApiError("internal error: %s" % e))
         finally:
             if begun:
-                self.server.sessions.end(token)
+                self.unit.sessions.end(token)
             if self._body is None or not self._body.done:
                 self.close_connection = True
 
@@ -257,6 +281,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self._end_headers()
 
+    def send_redirect(self, location):
+        self.send_response(301)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self._end_headers()
+
     def send_stream_headers(self, content_type):
         """Start an answer that ends when the connection closes."""
         self.send_response(200)
@@ -302,22 +332,59 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class Server(ThreadingHTTPServer):
+    """Serves the DUTs of the board, each at /duts/NAME, and its default DUT at the root too.
+
+    units: the DUTs. default: the DUT at the root, the first one if None. board: this is the port of
+    the board, whose root page lists the DUTs when there are several; else, the port of its default DUT.
+    """
+
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, dut, sessions, prompt, web=True, scripts=None):
+    def __init__(self, address, units, default=None, web=True, board=True):
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
         super().__init__(address, Handler)
-        self.dut = dut
-        self.sessions = sessions
-        self.prompt = prompt
+        self.units = {u.name: u for u in units}
+        self.default = default or units[0]
         self.web = web
-        self.scripts = scripts if scripts is not None else Scripts("", sessions)
-        # Scripts reach this server on the board itself.
-        host, port = self.server_address[:2]
-        host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
-        self.scripts.url = "http://%s:%d" % ("[%s]" % host if ":" in host else host, port)
+        self.board = board
+        if board:
+            # Scripts reach their DUT through this server, on the board itself.
+            host, port = self.server_address[:2]
+            host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
+            base = "http://%s:%d" % ("[%s]" % host if ":" in host else host, port)
+            for u in units:
+                if u.scripts:
+                    u.scripts.url = base + "/duts/" + quote(u.name)
+
+    def handle_error(self, request, client_address):
+        # A client that drops its connection, like a browser leaving a page, is no error of the server.
+        if not isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError)):
+            super().handle_error(request, client_address)
+
+
+# The DUTs of the board
+
+def _summary(u):
+    found = {"name": u.name, "url": "/duts/" + quote(u.name)}
+    if u.error:
+        found["error"] = u.error
+        return found
+    s = u.dut.status()
+    found.update(power=s["power"]["state"], console=s["console"]["connected"], operation=s["operation"],
+                 session=u.sessions.status(), script=u.scripts.running())
+    return found
+
+
+@route("GET", "/duts", session=False, board=True)
+def list_duts(r, m):
+    return {"duts": [_summary(u) for u in r.server.units.values()]}
+
+
+@route("GET", "", session=False, prefix="", board=True)
+def dut_root(r, m):
+    r.send_redirect(r._prefix + "/")
 
 
 # Session
@@ -325,9 +392,10 @@ class Server(ThreadingHTTPServer):
 @route("GET", "/status", session=False)
 def get_status(r, m):
     status = r.dut.status()
-    status["session"] = r.server.sessions.status(r.token())
+    status["session"] = r.unit.sessions.status(r.token())
     status["network"] = netinfo.info()
-    status["script"] = r.server.scripts.running()
+    status["script"] = r.unit.scripts.running()
+    status["duts"] = list(r.server.units)
     return status
 
 
@@ -336,27 +404,27 @@ def open_session(r, m):
     client = str(r.param("client") or r.client_address[0])
     timeout = r.param_float("timeout")
     force = "gone" if r.param("force") == "gone" else r.param_bool("force")
-    token, info = r.server.sessions.open(client, timeout, force)
+    token, info = r.unit.sessions.open(client, timeout, force)
     info["session"] = token
     return info
 
 
 @route("DELETE", "/session")
 def close_session(r, m):
-    if r.server.sessions.close(r.token()):
+    if r.unit.sessions.close(r.token()):
         return {"closed": True}
     # It ends when its script ends.
-    return {"closed": False, "script": r.server.scripts.running()}
+    return {"closed": False, "script": r.unit.scripts.running()}
 
 
 @route("POST", "/session/keepalive")
 def keepalive(r, m):
-    return r.server.sessions.status(r.token())
+    return r.unit.sessions.status(r.token())
 
 
 @route("POST", "/session/heartbeat", session=False)
 def heartbeat(r, m):
-    return r.server.sessions.heartbeat(r.token())
+    return r.unit.sessions.heartbeat(r.token())
 
 
 # Power
@@ -508,19 +576,19 @@ def _gone(sock):
 @route("POST", "/scripts")
 def start_script(r, m):
     token = r.token()
-    client = r.server.sessions.status(token)["client"]
-    return r.server.scripts.start(token, client, r.param("source"), str(r.param("name") or "script.py"),
-                                  r.param("args") or [], r.param_float("timeout"))
+    client = r.unit.sessions.status(token)["client"]
+    return r.unit.scripts.start(token, client, r.param("source"), str(r.param("name") or "script.py"),
+                                r.param("args") or [], r.param_float("timeout"))
 
 
 @route("GET", "/scripts", session=False)
 def list_scripts(r, m):
-    return {"enabled": r.server.scripts.enabled, "scripts": r.server.scripts.list()}
+    return {"enabled": r.unit.scripts.enabled, "scripts": r.unit.scripts.list()}
 
 
 @route("GET", r"/scripts/(\d+)", session=False)
 def get_script(r, m):
-    return r.server.scripts.info(int(m.group(1)))
+    return r.unit.scripts.info(int(m.group(1)))
 
 
 @route("GET", r"/scripts/(\d+)/output", session=False)
@@ -530,15 +598,15 @@ def script_output(r, m):
     except (TypeError, ValueError):
         raise BadRequest("since must be a number") from None
     wait = r.param_float("wait", 0.0, high=MAX_WAIT)
-    start, data, info = r.server.scripts.read(int(m.group(1)), since, int(r.param_float("max", CHUNK, low=1)), wait)
+    start, data, info = r.unit.scripts.read(int(m.group(1)), since, int(r.param_float("max", CHUNK, low=1)), wait)
     return {"cursor": start, "next": start + len(data), "lost": start > since >= 0, "text": _text(r, data),
             "script": info}
 
 
 @route("POST", r"/scripts/(\d+)/stop")
 def stop_script(r, m):
-    client = r.server.sessions.status(r.token())["client"]
-    return r.server.scripts.stop(int(m.group(1)), "stopped by %s" % client)
+    client = r.unit.sessions.status(r.token())["client"]
+    return r.unit.scripts.stop(int(m.group(1)), "stopped by %s" % client)
 
 
 # Log files of the console on this board, one per boot. No session needed.
@@ -568,13 +636,14 @@ def get_log(r, m):
     return None
 
 
-# The console web page. Not under /api/v1.
+# The web pages. Not under /api/v1. At the root of the board, the list of its DUTs when there are several.
 
-@route("GET", r"/([a-z]+\.(%s))?" % "|".join(WEB_TYPES), session=False, prefix="")
+@route("GET", r"/([a-z]+\.(%s))?" % "|".join(WEB_TYPES), session=False, prefix="", board=True)
 def web_file(r, m):
     if not r.server.web:
         raise NotFound("the web page is turned off ([server] web = no)")
-    name = m.group(1) or "index.html"
+    board = r.server.board and not r._prefix and len(r.server.units) > 1
+    name = m.group(1) or ("board.html" if board else "index.html")
     try:
         with open(os.path.join(WEB_DIR, name), "rb") as f:
             data = f.read()
@@ -612,7 +681,7 @@ def console_run(r, m):
     command = r.param("command")
     if command is None:
         raise BadRequest("command is required")
-    pattern = _regex(r, "prompt", r.server.prompt)
+    pattern = _regex(r, "prompt", r.unit.prompt)
     timeout = r.param_float("timeout", 30.0, high=MAX_TIMEOUT)
     c = r.dut.console
     matched, out, nxt = c.run(str(command), pattern, timeout)

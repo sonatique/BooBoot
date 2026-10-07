@@ -20,6 +20,10 @@
     padding: 6px 8px; background: #2d2d2d; border-bottom: 1px solid #3c3c3c;
   }
   #name { font-weight: 600; color: #ffffff; }
+  #duts {
+    font: inherit; font-weight: 600; color: #ffffff; background: #3a3d41;
+    border: 1px solid #555555; border-radius: 4px; padding: 2px 4px;
+  }
   #info { flex: 1 1 240px; min-width: 0; color: #a0a0a0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
   button {
     font: inherit; color: #dddddd; background: #3a3d41;
@@ -55,6 +59,7 @@
 <body>
 <header>
   <span id="name">BooBoot</span>
+  <select id="duts" title="Go to another DUT of this board" hidden></select>
   <span id="info">Connecting...</span>
   <button id="control" title="Open the session, to type into the console">Take control</button>
   <button id="power" title="Switch the DUT power on or off, while in control" disabled>Power on</button>

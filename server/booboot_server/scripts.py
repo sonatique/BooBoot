@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 
+from .board import named_log
 from .errors import ApiError, BadRequest, Conflict, NotFound, Unavailable
 
 log = logging.getLogger(__name__)
@@ -186,8 +187,9 @@ class Job:
 
 class Scripts:
     def __init__(self, directory, sessions, enabled=False, user="", max_time=86400, memory=512 << 20,
-                 output=10 << 20, keep=20, file_size=100 << 20):
+                 output=10 << 20, keep=20, file_size=100 << 20, name=""):
         self.dir = directory
+        self.log = named_log(log, name)
         self.sessions = sessions
         self.enabled = enabled
         self.user = user
@@ -267,7 +269,7 @@ class Scripts:
                 raise
             self._jobs[job.info["id"]] = job
             self._running = job
-        log.info("script %d (%s) started by %s", job.info["id"], name, client)
+        self.log.info("script %d (%s) started by %s", job.info["id"], name, client)
         job.watcher = threading.Thread(target=self._watch, args=(job, timeout), daemon=True)
         job.watcher.start()
         return job.public()
@@ -339,7 +341,7 @@ class Scripts:
             self._running = None
             self.sessions.release(job.token)
             self._prune()
-        log.info("script %d (%s) %s, exit code %d%s", job.info["id"], job.info["name"], job.info["state"], code,
+        self.log.info("script %d (%s) %s, exit code %d%s", job.info["id"], job.info["name"], job.info["state"], code,
                  ": " + job.stop_reason if job.stop_reason else "")
 
     def _read(self, job):

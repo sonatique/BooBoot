@@ -303,5 +303,37 @@ class WebTest(unittest.TestCase):
         return json.loads(self.get("/api/v1/status")[2])["session"]
 
 
+class DutsWebTest(unittest.TestCase):
+    """The page of the board, and the list of the DUTs on the page of each DUT."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        cls.server, cls.dut, cls.url = common.start_fake_server(os.path.join(cls.tmp, "fake"), duts=["dut1", "dut2"])
+
+    @classmethod
+    def tearDownClass(cls):
+        common.stop_server(cls.server)
+        shutil.rmtree(cls.tmp)
+
+    def test_browser(self):
+        chrome = find_chrome()
+        if not chrome or not shutil.which("bash"):
+            self.skipTest("Chrome or bash not found (set BOOBOOT_CHROME)")
+        b = Browser(chrome)
+        self.addCleanup(b.close)
+        b.call("Page.navigate", session=True, url=self.url + "/")
+        b.wait("document.querySelectorAll('#duts tr').length === 2", "list of the DUTs")
+        rows = b.eval("[...document.querySelectorAll('#duts tr')].map(r => r.innerText.split('\\t').join(' '))")
+        self.assertEqual(rows, ["dut1 off free ", "dut2 off free "])
+        b.call("Page.navigate", session=True, url=self.url + "/duts/dut2/")
+        select = "document.getElementById('duts')"
+        b.wait("!%s.hidden && %s.value.endsWith('/duts/dut2/')" % (select, select), "list on the page of dut2")
+        self.assertEqual(b.eval("document.getElementById('name').hidden"), True)
+        b.eval("%s.value = '/duts/dut1/'; %s.dispatchEvent(new Event('change'))" % (select, select))
+        b.wait("location.pathname === '/duts/dut1/' && %s.value.endsWith('/duts/dut1/')" % select, "page of dut1")
+        b.wait("document.getElementById('info').textContent.includes('Connected')", "dut1 connected")
+
+
 if __name__ == "__main__":
     unittest.main()

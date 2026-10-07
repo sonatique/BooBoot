@@ -469,13 +469,14 @@ class ServerSetupTest(unittest.TestCase):
         path = os.path.join(tmp, "b.ini")
         write(path, "[server]\nname = bench2\nport = 8081\nrun_dir = {0}/{{name}}\nlog_dir = {0}/log\n"
                     "[console]\ndevice = none\n[power]\nbackend = none\n".format(tmp))
-        dut, sessions, scripts, address, prompt = server_main.build(config.load(path))
+        unit = server_main.build(config.load(path), own_port=8081)
+        dut = unit.dut
         self.addCleanup(dut.console.stop)
-        self.assertEqual((dut.name, address, prompt), ("bench2", ("0.0.0.0", 8081), "[#$>] $"))
-        self.assertEqual((scripts.enabled, scripts.dir), (False, "/var/lib/booboot/bench2/scripts"))
+        self.assertEqual((unit.name, dut.name, unit.port, unit.prompt), ("bench2", "bench2", 8081, "[#$>] $"))
+        self.assertEqual((unit.scripts.enabled, unit.scripts.dir), (False, "/var/lib/booboot/bench2/scripts"))
         self.assertIsInstance(dut.console.port, NoPort)
         self.assertEqual(dut.storage.mount_dir, os.path.join(tmp, "bench2", "mnt"))
-        self.assertEqual(sessions.default_timeout, 300)
+        self.assertEqual(unit.sessions.default_timeout, 300)
         self.assertTrue(os.path.islink(os.path.join(tmp, "log", "latest.log")))
 
     def test_main_errors_and_probe(self):

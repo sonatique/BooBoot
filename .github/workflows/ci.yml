@@ -53,7 +53,8 @@ jobs:
       - run: sudo python3 -m unittest discover -s tests -v
 
   install:
-    # server/install.sh on a machine with systemd, the relay on a simulated GPIO chip.
+    # server/install.sh on a machine with systemd, the relays on a simulated GPIO chip. It updates
+    # an install of 0.4.1, the last release with one service per DUT, with two DUTs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -62,12 +63,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y "linux-modules-extra-$(uname -r)"
           sudo modprobe gpio-mockup gpio_mockup_ranges=-1,8 gpio_mockup_named_lines
-      - run: sudo server/install.sh
-      - name: Put the relay on the simulated GPIO chip
+      - name: Install 0.4.1 with two DUTs, their relays on the simulated GPIO chip
         run: |
-          sudo sed -i 's/^line = .*/line = gpio-mockup-A-3/' /etc/booboot/dut1.ini
-          sudo systemctl restart booboot@dut1
-      - run: tests/check_install.sh gpio-mockup-A-3
+          git fetch --depth 1 origin tag v0.4.1
+          mkdir ../old
+          git archive v0.4.1 | tar -x -C ../old
+          sudo ../old/server/install.sh
+          sudo ../old/server/install.sh dut2
+          sudo sed -i -e 's/^line = .*/line = gpio-mockup-A-3/' -e 's/^host = .*/host = 127.0.0.1/' /etc/booboot/dut1.ini
+          sudo sed -i -e 's/^line = .*/line = gpio-mockup-A-4/' -e 's/^device = .*/device = none/' \
+            -e 's/^serial =.*/serial = dut2-mux/' /etc/booboot/dut2.ini
+          sudo systemctl restart booboot@dut1 booboot@dut2
+          sleep 2
+          curl -sf http://127.0.0.1:8081/api/v1/status | grep -q '"name": "dut2"'
+      - run: sudo server/install.sh
+      - run: tests/check_install.sh gpio-mockup-A-3 gpio-mockup-A-4
 
   client:
     name: client (${{ matrix.os }})
@@ -85,7 +95,7 @@ jobs:
       - run: python client/booboot.py --help
 
   csharp:
-    # C# client and BooBoot Console against a server with a fake board.
+    # C# client and BooBoot Console against a server with a fake board of two DUTs.
     runs-on: ubuntu-latest
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
@@ -101,7 +111,8 @@ jobs:
       - name: Start the server with a fake board
         run: |
           cd server
-          nohup python3 -m booboot_server --fake -c ../tests/fake.ini --host 127.0.0.1 --port 8080 > ../server.log 2>&1 &
+          nohup python3 -m booboot_server --fake --duts dut1,dut2 -c ../tests/fake.ini --host 127.0.0.1 --port 8080 \
+            > ../server.log 2>&1 &
           for i in $(seq 20); do
             curl -sf http://127.0.0.1:8080/api/v1/status > /dev/null && exit 0
             sleep 0.5
