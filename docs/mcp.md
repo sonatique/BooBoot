@@ -23,7 +23,10 @@ Most MCP clients take a configuration like this one:
 
 On Windows, the command is usually `python` or `py`. Options go before `mcp`:
 
-- `--url`: the BooBoot server (one server per DUT).
+- `--url`: the BooBoot server, or one DUT of the board at
+  `http://booboot.local:8080/duts/NAME`.
+- `--dut`: the DUT of the board, when it has several: the same as
+  `--url URL/duts/NAME`.
 - `--name`: the client name shown to other clients (default `mcp user@host`).
 - `--session-timeout`: idle seconds before the server ends the session
   (default 900).

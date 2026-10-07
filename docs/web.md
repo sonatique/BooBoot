@@ -11,6 +11,14 @@ and other clients use the DUT as usual, and the console data is not changed
 in any way. Any number of people can watch at the same time. To type into
 the console, take control: see [Typing](#typing).
 
+## Several DUTs
+
+With several DUTs on the board, `http://booboot.local:8080/` lists them, with
+the power state, the client that has the session and the running script of
+each, updated every 3 s. A click on a name opens the console page of that
+DUT, at `http://booboot.local:8080/duts/NAME/`. On a console page, a list
+next to the DUT name goes to another DUT of the board.
+
 ## Features
 
 - **Live output**, and the output kept by the server from before (8 MB by
@@ -84,25 +92,26 @@ like `http://booboot.local:8080/?lines=200000`.
 
 ## Turn it off
 
-In the server configuration (`/etc/booboot/NAME.ini`):
+In the configuration of the board (`/etc/booboot/server.ini`):
 
 ```ini
 [server]
 web = no
 ```
 
-then `sudo systemctl restart booboot@NAME`. The API, the stream included,
-stays available.
+then `sudo systemctl restart booboot`. The API, the stream included, stays
+available.
 
 ## How it works
 
 The page is three small files and its icon, served by the BooBoot server
 itself (`server/booboot_server/web/`), with nothing loaded from the
 internet. It reads `GET /api/v1/console/stream` (see [api.md](api.md)) and
-lists the logs with `GET /api/v1/logs`. The server reads the serial port all
-the time; viewers only read its memory, so the DUT does not see them. Taking
-control opens a session (`POST /api/v1/session`), and the keys go through
-`POST /api/v1/console/write`.
+lists the logs with `GET /api/v1/logs`, under `/duts/NAME` for DUT NAME. The
+server reads the serial port all the time; viewers only read its memory, so
+the DUT does not see them. Taking control opens a session
+(`POST /api/v1/session`), and the keys go through `POST /api/v1/console/write`.
+The list of DUTs reads `GET /api/v1/duts`.
 
 ## Limits
 

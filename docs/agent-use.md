@@ -71,8 +71,8 @@ do not work.
 | Name | Default | Meaning |
 |---|---|---|
 | `HOST` | `booboot.local` | BooBoot board hostname or IP address, from the user's message (a name, a URL, or an SSH address `USER@HOST`) |
-| `PORT` | `8080` | server port: 8081 for a second DUT on the same board, and so on |
-| `URL` | `http://HOST:PORT` | server address |
+| `PORT` | `8080` | server port, the same for all the DUTs of the board |
+| `URL` | `http://HOST:PORT` | server address; on a board with several DUTs, `http://HOST:PORT/duts/NAME` for DUT NAME (U1) |
 | `NAME` | from `status` | DUT name |
 | `USER` | none | SSH user on the BooBoot board, only when the user gave an SSH address; most users of a shared unit have none, and it is not needed |
 | `TOOLS` | `%LOCALAPPDATA%\BooBoot` on Windows, `~/.local/share/booboot` elsewhere | tool folder on the user's computer |
@@ -123,17 +123,23 @@ If nothing answers, tell the user, and ask for the right address: whoever
 looks after the unit knows it. With `USER`, also look on the board, read
 only:
 
-- `pi 'systemctl --no-pager list-units "booboot@*"; ls /etc/booboot'`
+- `pi 'systemctl --no-pager list-units "booboot*"; ls /etc/booboot'`
 - SSH fails: report the error, and go on without SSH.
-- No `booboot@` service and no `/etc/booboot`: BooBoot is not installed
+- No `booboot` service and no `/etc/booboot`: BooBoot is not installed
   there. Stop, and tell the user ([agent-setup.md](agent-setup.md) sets up a
   unit).
-- The service failed: `pi 'journalctl -u booboot@NAME -n 30 --no-pager'`.
-  Report the lines that matter (rule 5).
+- The service failed: `pi 'journalctl -u booboot -n 30 --no-pager'` (before
+  version 0.5, one service per DUT: `booboot@NAME`). Report the lines that
+  matter (rule 5).
 
-**Several DUTs.** One board can serve several DUTs, one port each, from
-8080 up. If the user names a DUT, try the ports in turn until the `name` in
-the status is that DUT; stop at the first port that does not answer.
+**Several DUTs.** One board can serve several DUTs, on the same port. `duts`
+in the status lists their names, and `curl -sS -m 10 URL/api/v1/duts` the
+state of each. DUT NAME is at `http://HOST:PORT/duts/NAME`: use that as
+`URL` for the DUT that the user names, or ask which one. `http://HOST:PORT`
+alone is the first DUT. A unit before version 0.5 has no `duts`: there each
+DUT has its own port, from 8080 up. If the user names a DUT, try the ports in
+turn until the `name` in the status is that DUT; stop at the first port that
+does not answer.
 
 ### U2: Check the unit
 
@@ -252,8 +258,8 @@ only "check your viewer".
      set). Without one, use the web page.
 
    After 5 seconds, check that it runs (step 1).
-6. **Web page.** `http://HOST:PORT/` shows the same in any browser, phones
-   too. If BooBoot Console could not start, open the page for the user:
+6. **Web page.** `URL/` shows the same in any browser, phones too
+   (`http://HOST:PORT/` lists the DUTs of a board with several). If BooBoot Console could not start, open the page for the user:
    Windows `powershell -NoProfile -Command "Start-Process 'URL/'"`, macOS
    `open URL/`, Linux `xdg-open URL/`.
 
@@ -385,34 +391,40 @@ looks after the unit can point an agent to agent-update.md.
    usually `~/BooBoot`: `pi 'test -d BooBoot/.git && echo ok'`. Without these,
    give the user the commands of step 4 to run on the board, and go on with
    step 5 when they are done.
-3. **The DUT is free.** The update restarts the service: it switches the DUT
-   off, ends the session and stops a running script. Check the status of
-   each DUT of the board (U1, several DUTs): session free, `script` null.
-   Tell the user that the DUT will be switched off, and wait for their OK.
-4. **Update the unit.** The configuration is kept. Run `install.sh` once per
-   DUT of the board (`pi 'ls /etc/booboot'` lists them, as `NAME.ini`): each
-   run restarts the service of that DUT.
+3. **The DUTs are free.** The update restarts the service: it switches all
+   the DUTs of the board off, ends their sessions and stops their running
+   scripts. Check the status of each DUT of the board (U1, several DUTs):
+   session free, `script` null. Tell the user that the DUTs will be switched
+   off, and wait for their OK.
+4. **Update the unit.** The configuration is kept. One run updates the
+   service of all the DUTs of the board:
 
    ```sh
-   pi 'git -C BooBoot pull && sudo BooBoot/server/install.sh NAME'
+   pi 'git -C BooBoot pull && sudo BooBoot/server/install.sh'
    ```
 
-   Check that the status answers (U1) with the new `version`. If not:
-   `pi 'journalctl -u booboot@NAME -n 30 --no-pager'`.
+   Check that the status answers (U1) with the new `version`, for each DUT
+   (`duts` in the status). If not:
+   `pi 'journalctl -u booboot -n 30 --no-pager'`. From a version before 0.5,
+   with one service and one port per DUT, the update replaces them with the
+   one service `booboot`: the first DUT keeps its address, and the others
+   keep their port and are also at `http://HOST:PORT/duts/NAME`. Tell the
+   user.
 5. **New settings.** New settings of a release start with their default
    value: the new features that are off by default, like scripts, stay off.
    Turn one on only when the user asks. For scripts, read
    [scripts.md](scripts.md) with the user first: anyone who reaches the unit
-   can then run programs on it. A configuration made before scripts existed
-   has no `[scripts]` section (`pi 'grep -n "^\[scripts\]" /etc/booboot/NAME.ini'`
-   prints nothing); then:
+   can then run programs on it. Scripts for all the DUTs of the board:
 
    ```sh
-   pi 'printf "\n[scripts]\nenabled = yes\n" | sudo tee -a /etc/booboot/NAME.ini > /dev/null && sudo systemctl restart booboot@NAME'
+   pi 'sudo sed -i "s/^enabled = no$/enabled = yes/" /etc/booboot/server.ini && sudo systemctl restart booboot'
    ```
 
-   With a `[scripts]` section, set `enabled = yes` in it instead. Check that
-   `bb script list` does not say that scripts are off.
+   A DUT file made before version 0.5 can have a `[scripts]` section of its
+   own, which has the last word for its DUT:
+   `pi 'grep -n "^enabled" /etc/booboot/*.ini'` lists them. Change those the
+   user wants the same way. Check that `bb script list` does not say that
+   scripts are off, for each DUT.
 6. **The user's computer.** Steps U3 and U4 again: U3 gets the client of the
    new version, and U4 offers the new BooBoot Console. When the user runs
    the MCP server, tell them to restart it, or their agent host: it runs

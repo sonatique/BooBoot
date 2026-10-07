@@ -31,8 +31,8 @@ box), the command line (`--url` or `BOOBOOT_URL`), and agents ("the unit at
 
 ## When nothing answers
 
-Check that the VPN reaches the board and lets its port through: 8080, and
-8081 and up for more DUTs on the same board.
+Check that the VPN reaches the board and lets its port through: 8080, for
+all the DUTs of the board, and the own port of a DUT that has one.
 
 ```sh
 curl http://10.1.2.3:8080/api/v1/status
@@ -47,13 +47,13 @@ On Windows: `Test-NetConnection 10.1.2.3 -Port 8080`.
 ssh -L 8080:localhost:8080 USER@10.1.2.3
 ```
 
-Add `-L 8081:localhost:8081` for a second DUT. Through a jump host:
+All the DUTs of the board come through it. Through a jump host:
 `ssh -J USER@JUMPHOST -L 8080:localhost:8080 USER@10.1.2.3`.
 
 **A VPN on the board itself.** For access from anywhere without the company
 VPN, the board can join a VPN of its own (WireGuard, or a mesh VPN service).
-The server listens on all its network interfaces (`host = 0.0.0.0` in the
-configuration), so it answers on the VPN address too, and shows it in its
+The server listens on all its network interfaces (`host = 0.0.0.0` in
+`server.ini`), so it answers on the VPN address too, and shows it in its
 status.
 
 ## Over a slow link

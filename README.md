@@ -6,9 +6,10 @@ card content and serial console, over the network.
 A small Linux board (like an old Raspberry Pi) sits next to the board under
 test (the DUT). It switches the DUT power with a relay, changes the SD card
 content through a USB-SD-Mux FAST (Linux Automation GmbH), and reads and
-writes the DUT serial console through a USB UART adapter. Any program on the
-network can use it through a simple HTTP and JSON API. A command line tool
-and a Python library are included.
+writes the DUT serial console through a USB UART adapter. One board can
+serve several DUTs, with a relay line, a mux and an adapter each. Any program
+on the network can use it through a simple HTTP and JSON API. A command line
+tool and a Python library are included.
 
 - [Installation from zero](docs/install.md)
 - [Hardware](docs/hardware.md)
@@ -128,6 +129,10 @@ Python script, which goes on if the connection drops:
 `booboot script run boots.py 500`. Scripts are off by default:
 [scripts.md](docs/scripts.md).
 
+With several DUTs on the board, `booboot duts` lists them, and `--dut NAME`
+(or `BOOBOOT_DUT`) chooses one: its address is
+`http://booboot.local:8080/duts/NAME`. Without it, commands use the first DUT.
+
 Other commands: `booboot --help`, and `booboot COMMAND --help`.
 
 For C#, `client/csharp/BooBootClient.cs` is a small client class (.NET 6 or
@@ -144,7 +149,9 @@ browser: the [console web page](docs/web.md), served by the BooBoot board.
 [latest release](https://github.com/sonatique/BooBoot/releases/latest) has it
 ready to run for Windows and Linux. Both need no session to watch, so they
 can watch while an agent works. "Take control" in either
-opens the session, to type into the console and switch the DUT power.
+opens the session, to type into the console and switch the DUT power. With
+several DUTs, the web page lists them, and BooBoot Console shows a tab for
+each.
 
 ## Development
 
@@ -153,6 +160,8 @@ Run the server with a simulated board, no hardware needed:
 ```sh
 cd server && python3 -m booboot_server --fake --port 8080
 ```
+
+With `--duts dut1,dut2`, the simulated board has two DUTs.
 
 Run the tests (as root, the tests with loop devices and GPIO run too):
 
@@ -164,8 +173,8 @@ CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
 3.14 (with the web page in headless Chrome), once as root, runs the client
 tests on Windows and macOS, checks the C# client and BooBoot Console against a
 server with a simulated board, builds BooBoot Console for Windows and Linux,
-and runs `server/install.sh` on a machine with systemd, with the relay on a
-simulated GPIO chip.
+and runs `server/install.sh` on a machine with systemd, with the relays on a
+simulated GPIO chip, as an update of an install of 0.4.1 with two DUTs.
 
 ## Releases
 

@@ -1,6 +1,9 @@
 # BooBoot HTTP API
 
-Base URL: `http://HOST:PORT/api/v1` (default port 8080).
+Base URL of a DUT: `http://HOST:PORT/api/v1` (default port 8080). A board can
+serve several DUTs: then each one is at `http://HOST:PORT/duts/NAME/api/v1`
+(see [DUTs of the board](#duts-of-the-board)). The paths below are relative to
+the base URL of a DUT.
 
 ## Conventions
 
@@ -23,7 +26,7 @@ Base URL: `http://HOST:PORT/api/v1` (default port 8080).
 |---|---|---|
 | 400 | `bad_request` | Bad parameter, bad regex, bad image data |
 | 401 | `no_session` | No session, or it expired: open one |
-| 404 | `not_found` | Unknown endpoint, file or partition |
+| 404 | `not_found` | Unknown endpoint, file, partition or DUT |
 | 405 | `method_not_allowed` | Wrong HTTP method |
 | 409 | `power_on` | The operation needs the power off |
 | 409 | `operation_in_progress` | Another hardware operation runs (`operation` says which) |
@@ -32,9 +35,39 @@ Base URL: `http://HOST:PORT/api/v1` (default port 8080).
 | 500 | `hardware_error` | Relay, mux, card or serial port problem |
 | 503 | `unavailable` | Hardware missing or not configured |
 | 503 | `scripts_off` | Scripts are off on this unit |
+| 503 | `dut_unavailable` | The DUT could not start, like with hardware of another DUT (`message` says why) |
 
 Some calls last long (image writes, `expect`, `run`): set the client timeout
 accordingly.
+
+## DUTs of the board
+
+One server serves all the DUTs of a board, each with its own power, SD card,
+console, session and scripts. DUT NAME is at `http://HOST:PORT/duts/NAME/api/v1`,
+and its web page at `http://HOST:PORT/duts/NAME/`. The first DUT, the first
+configuration file by name, is also at `http://HOST:PORT/api/v1`, as on a board
+with one DUT. A DUT whose configuration sets its own port is also at
+`http://HOST:OWNPORT/api/v1`.
+
+### GET /duts
+
+No session needed. The DUTs of the board, in order, with their state. The
+same at the base URL of each DUT.
+
+```json
+{
+  "duts": [
+    {"name": "dut1", "url": "/duts/dut1", "power": "on", "console": true, "operation": null,
+     "session": {"active": true, "client": "me@desk", "...": "..."}, "script": null},
+    {"name": "dut2", "url": "/duts/dut2",
+     "error": "uses the same USB-SD-Mux m1 as dut1: each DUT needs its own"}
+  ]
+}
+```
+
+`url`: the path of the DUT on the board. `session` and `script`: as in
+`GET /status`. `error`: the DUT could not start. Its calls then answer 503
+`dut_unavailable`, saying why, and the other DUTs work.
 
 ## Status and session
 
@@ -54,7 +87,8 @@ No session needed.
   "session": {"active": true, "client": "me@desk", "opened": "2026-09-26T10:00:00",
               "timeout": 300, "idle": 12.5, "expires_in": 287.5, "alive": true,
               "heartbeat_age": 4.2, "yours": false},
-  "network": {"hostname": "booboot", "addresses": ["10.1.2.3", "2001:db8::5"]}
+  "network": {"hostname": "booboot", "addresses": ["10.1.2.3", "2001:db8::5"]},
+  "duts": ["dut1", "dut2"]
 }
 ```
 
@@ -75,6 +109,7 @@ key typed in a viewer is a write). Like `written` (`POST /console/write`),
 it does not show that the DUT received them. `network`: the host name of the
 BooBoot board and its addresses (IPv4, then global IPv6), for clients where
 its `.local` name does not work, like over a VPN ([remote.md](remote.md)).
+`duts`: the names of the DUTs of the board, this one included.
 
 ### POST /session
 
@@ -319,7 +354,9 @@ The content of a log file (`text/plain`).
 ## Web page
 
 `GET /` (outside `/api/v1`) is a web page that shows the console live: see
-[web.md](web.md). `web = no` in the `[server]` configuration turns it off.
+[web.md](web.md). With several DUTs, it lists them instead, and
+`GET /duts/NAME/` shows the console of DUT NAME. `web = no` in the `[server]`
+section of `server.ini` turns them off.
 
 ## Boot time
 
@@ -400,7 +437,9 @@ await dut.CloseSessionAsync();
 ```
 
 Errors throw `BooBootException`, with `Status` (HTTP status) and `Code` (like
-`busy`). Without the class, `HttpClient` alone is enough:
+`busy`). Another DUT of the board:
+`new BooBootClient(BooBootClient.DutUrl("http://booboot.local:8080", "dut2"))`;
+`DutsAsync()` lists them. Without the class, `HttpClient` alone is enough:
 
 ```csharp
 using System.Net.Http.Headers;
@@ -444,3 +483,7 @@ dut.run("root")
 print(dut.run("uname -a")["output"])
 dut.close_session()
 ```
+
+Another DUT of the board:
+`booboot.Client(booboot.dut_url("http://booboot.local:8080", "dut2"))`;
+`duts()` lists them.

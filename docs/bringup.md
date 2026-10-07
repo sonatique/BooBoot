@@ -35,7 +35,7 @@ sudo booboot-server --probe
 - **Serial ports**: the USB UART adapter. With several adapters, write the
   right `/dev/serial/by-id/...` path in `device` of the configuration.
 
-After a change of the configuration: `sudo systemctl restart booboot@dut1`.
+After a change of the configuration: `sudo systemctl restart booboot`.
 
 ## 3. Relay, without the DUT
 
@@ -158,6 +158,6 @@ If `booboot.local` does not resolve, use the IP address of the board.
 
 ## Logs
 
-- Service: `journalctl -u booboot@dut1`
+- Service: `journalctl -u booboot`
 - Console, one file per power on: `/var/log/booboot/dut1/` (`latest.log` is
   the current one)

@@ -84,6 +84,7 @@ Automation GmbH (pure Python, no dependencies) to switch the mux. Also used:
 | Module | Job |
 |---|---|
 | `api.py` | HTTP server (one thread per request), routes, parameters, errors |
+| `board.py` | The DUTs of the board, and the hardware that each one uses |
 | `session.py` | One client at a time (see Sessions) |
 | `scripts.py` | Python scripts of clients, run on the board as another user ([scripts.md](scripts.md)) |
 | `dut.py` | State and safety rules; one hardware operation at a time |
@@ -92,8 +93,8 @@ Automation GmbH (pure Python, no dependencies) to switch the mux. Also used:
 | `storage.py` | Image writing, partitions, file operations |
 | `console.py` | Serial port (termios), output buffer, log files, expect |
 | `fake.py` | Simulated board for development and tests |
-| `web/` | Console web page: HTML and JavaScript, served at `/` |
-| `config.py` | INI configuration with defaults |
+| `web/` | Web pages: the DUTs of the board, and the console of each |
+| `config.py` | INI configuration with defaults: the board, and one file per DUT |
 
 ### Sessions
 
@@ -215,9 +216,10 @@ API directly.
 
 [BooBoot Console](console.md) (`client/csharp/BooBootConsole`) is a desktop
 program that shows the serial console live, with scrollback, copy, save and
-log files. It is written in C# with Avalonia (.NET 10), for Windows, Linux
-and macOS. It reads the console stream and needs no session to watch;
-taking control opens the session, to type into the console.
+log files, a tab for each DUT of the board. It is written in C# with Avalonia
+(.NET 10), for Windows, Linux and macOS. It reads the console stream and
+needs no session to watch; taking control opens the session, to type into
+the console.
 
 `booboot mcp` makes the client an MCP (Model Context Protocol) server on
 standard input and output: the DUT becomes a set of tools for MCP clients
@@ -228,24 +230,42 @@ tool results.
 
 ## Several DUTs
 
-One board can serve several DUTs: one server instance per DUT, each with its
-own configuration file, port, relay line, mux (by serial number) and UART
-adapter (by `/dev/serial/by-id/` path). The systemd template unit
-`booboot@NAME` runs the instance with `/etc/booboot/NAME.ini`.
+One board can serve several DUTs, each with its own relay line, mux (by
+serial number) and UART adapter (by `/dev/serial/by-id/` path). One server
+process serves them all, on one port: DUT NAME is at
+`http://HOST:8080/duts/NAME`, the first one also at `http://HOST:8080`
+([API](api.md#duts-of-the-board)). Each DUT has its own state, session,
+console, log files and scripts, as if it had its own server.
+
+The configuration is a directory, `/etc/booboot`: `server.ini` for the board
+(address, port, web pages, session times, scripts), and `NAME.ini` for each
+DUT (its hardware). A DUT file can also set a setting of `server.ini` for its
+DUT, like `[scripts] enabled`, and a port of its own: the DUT then also
+answers there at the root, as it did when each DUT had its own server.
+
+At start, the server checks that no two DUTs use the same relay line, mux or
+serial adapter. A DUT that does, or whose file cannot be read, does not
+start: the list of DUTs shows why, and its calls answer that error. The other
+DUTs work. A change of the configuration needs a restart of the service,
+which switches all the DUTs off.
 
 ## Deployment
 
-`server/install.sh NAME` on the board, as root:
+`server/install.sh [NAME]` on the board, as root:
 1. creates a Python virtual environment in `/opt/booboot` with `usbsdmux`,
 2. copies the server there, and installs `booboot-server` and the `booboot`
    client in `/usr/local/bin`,
 3. loads the `sg` kernel module at boot (needed by the mux),
 4. adds a udev rule that keeps desktop automounters away from the mux card,
-5. creates `/etc/booboot/NAME.ini` if missing, with the next free port
-   (8080 for the first DUT, 8081 for the second, ...),
-6. installs, enables and starts `booboot@NAME`.
+5. creates `/etc/booboot/server.ini` if missing, and `/etc/booboot/NAME.ini`
+   for DUT NAME if missing (`dut1` at the first install),
+6. installs, enables and restarts the service `booboot`, for all the DUTs.
 
-Running it again updates the code and keeps the configuration.
+Running it again updates the code and keeps the configuration. Before
+version 0.5, each DUT had its own service, `booboot@NAME`, and its own port:
+the update stops and disables them. `server.ini` then gets the address,
+port and web setting of the first DUT file, so the first DUT keeps its
+address, and the files of the other DUTs keep their port.
 [Installation from zero](install.md) goes step by step from a blank SD card,
 and [First bring-up](bringup.md) lists the checks to do on new hardware.
 
@@ -274,6 +294,9 @@ off screen) against a server with a simulated board.
   returns the output up to the last line break before the prompt: the end of
   an output without a final line break is lost.
 - zstd images need Python 3.14 on the server.
+- A change of the configuration restarts all the DUTs of the board. A reload
+  that restarts only the DUTs whose file changed is an idea for later.
 - Ideas: `.bmap` support (write only the used blocks of an image), an image
   cache on the board, boot interrupt sequences run on the server (for tight
-  timing like U-Boot with no autoboot delay), current measurement of the DUT, reading a whole card back.
+  timing like U-Boot with no autoboot delay), current measurement of the DUT, reading a whole card back,
+  BooBoot Console showing several DUTs side by side.

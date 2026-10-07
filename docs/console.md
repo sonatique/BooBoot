@@ -3,7 +3,9 @@
 A desktop program that shows the serial console of the DUT, live, as a
 terminal connected to it would. Watching needs no session, so agents and
 other clients use the DUT as usual, and the console data is not changed in
-any way. To type into the console, take control: see [Typing](#typing).
+any way. To type into the console, take control: see [Typing](#typing). With
+several DUTs on the board, it shows a tab for each: see
+[Several DUTs](#several-duts).
 
 ![BooBoot Console](console.png)
 
@@ -26,8 +28,9 @@ To watch with nothing to install, the BooBoot server also has a
   to a file (Ctrl+S). Clear (Ctrl+L) empties the view.
 - **Logs.** "Start new log" writes all output from now on to a new file
   `PREFIX-YYYYMMDD-HHMMSS.log` in the log folder. The prefix is the DUT name
-  unless set. Options: start a log when connected, and a new log file at each
-  power on. Logs have the text without escape codes, one line per line.
+  unless set; with several DUTs, a prefix set is followed by the DUT name.
+  Options: start a log when connected, and a new log file at each power on.
+  Logs have the text without escape codes, one line per line.
 - **Connection.** When the connection is lost, the program connects again and
   continues where it was: no output is lost unless it left the server memory
   in between (a line then says how many bytes were lost). A line also says
@@ -38,6 +41,24 @@ client has the session. When the server address is a name, it also shows the
 address of the board (`also at 10.1.2.3:8080`), for where the name does not
 work, like over a VPN. The program keeps the addresses of the board, and uses
 them by itself when the name is not found: see [remote.md](remote.md).
+
+## Several DUTs
+
+With the address of a board that has several DUTs, like
+`http://booboot.local:8080`, the window shows a tab for each DUT. The buttons
+and the status bar are those of the DUT of the current tab. Each DUT has its
+own view, scrollback, log files and session. A tab shows:
+
+- a dot: green when the DUT is on, gray when it is off,
+- "in control" when this program has the session of the DUT, or "used by"
+  and the client that has it,
+- a bullet when new output came while another tab was shown.
+
+Ctrl+Tab shows the next DUT, Ctrl+Shift+Tab the previous one. The DUTs button,
+next to the tabs, shows or hides DUTs: a hidden DUT is not watched, and the
+program remembers it for that board. With the address of one DUT, like
+`http://booboot.local:8080/duts/dut2`, the window shows that DUT only. With
+one DUT on the board, there are no tabs.
 
 ## Typing
 
@@ -104,7 +125,8 @@ The build uses Avalonia, which sends anonymous usage data while building. Set
 `AVALONIA_TELEMETRY_OPTOUT=1` to turn this off.
 
 The server address comes from the command line, or else is the last one
-used. Run the program once per DUT to watch several.
+used. It is the address of the board, for all its DUTs, or of one DUT, like
+`http://booboot.local:8080/duts/dut2`.
 
 ## Settings
 
@@ -115,7 +137,7 @@ and macOS.
 | Setting | Default |
 |---|---|
 | Log folder | `BooBoot logs` in the documents folder |
-| File name prefix | the DUT name |
+| File name prefix | the DUT name; with a prefix and several DUTs, PREFIX-NAME |
 | Start a log when connected | off |
 | New log file at each power on | off |
 | Scrollback lines | 200,000 |
@@ -124,14 +146,15 @@ and macOS.
 
 ## How it works
 
-The program reads `GET /api/v1/console/stream` (see [api.md](api.md)): one
-HTTP connection on which the server sends the output and the power switches
-as they come. The server reads the serial port all the time, whether viewers
+The program finds the DUTs of the board in `GET /api/v1/status` (`duts`),
+then reads `GET /duts/NAME/api/v1/console/stream` for each (see
+[api.md](api.md)): one HTTP connection on which the server sends the output
+and the power switches as they come. The server reads the serial port all the time, whether viewers
 are connected or not. Viewers only read its memory, so the DUT does not see
 them, and any number of them can watch. A slow viewer never slows the server:
 if it falls behind by more than the server memory, it skips output.
-Taking control opens a session (`POST /api/v1/session`), and the keys go
-through `POST /api/v1/console/write`.
+Taking control opens a session (`POST /duts/NAME/api/v1/session`), and the
+keys go through `POST /duts/NAME/api/v1/console/write`.
 
 ## Limits
 

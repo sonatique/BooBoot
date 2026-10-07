@@ -69,8 +69,8 @@ Ask for them in phase 0, or use the defaults. Use them in all commands.
 |---|---|---|
 | `HOST` | `booboot.local` | Pi hostname or IP address |
 | `USER` | (ask) | user name on the Pi |
-| `NAME` | `dut1` | DUT name, also the service and configuration name |
-| `PORT` | `8080` | server port (8081 for a second DUT, and so on) |
+| `NAME` | `dut1` | DUT name, also the name of its configuration file |
+| `PORT` | `8080` | server port, for all the DUTs of the board |
 
 Commands on the Pi run through SSH from the user's computer:
 
@@ -80,7 +80,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new US
 
 Below, `pi '<command>'` means that. If you run on the Pi itself, run the
 commands directly. On the Pi, always give the client its address:
-`booboot --url http://localhost:PORT ...`.
+`booboot --url http://localhost:PORT --dut NAME ...`.
 
 ## 4. The steps
 
@@ -178,9 +178,9 @@ The agent cannot type passwords, so SSH must work with a key.
 
 ### A4: Install
 
-Check first: `pi 'systemctl is-active booboot@NAME'`. `active` means
-installed: ask the user whether to update it (same commands, the
-configuration is kept) or skip.
+Check first: `pi 'systemctl is-active booboot'` (before version 0.5, one
+service per DUT: `booboot@NAME`). `active` means installed: ask the user
+whether to update it (same commands, the configuration is kept) or skip.
 
 ```sh
 pi 'sudo apt-get update'
@@ -189,22 +189,24 @@ pi 'test -d BooBoot && git -C BooBoot pull || git clone https://github.com/sonat
 pi 'sudo BooBoot/server/install.sh NAME'
 ```
 
-`install.sh` prints `Service booboot@NAME started.` It may take a few
-minutes on older models. Check:
+`install.sh` prints `Service booboot started, with the DUTs: NAME`. It may
+take a few minutes on older models. Check:
 
 ```sh
-pi 'systemctl is-active booboot@NAME; systemctl is-enabled booboot@NAME'
-pi 'booboot --url http://localhost:PORT status'
+pi 'systemctl is-active booboot; systemctl is-enabled booboot'
+pi 'booboot --url http://localhost:PORT --dut NAME status'
 ```
 
 Expected: `active`, `enabled`, then a status with `power:   off`. Errors
 about the SD card or the console are normal while they are not connected.
-If the service is not active: `pi 'journalctl -u booboot@NAME -n 40 --no-pager'`,
+If the service is not active: `pi 'journalctl -u booboot -n 40 --no-pager'`,
 report, stop.
 
 ### A5: Configuration
 
-The file is `/etc/booboot/NAME.ini`. Show the user the current values:
+The file of the DUT is `/etc/booboot/NAME.ini`; the settings of the board,
+for all its DUTs, are in `/etc/booboot/server.ini`. Show the user the current
+values:
 
 ```sh
 pi 'grep -E "^(line|chip|active_low|backend|device|baudrate) *=" /etc/booboot/NAME.ini'
@@ -225,7 +227,7 @@ Edit with `sed` on the exact line, then restart and show the result:
 
 ```sh
 pi 'sudo sed -i "s/^active_low = .*/active_low = yes/" /etc/booboot/NAME.ini'
-pi 'sudo systemctl restart booboot@NAME && sleep 2 && systemctl is-active booboot@NAME'
+pi 'sudo systemctl restart booboot && sleep 2 && systemctl is-active booboot'
 pi 'grep -E "^(line|active_low|baudrate) *=" /etc/booboot/NAME.ini'
 ```
 
@@ -253,7 +255,7 @@ Options) themselves, or with consent `pi 'sudo timedatectl set-timezone ZONE'`.
 From the user's computer, not through SSH:
 
 ```sh
-curl -s http://HOST:PORT/api/v1/status
+curl -s http://HOST:PORT/duts/NAME/api/v1/status
 curl -s -o /dev/null -w "%{http_code}\n" http://HOST:PORT/
 ```
 
@@ -261,8 +263,8 @@ Expected: JSON with `"name": "NAME"`, then `200` (the web page). On Windows
 PowerShell, use `curl.exe`. Then a restart check, with the user's consent:
 
 ```sh
-pi 'sudo systemctl restart booboot@NAME' ; sleep 3
-pi 'booboot --url http://localhost:PORT status'
+pi 'sudo systemctl restart booboot' ; sleep 3
+pi 'booboot --url http://localhost:PORT --dut NAME status'
 ```
 
 ### T2: What the board sees (agent)
@@ -288,8 +290,8 @@ yet: say so, and check again in T4 and T5.
 2. With their consent, run each command and ask what they saw:
 
    ```sh
-   pi 'booboot --url http://localhost:PORT power on'
-   pi 'booboot --url http://localhost:PORT power off'
+   pi 'booboot --url http://localhost:PORT --dut NAME power on'
+   pi 'booboot --url http://localhost:PORT --dut NAME power off'
    ```
 
    Expected: relay on (click, LED) after `power on`, off after `power off`.
@@ -310,12 +312,12 @@ yet: say so, and check again in T4 and T5.
 
    ```sh
    pi 'sudo booboot-server --probe | grep -A2 USB-SD-Mux'
-   pi 'booboot --url http://localhost:PORT power off'
-   pi 'booboot --url http://localhost:PORT sd parts'
-   pi 'echo booboot-test > /tmp/booboot-test.txt && booboot --url http://localhost:PORT sd put /tmp/booboot-test.txt 1:/'
-   pi 'booboot --url http://localhost:PORT sd ls 1:/'
-   pi 'booboot --url http://localhost:PORT sd rm 1:/booboot-test.txt'
-   pi 'booboot --url http://localhost:PORT sd dut'
+   pi 'booboot --url http://localhost:PORT --dut NAME power off'
+   pi 'booboot --url http://localhost:PORT --dut NAME sd parts'
+   pi 'echo booboot-test > /tmp/booboot-test.txt && booboot --url http://localhost:PORT --dut NAME sd put /tmp/booboot-test.txt 1:/'
+   pi 'booboot --url http://localhost:PORT --dut NAME sd ls 1:/'
+   pi 'booboot --url http://localhost:PORT --dut NAME sd rm 1:/booboot-test.txt'
+   pi 'booboot --url http://localhost:PORT --dut NAME sd dut'
    ```
 
    Expected: a partition list, `booboot-test.txt` in the listing, then its
@@ -329,9 +331,9 @@ yet: say so, and check again in T4 and T5.
 2. Run:
 
    ```sh
-   pi 'booboot --url http://localhost:PORT status'
-   pi 'booboot --url http://localhost:PORT console write booboot-loopback'
-   pi 'booboot --url http://localhost:PORT console expect booboot-loopback --since -200 --timeout 3'
+   pi 'booboot --url http://localhost:PORT --dut NAME status'
+   pi 'booboot --url http://localhost:PORT --dut NAME console write booboot-loopback'
+   pi 'booboot --url http://localhost:PORT --dut NAME console expect booboot-loopback --since -200 --timeout 3'
    ```
 
    Expected: the status shows the adapter (`console: /dev/...`, not "not
@@ -351,9 +353,9 @@ are in install.md, part B.
 | B2 Command line tool on this computer | download `https://raw.githubusercontent.com/sonatique/BooBoot/main/client/booboot.py` to a folder the user chooses; if `HOST` or `PORT` differ from the defaults, tell them how to set `BOOBOOT_URL` (install.md B2) | `python3 booboot.py --url http://HOST:PORT status` (Windows: `python`) |
 | B3 BooBoot Console | give the user the download link of install.md B3 | the user confirms it shows the console |
 | B4 MCP server | if your host supports MCP servers and the user wants it: register `python3 PATH/booboot.py --url http://HOST:PORT mcp` as a stdio server named `booboot` (mcp.md), after B2 | the server's `status` tool answers |
-| Web page off | `web = no` under `[server]` (A5 method) | `curl` of `/` gives 404 |
-| Session timeout | `session_timeout` in seconds (A5 method) | `status` shows it after a session is opened |
-| Second DUT | install.md, Later: `sudo BooBoot/server/install.sh dut2`, then per DUT config | phases 2 and 3 with `NAME=dut2`, `PORT=8081` |
+| Web page off | `web = no` under `[server]` of `server.ini` (A5 method) | `curl` of `/` gives 404 |
+| Session timeout | `session_timeout` in seconds, in `server.ini` (A5 method) | `status` shows it after a session is opened |
+| Second DUT | install.md, Later: `sudo BooBoot/server/install.sh dut2`, then its own relay line, and `serial` and `device` for both DUTs | phases 2 and 3 with `NAME=dut2` |
 
 ## 10. Phase 5: final manual steps
 
@@ -361,7 +363,7 @@ are in install.md, part B.
 
 Give the user these steps (bringup.md step 6), and wait for each:
 
-1. Power off first: `pi 'booboot --url http://localhost:PORT power off'`.
+1. Power off first: `pi 'booboot --url http://localhost:PORT --dut NAME power off'`.
 2. UART: GND to GND, adapter TX to DUT RX, adapter RX to DUT TX, at the DUT
    I/O voltage.
 3. The micro SD adapter of the mux into the DUT SD slot.
@@ -380,7 +382,7 @@ Give the user these steps (bringup.md step 6), and wait for each:
    consent:
 
    ```sh
-   pi 'cd /tmp && booboot --url http://localhost:PORT deploy BOOT.BIN image.ub --expect "login: " --timeout 120'
+   pi 'cd /tmp && booboot --url http://localhost:PORT --dut NAME deploy BOOT.BIN image.ub --expect "login: " --timeout 120'
    ```
 
    Report the boot output and the time from power on to the expected text.
@@ -390,18 +392,18 @@ Give the user these steps (bringup.md step 6), and wait for each:
    the user for it; often `root`) and wait for its echo:
 
    ```sh
-   pi 'booboot --url http://localhost:PORT console write root && booboot --url http://localhost:PORT console expect root --timeout 5'
+   pi 'booboot --url http://localhost:PORT --dut NAME console write root && booboot --url http://localhost:PORT --dut NAME console expect root --timeout 5'
    ```
 
    Without a login prompt, use the U-Boot check of bringup.md step 7. If
    there is no echo, follow "When the DUT does not receive" in bringup.md
    with the user, starting with the adapter loopback (T5). Report, and ask.
    F2 passes only when the DUT receives.
-4. Optional, with consent: `pi 'booboot --url http://localhost:PORT boottime "login: " --runs 3'`.
+4. Optional, with consent: `pi 'booboot --url http://localhost:PORT --dut NAME boottime "login: " --runs 3'`.
 
 ## 11. END: Final report
 
-1. Release the session: `pi 'booboot --url http://localhost:PORT session close'`.
+1. Release the session: `pi 'booboot --url http://localhost:PORT --dut NAME session close'`.
 2. Write the final report in the report file and show it to the user:
    - a table of all steps with PASS, FAIL or SKIPPED, and why for the last
      two,
@@ -409,7 +411,7 @@ Give the user these steps (bringup.md step 6), and wait for each:
    - the configuration values changed,
    - the addresses: `http://HOST:PORT/` (web page) and the API,
    - what is left to do, if anything,
-   - how to update later: `cd ~/BooBoot && git pull && sudo server/install.sh NAME`
+   - how to update later: `cd ~/BooBoot && git pull && sudo server/install.sh`
      on the Pi,
    - how to use the unit from an agent later: [agent-use.md](agent-use.md).
 

@@ -106,23 +106,30 @@ Errors about the mux or the console are normal while they are not connected.
 
 ### 5. Configuration
 
-The configuration is `/etc/booboot/dut1.ini`. Each setting is explained in
-the file. The defaults fit the wiring above. The ones most often changed:
+The configuration of the DUT is `/etc/booboot/dut1.ini`. Each setting is
+explained in the file. The defaults fit the wiring above. The ones most often
+changed:
 
 - `[power] line` and `active_low`: the relay (step 2),
 - `[console] baudrate`: the DUT serial speed (921600 by default),
 - `[console] device`: with several USB serial adapters, the path of the right
   one in `/dev/serial/by-id/`.
+
+The settings of the board, for all its DUTs, are in
+`/etc/booboot/server.ini`: the port (8080), the web pages, the session times,
+and:
+
 - `[scripts] enabled`: lets clients run Python scripts on the board
   ([scripts.md](scripts.md)). Off by default: turn it on only on a trusted
   network.
 
 ```sh
 sudo nano /etc/booboot/dut1.ini
-sudo systemctl restart booboot@dut1
+sudo systemctl restart booboot
 ```
 
-Service messages: `journalctl -u booboot@dut1 -f` (Ctrl+C to stop).
+A restart switches the DUTs off. Service messages: `journalctl -u booboot -f`
+(Ctrl+C to stop).
 
 ### 6. Clock
 
@@ -150,7 +157,8 @@ card and the serial console one by one, then connects the DUT.
 ### 1. Web page
 
 Open `http://booboot.local:8080/` in a browser: the DUT console, live, with
-nothing to install (see [web.md](web.md)).
+nothing to install (see [web.md](web.md)). With several DUTs on the board, it
+lists them, with a link to the console of each.
 
 ### 2. Command line tool
 
@@ -214,12 +222,17 @@ To let an MCP client use the DUT through tools, add the MCP server of
 cd ~/BooBoot && git pull && sudo server/install.sh
 ```
 
-It restarts the service, which switches the DUT off. With several DUTs on
-the board, run `install.sh` once per DUT, like `sudo server/install.sh dut2`:
-each run restarts the service of that DUT. New features that are off by
-default stay off, like scripts ([scripts.md](scripts.md)). An agent can do
-all this, with the tools on your computer: point it to
+It restarts the service, which switches the DUTs off. New features that are
+off by default stay off, like scripts ([scripts.md](scripts.md)). An agent can
+do all this, with the tools on your computer: point it to
 [agent-update.md](agent-update.md).
+
+From a version before 0.5, each DUT had its own service, `booboot@NAME`, and
+its own port. The update replaces them with the one service `booboot`, and
+creates `/etc/booboot/server.ini` with the address and port of the first DUT
+(`dut1`), which keeps its address. The other DUTs keep their port, like
+`http://booboot.local:8081`, and also get the address
+`http://booboot.local:8080/duts/NAME`.
 
 **A second DUT on the same Pi.** Connect its relay driver to another GPIO
 line, its mux and its UART adapter, then:
@@ -228,20 +241,27 @@ line, its mux and its UART adapter, then:
 sudo ~/BooBoot/server/install.sh dut2
 ```
 
-It creates `/etc/booboot/dut2.ini` with the next port (8081). Set another
-relay `line` in it. With two muxes and two UART adapters, each configuration
-must also name its own: `serial` in `[sdmux]` (from
-`sudo booboot-server --probe`) and `device` in `[console]` (a
-`/dev/serial/by-id/` path), in both `dut1.ini` and `dut2.ini`. Clients use
-`http://booboot.local:8081` for the second DUT.
+It creates `/etc/booboot/dut2.ini` and restarts the service. Set another
+relay `line` in it. With two muxes and two UART adapters, each DUT file must
+also name its own: `serial` in `[sdmux]` (from `sudo booboot-server --probe`)
+and `device` in `[console]` (a `/dev/serial/by-id/` path), in both `dut1.ini`
+and `dut2.ini`. A DUT that uses the hardware of another one does not start:
+`booboot duts` and the service messages say why. Then
+`sudo systemctl restart booboot`.
 
-**Remove.** With several DUTs, also disable `booboot@dut2` and the others.
+Clients use `http://booboot.local:8080/duts/dut2` for the second DUT, or
+`booboot --dut dut2`. The web page `http://booboot.local:8080/` lists the
+DUTs, and BooBoot Console shows a tab for each.
+
+**Remove.**
 
 ```sh
-sudo systemctl disable --now booboot@dut1
-sudo rm -rf /opt/booboot /etc/booboot /var/log/booboot /usr/local/bin/booboot /usr/local/bin/booboot-server \
-    /etc/systemd/system/booboot@.service /etc/udev/rules.d/99-booboot.rules /etc/modules-load.d/booboot.conf
+sudo systemctl disable --now booboot
+sudo rm -rf /opt/booboot /etc/booboot /var/log/booboot /var/lib/booboot /usr/local/bin/booboot \
+    /usr/local/bin/booboot-server /etc/systemd/system/booboot.service /etc/udev/rules.d/99-booboot.rules \
+    /etc/modules-load.d/booboot.conf
 sudo systemctl daemon-reload
+sudo userdel booboot-script
 ```
 
 **From home or another site.** Through a VPN, `booboot.local` is not found:

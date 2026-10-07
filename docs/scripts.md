@@ -10,15 +10,17 @@ needs no delay between the board and the DUT.
 
 Scripts are off by default. Anyone who reaches the port of the server can
 run them, and with them, programs on the BooBoot board. Turn them on only on
-a trusted network. In `/etc/booboot/NAME.ini`:
+a trusted network. For all the DUTs of the board, in `/etc/booboot/server.ini`
+(or for one DUT only, in its file `/etc/booboot/NAME.ini`):
 
 ```ini
 [scripts]
 enabled = yes
 ```
 
-Then `sudo systemctl restart booboot@NAME`. The other settings of the
-section, with their defaults:
+Then `sudo systemctl restart booboot`. A DUT file made before version 0.5 has
+a `[scripts]` section of its own, which has the last word for its DUT. The
+other settings of the section, with their defaults:
 
 | Setting | Default | Meaning |
 |---|---|---|
