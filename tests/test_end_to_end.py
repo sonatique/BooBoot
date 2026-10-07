@@ -119,6 +119,27 @@ class EndToEnd(unittest.TestCase):
         r = c.expect("never", since="now", timeout=0.3)
         self.assertFalse(r["matched"])
 
+    def test_power_switched(self):
+        c = self.c
+        on = c.power_on()
+        self.assertEqual(c.status()["console"]["switches"], on["switch"])
+        self.assertEqual(c.power_off()["switch"], on["switch"] + 1)
+        # The boot of on ended with the power off: no wait in another boot.
+        with self.assertRaises(booboot.Error) as e:
+            c.expect_boot(on, "never", timeout=10)
+        self.assertEqual((e.exception.status, e.exception.code), (409, "power_switched"))
+        self.assertEqual(e.exception.info["switch"]["power"], "off")
+        self.assertIn("was switched off at", e.exception.message)
+        # A switch by another request during the wait.
+        other = booboot.Client(self.url, session=c.session)
+        threading.Timer(0.3, other.power_on).start()
+        t = time.monotonic()
+        with self.assertRaises(booboot.Error) as e:
+            c.expect("never", since="now", timeout=10)
+        self.assertEqual(e.exception.code, "power_switched")
+        self.assertLess(time.monotonic() - t, 5)
+        c.power_off()
+
     def test_write_image(self):
         c = self.c
         c.power_off()
@@ -301,6 +322,31 @@ class Cli(unittest.TestCase):
         self.cli("session", "open", "--force", "gone")
         self.assertIn("yours", self.cli("status"))
         self.cli("session", "close")
+
+    def test_agents(self):
+        # Each client name has its own session: agents on one computer do not share one.
+        def cmd(name, *args):
+            return [sys.executable, common.CLIENT, "--name", name] + list(args)
+
+        for name in ("agent (a)", "agent (b)"):
+            self.addCleanup(subprocess.run, cmd(name, "session", "close"), env=self.env, capture_output=True)
+        self.cli("--name", "agent (a)", "power", "off")
+        self.cli("--name", "agent (b)", "power", "off", code=4)
+        status = json.loads(self.cli("--name", "agent (b)", "--json", "status"))
+        self.assertEqual((status["session"]["client"], status["session"]["yours"]), ("agent (a)", False))
+        self.assertTrue(json.loads(self.cli("--name", "agent (a)", "--json", "status"))["session"]["yours"])
+        # With --wait, b goes on when a releases the DUT.
+        release = threading.Timer(1.0, subprocess.run, [cmd("agent (a)", "session", "close")],
+                                  {"env": self.env, "capture_output": True})
+        release.start()
+        self.addCleanup(release.join)
+        t = time.monotonic()
+        p = subprocess.run(cmd("agent (b)", "--wait", "30", "power", "off"), env=self.env, capture_output=True,
+                           text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("waiting for the DUT, used by agent (a)", p.stderr)
+        self.assertGreater(time.monotonic() - t, 0.9)
+        self.cli("--name", "agent (a)", "--wait", "0.5", "power", "off", code=4)
 
     def test_flow(self):
         boot = os.path.join(self.tmp, "BOOT.BIN")

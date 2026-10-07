@@ -177,13 +177,14 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(e.exception.code, "is_a_directory")
 
     def test_boot_time(self):
-        self.answer("POST", "/power/cycle", {"power": "on", "boot": 100})
+        self.answer("POST", "/power/cycle", {"power": "on", "boot": 100, "switch": 7})
         self.answer("POST", "/console/expect", {"matched": True, "text": "x", "next": 200, "time": 12.345})
         c = booboot.Client(self.url, session="t")
         self.assertEqual(c.boot_time("login: ", timeout=60, off_time=1), 12.345)
         cycle, expect = self.server.requests[-2:]
         self.assertEqual(json.loads(cycle[3]), {"off_time": 1})
-        self.assertEqual(json.loads(expect[3])["since"], "boot")
+        # It waits in the boot of its power cycle: from its cursor, with no other switch after it.
+        self.assertEqual((json.loads(expect[3])["since"], json.loads(expect[3])["switch"]), (100, 7))
         self.answer("POST", "/console/expect", {"matched": False, "text": "", "next": 200, "time": None})
         self.assertIsNone(c.boot_time("login: "))
 

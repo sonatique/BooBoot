@@ -15,7 +15,7 @@ from unittest import mock
 
 import common  # noqa: F401  (sets sys.path)
 from booboot_server import gpio, netinfo, session, storage
-from booboot_server.console import Console, clean_text
+from booboot_server.console import Console, PowerSwitched, clean_text
 from booboot_server.errors import BadRequest, Busy, Conflict, NoSession
 from booboot_server.session import Sessions
 
@@ -293,6 +293,38 @@ class ConsoleTest(unittest.TestCase):
         matched, start, data, m, nxt = self.c.expect(re.compile(b"again"), self.c.boot, 2)
         self.assertLess(self.c.time_of(nxt - 1), 0.25)
         self.assertGreater(self.c.time_of(boot), 0.25)  # older bytes keep their boot
+
+    def test_power_switched(self):
+        # The output after a power switch comes from another boot.
+        boot = self.c.mark_boot()
+        first = self.c.switches
+        self.feed(b"U-Boot\r\n")
+        self.wait_end(8)
+        self.c.mark_off()
+        self.c.mark_boot()
+        self.feed(b"U-Boot\r\nMENU\r\n")
+        self.wait_end(22)
+        with self.assertRaises(PowerSwitched) as e:
+            self.c.expect(re.compile(b"MENU"), boot, 2, first)
+        self.assertEqual((e.exception.code, e.exception.info["switch"]["power"]), ("power_switched", "off"))
+        self.assertEqual(e.exception.info["switch"]["number"], first + 1)
+        # A match before the switch counts.
+        self.assertTrue(self.c.expect(re.compile(b"U-Boot"), boot, 2, first)[0])
+        # Without a switch number, only a switch during the call counts.
+        self.assertTrue(self.c.expect(re.compile(b"MENU"), boot, 2)[0])
+
+    def test_power_switched_while_waiting(self):
+        threading.Timer(0.2, self.c.mark_off).start()
+        t = time.monotonic()
+        with self.assertRaises(PowerSwitched):
+            self.c.expect(re.compile(b"never"), self.c.end, 5)
+        self.assertLess(time.monotonic() - t, 2)
+        # run sends nothing to another boot.
+        before = self.c.switches
+        self.c.mark_boot()
+        with self.assertRaises(PowerSwitched):
+            self.c.run("uname -a", re.compile(b"[#$>] $"), 2, before)
+        self.assertEqual(self.c.written, 0)
 
     def test_follow(self):
         self.feed(b"old\n")

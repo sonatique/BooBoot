@@ -120,6 +120,10 @@ Only one client may use the DUT at a time.
 - A session never expires while one of its requests runs (like a long image
   write or an expect), or while a script of it runs on the board. Taking a
   session over stops its script.
+- The command line tool keeps the token of each server and client name in a
+  local file, so that its commands share one session. Agents that run at the
+  same time on one computer each use their own name, so each has its own
+  session. `--wait` waits for the DUT to be free instead of answering `busy`.
 
 ### Safety rules
 
@@ -129,6 +133,11 @@ Only one client may use the DUT at a time.
   it there. Power on switches it back to the DUT.
 - One hardware operation at a time. Another one gets HTTP 409 with the name
   of the running operation.
+- `expect` and `run` stop with HTTP 409 `power_switched` when another request
+  switches the power before a match: the output after it is from another
+  boot. `deploy` and `boottime` wait in the boot of their own power on, with
+  the number of that power switch, so that even two clients that share a
+  session cannot read each other's boot.
 - Only the block device of the mux is ever written. The client never gives a
   device name. The server finds the card reader of the mux in sysfs, and
   opens it with `O_EXCL`, which fails if it is mounted.

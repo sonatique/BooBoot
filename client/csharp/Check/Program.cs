@@ -153,6 +153,10 @@ Check((await dut.PowerCycleAsync(0)).GetProperty("power").GetString() == "on", "
 var bootTime = await dut.BootTimeAsync("login: $", timeout: 10, offTime: 0);
 Check(bootTime > 0.1 && bootTime < 2, "boot time");
 Check(await dut.BootTimeAsync("never", timeout: 0.5, offTime: 0) == null, "boot time timeout");
+var powerOn = await dut.PowerOnAsync();
+await dut.PowerOffAsync();
+var switched = await Fails(() => dut.ExpectBootAsync(powerOn, "never", timeout: 10));
+Check(switched.Status == 409 && switched.Code == "power_switched", "no wait in a boot that was switched off");
 await dut.KeepaliveAsync();
 
 // Scripts

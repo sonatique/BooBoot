@@ -312,22 +312,41 @@ public sealed class BooBootClient : IDisposable
     public Task<JsonElement> WriteAsync(string text, bool newline = false) =>
         SendJsonAsync(HttpMethod.Post, "/console/write", Body(("text", text), ("newline", newline)));
 
-    /// <summary>Waits for a regex (Python syntax) in the console output.</summary>
+    /// <summary>
+    /// Waits for a regex (Python syntax) in the console output. A power switch before the match throws
+    /// BooBootException "power_switched": the output after it is from another boot.
+    /// </summary>
+    /// <param name="powerSwitch">The "switch" of the power on of the boot to wait in, to also catch a switch
+    /// made before this call. See ExpectBootAsync.</param>
     public async Task<MatchResult> ExpectAsync(string pattern, string since = "last", double timeout = 30,
-        bool clean = false)
+        bool clean = false, long? powerSwitch = null)
     {
         var r = await SendJsonAsync(HttpMethod.Post, "/console/expect",
-            Body(("pattern", pattern), ("since", since), ("timeout", timeout), ("clean", clean)),
+            Body(("pattern", pattern), ("since", since), ("timeout", timeout), ("clean", clean),
+                ("switch", powerSwitch)),
             TimeSpan.FromSeconds(timeout));
         return Match(r, "text");
     }
 
-    /// <summary>Sends a command line and waits for the prompt regex (default set on the server).</summary>
+    /// <summary>
+    /// ExpectAsync in the boot started by powerOn, the answer of PowerOnAsync or PowerCycleAsync. Another power
+    /// switch in between throws BooBootException "power_switched", rather than reading another boot.
+    /// </summary>
+    public Task<MatchResult> ExpectBootAsync(JsonElement powerOn, string pattern, double timeout = 120,
+        bool clean = false) =>
+        ExpectAsync(pattern, powerOn.GetProperty("boot").GetInt64().ToString(CultureInfo.InvariantCulture), timeout,
+            clean, powerOn.TryGetProperty("switch", out var s) ? (long?)s.GetInt64() : null);
+
+    /// <summary>
+    /// Sends a command line and waits for the prompt regex (default set on the server). A power switch throws
+    /// BooBootException "power_switched", as for ExpectAsync.
+    /// </summary>
     public async Task<MatchResult> RunAsync(string command, string? prompt = null, double timeout = 30,
-        bool clean = true)
+        bool clean = true, long? powerSwitch = null)
     {
         var r = await SendJsonAsync(HttpMethod.Post, "/console/run",
-            Body(("command", command), ("prompt", prompt), ("timeout", timeout), ("clean", clean)),
+            Body(("command", command), ("prompt", prompt), ("timeout", timeout), ("clean", clean),
+                ("switch", powerSwitch)),
             TimeSpan.FromSeconds(timeout));
         return Match(r, "output");
     }
@@ -338,8 +357,7 @@ public sealed class BooBootClient : IDisposable
     /// </summary>
     public async Task<double?> BootTimeAsync(string pattern, double timeout = 120, double? offTime = null)
     {
-        await PowerCycleAsync(offTime);
-        return (await ExpectAsync(pattern, since: "boot", timeout: timeout)).Time;
+        return (await ExpectBootAsync(await PowerCycleAsync(offTime), pattern, timeout)).Time;
     }
 
     // Scripts
@@ -402,6 +420,9 @@ public sealed class BooBootClient : IDisposable
                         break;
                     case double d:
                         writer.WriteNumber(key, d);
+                        break;
+                    case long l:
+                        writer.WriteNumber(key, l);
                         break;
                     case IEnumerable<string> list:
                         writer.WriteStartArray(key);

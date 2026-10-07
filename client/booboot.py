@@ -376,22 +376,26 @@ class Client:
         """Send text. newline adds the line ending set on the server."""
         return self.request("POST", "/console/write", json_body={"text": text, "newline": newline})
 
-    def expect(self, pattern, since="last", timeout=30, clean=False):
+    def expect(self, pattern, since="last", timeout=30, clean=False, switch=None):
         """Wait for a regex in the console output.
 
         Result: "matched", "match", "text" (output up to the end of the match),
         "next" (cursor after the match) and "time" (seconds from power on to the match).
+        A power switch before the match raises Error "power_switched": the output after it
+        is from another boot. switch: the "switch" of the power on of the boot to wait in,
+        to also catch a switch made before this call.
         """
-        body = {"pattern": pattern, "since": since, "timeout": timeout, "clean": clean}
+        body = {"pattern": pattern, "since": since, "timeout": timeout, "clean": clean, "switch": switch}
         return self.request("POST", "/console/expect", json_body=body, timeout=timeout + self.timeout)
 
-    def run(self, command, prompt=None, timeout=30, clean=True):
+    def run(self, command, prompt=None, timeout=30, clean=True, switch=None):
         """Send a command line and wait for the prompt regex.
 
         Result: "matched", "output" (without the command echo and the prompt line)
-        and "time" (seconds from power on to the prompt).
+        and "time" (seconds from power on to the prompt). A power switch raises Error
+        "power_switched", as for expect().
         """
-        body = {"command": command, "prompt": prompt, "timeout": timeout, "clean": clean}
+        body = {"command": command, "prompt": prompt, "timeout": timeout, "clean": clean, "switch": switch}
         return self.request("POST", "/console/run", json_body=body, timeout=timeout + self.timeout)
 
     def boot_time(self, pattern, timeout=120, off_time=None):
@@ -399,9 +403,16 @@ class Client:
 
         Return the seconds from power on to the regex, or None on timeout.
         """
-        self.power_cycle(off_time)
-        r = self.expect(pattern, since="boot", timeout=timeout)
+        r = self.expect_boot(self.power_cycle(off_time), pattern, timeout)
         return r["time"] if r["matched"] else None
+
+    def expect_boot(self, power_on, pattern, timeout=120, clean=False):
+        """expect() in the boot started by power_on, the result of power_on() or power_cycle().
+
+        Another power switch in between raises Error "power_switched", rather than reading another boot.
+        """
+        return self.expect(pattern, since=power_on.get("boot", "boot"), timeout=timeout, clean=clean,
+                           switch=power_on.get("switch"))
 
     # Scripts
 
@@ -490,12 +501,18 @@ def _save_json(path, obj):
     os.replace(tmp, path)
 
 
-def _save_token(url, token):
+def _store_key(url, name):
+    # Each client name has its own session, like agents that run at the same time.
+    url = url.rstrip("/")
+    return url + " " + name if name else url
+
+
+def _save_token(url, token, name=None):
     store = _load_store()
     if token:
-        store[url] = token
+        store[_store_key(url, name)] = token
     else:
-        store.pop(url, None)
+        store.pop(_store_key(url, name), None)
     _save_json(_store_path(), store)
 
 
@@ -543,8 +560,8 @@ def _is_address(host):
     return False
 
 
-def _saved_token(url):
-    return os.environ.get("BOOBOOT_SESSION") or _load_store().get(url.rstrip("/"))
+def _saved_token(url, name=None):
+    return os.environ.get("BOOBOOT_SESSION") or _load_store().get(_store_key(url, name))
 
 
 def _warn(text):
@@ -557,7 +574,7 @@ def _client(args, session=True):
     c = Client(args.url, addresses=known_addresses(args.url), on_note=_warn)
     if not session:
         return c
-    c.session = _saved_token(c.url)
+    c.session = _saved_token(c.url, args.name)
     if c.session:
         try:
             c.keepalive()
@@ -566,13 +583,33 @@ def _client(args, session=True):
             if e.code != "no_session" or os.environ.get("BOOBOOT_SESSION"):
                 raise
             _warn("session expired, opening a new one")
-    c.open_session(args.name, args.session_timeout)
-    _save_token(c.url, c.session)
+    _open(c, args, args.session_timeout)
+    _save_token(c.url, c.session, args.name)
     try:
         remember_addresses(c.url, c.status())
     except Error:
         pass  # only for later, when the name is not found
     return c
+
+
+def _open(c, args, timeout, force=False):
+    """Open the session. With --wait, wait for the DUT to be free, at most that many seconds."""
+    deadline = time.monotonic() + (args.wait or 0)
+    told = False
+    while True:
+        try:
+            return c.open_session(args.name, timeout, force)
+        except Error as e:
+            if e.code != "busy" or time.monotonic() >= deadline:
+                raise
+            if not told:
+                _warn("waiting for the DUT, used by " + _holder(e.info.get("session") or {}))
+                told = True
+        # Status reads are not logged by the server, refused session requests are.
+        while time.monotonic() < deadline:
+            time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
+            if not (c.status().get("session") or {}).get("active"):
+                break
 
 
 def _print_json(obj):
@@ -680,7 +717,7 @@ def cmd_duts(args):
 
 def cmd_status(args):
     c = _client(args, session=False)
-    c.session = _saved_token(c.url)
+    c.session = _saved_token(c.url, args.name)
     s = c.status()
     remember_addresses(c.url, s)
     if args.json:
@@ -690,8 +727,8 @@ def cmd_status(args):
 
 def cmd_session_open(args):
     c = _client(args, session=False)
-    info = c.open_session(args.name, args.timeout, args.force)
-    _save_token(c.url, c.session)
+    info = _open(c, args, args.timeout, args.force)
+    _save_token(c.url, c.session, args.name)
     if args.json:
         return _print_json(info)
     print("session opened (ends after %gs idle)" % info["timeout"])
@@ -699,7 +736,7 @@ def cmd_session_open(args):
 
 def cmd_session_close(args):
     c = _client(args, session=False)
-    c.session = _saved_token(c.url)
+    c.session = _saved_token(c.url, args.name)
     if not c.session:
         print("no session")
         return
@@ -714,7 +751,7 @@ def cmd_session_close(args):
             raise
         print("session had already expired")
     finally:
-        _save_token(c.url, None)
+        _save_token(c.url, None, args.name)
 
 
 def cmd_power(args):
@@ -818,7 +855,7 @@ def cmd_sd_rm(args):
 def cmd_console_read(args):
     # Reading needs no session. A saved one is kept alive.
     c = _client(args, session=False)
-    c.session = _saved_token(c.url)
+    c.session = _saved_token(c.url, args.name)
     if args.json:
         return _print_json(c.read(args.since, clean=args.clean, timestamps=args.timestamps))
     since = args.since
@@ -1075,7 +1112,7 @@ def cmd_deploy(args):
     _warn("power on")
     code = None
     if args.expect:
-        r = c.expect(args.expect, "boot", args.timeout, clean=True)
+        r = c.expect_boot(result["power_on"], args.expect, args.timeout, clean=True)
         result["expect"] = r
         if not args.json and not args.quiet:
             _print_text(r["text"])
@@ -1363,12 +1400,12 @@ def _mcp_deploy(s, a, report):
         r = c.write_image(_local(image), bool(a.get("verify")), progress=_Total(report, size).upload(size))
         lines.append("Wrote %s (%s)." % (image, _size(r["bytes"])))
     lines += _mcp_copy(c, a.get("files") or [], a.get("dest") or "1:/", report, as_dir=True)
-    c.power_on()
+    on = c.power_on()
     lines.append("Power on.")
     pattern = a.get("expect")
     if pattern:
         timeout = float(a.get("timeout", 120))
-        r = c.expect(pattern, since="boot", timeout=timeout, clean=True)
+        r = c.expect_boot(on, pattern, timeout, clean=True)
         if r["matched"]:
             lines.append("Matched %r %.3f s after power on. Boot output:" % (r["match"], r["time"] or 0))
         else:
@@ -1764,9 +1801,12 @@ def build_parser():
     p.add_argument("--dut", default=os.environ.get("BOOBOOT_DUT") or None,
                    help="DUT of the board, when it has several (env BOOBOOT_DUT): its URL is URL/duts/DUT")
     p.add_argument("--json", action="store_true", help="print results as JSON")
-    p.add_argument("--name", help="client name shown to other clients (default user@host)")
+    p.add_argument("--name", help="client name shown to other clients (default user@host); each name has "
+                                  "its own session, like agents that run at the same time")
     p.add_argument("--session-timeout", type=float, metavar="S",
                    help="idle seconds before the server ends a session opened by this command")
+    p.add_argument("--wait", type=float, metavar="S",
+                   help="when another client has the DUT, wait up to S seconds for it to be free")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", metavar="COMMAND")
     sub.required = True

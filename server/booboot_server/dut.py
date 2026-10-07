@@ -119,6 +119,7 @@ class Dut:
                 "cursor": c.end,
                 "boot": c.boot,
                 "last": c.last,
+                "switches": c.switches,
                 "written": c.written,
                 "error": c.error,
             },
@@ -140,7 +141,7 @@ class Dut:
     def _power(self, on):
         if not on:
             self._set_power(False)
-            return {"power": "off"}
+            return {"power": "off", "switch": self.console.switches}
         if self.mux_mode in ("host", "unknown"):
             try:
                 self._set_mux("dut")
@@ -148,7 +149,7 @@ class Dut:
                 self.log.warning("power on without SD card switch: %s", e.message)
         # Console times count from the moment the relay is switched on.
         boot = self.console.mark_boot(lambda: self._set_power(True))
-        return {"power": "on", "boot": boot}
+        return {"power": "on", "boot": boot, "switch": self.console.switches}
 
     # SD card
 

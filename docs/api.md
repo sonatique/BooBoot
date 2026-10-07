@@ -31,6 +31,7 @@ the base URL of a DUT.
 | 409 | `power_on` | The operation needs the power off |
 | 409 | `operation_in_progress` | Another hardware operation runs (`operation` says which) |
 | 409 | `script_running`, `script_ended` | A script runs already; the script to stop has ended |
+| 409 | `power_switched` | The power was switched before a match of `expect` or `run`: the output after it is from another boot (`switch` says when) |
 | 423 | `busy` | Another client has the session (`session` says who, and when it expires) |
 | 500 | `hardware_error` | Relay, mux, card or serial port problem |
 | 503 | `unavailable` | Hardware missing or not configured |
@@ -82,7 +83,7 @@ No session needed.
   "power": {"state": "off", "backend": "gpio", "error": ""},
   "sd": {"mode": "dut", "error": "", "card": {"state": "written", "sha256": "...", "bytes": 123, "time": 1790000000.0}},
   "console": {"connected": true, "device": "/dev/serial/by-id/...", "baudrate": 921600,
-              "cursor": 5120, "boot": 1024, "last": 4800, "written": 37, "error": ""},
+              "cursor": 5120, "boot": 1024, "last": 4800, "switches": 7, "written": 37, "error": ""},
   "operation": null,
   "session": {"active": true, "client": "me@desk", "opened": "2026-09-26T10:00:00",
               "timeout": 300, "idle": 12.5, "expires_in": 287.5, "alive": true,
@@ -102,7 +103,8 @@ gone. `null` for clients that send none, like `booboot` commands.
 `power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off` or
 `unknown`. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
 `modified`. `operation`: running hardware operation or null.
-`console.written`: bytes that the serial driver of the BooBoot board took
+`console.switches`: the number of the last power switch, counted from 1
+since the server started. `console.written`: bytes that the serial driver of the BooBoot board took
 since the server started, from `console/write` and `console/run`. It shows
 that a write reached the driver, as successful writes are not logged (each
 key typed in a viewer is a write). Like `written` (`POST /console/write`),
@@ -145,8 +147,10 @@ the session ends when the script ends: `{"closed": false, "script": ...}`.
 Parameter: `state`, `on` or `off`. Power on first switches the SD card to the
 DUT if it was on the host side.
 
-Answer: `{"power": "on", "boot": 1024}`. `boot` is the console cursor at
-power on.
+Answer: `{"power": "on", "boot": 1024, "switch": 7}`. `boot` is the console
+cursor at power on. `switch` is the number of this power switch, or of the
+last one when the power was already off: give it to `expect` with `since`
+set to `boot`, to wait in this boot only.
 
 ### POST /power/cycle
 
@@ -266,7 +270,7 @@ know, wait for the reply with `console/expect` from `cursor`.
 Waits for a regex in the output after a cursor.
 
 Parameters: `pattern`, `since` (default `last`), `timeout` (seconds, default
-30), `clean`.
+30), `clean`, `switch`.
 
 Answer: `{"matched": true, "match": "login: ", "cursor": 1024, "next": 4800, "time": 12.345, "text": "..."}`.
 `text` is the output from `cursor` to the end of the match. `time` is the
@@ -275,13 +279,22 @@ match (see Boot time). After a match, `last` is `next`. Without a match
 (timeout), `matched` is false, `time` is null and `text` has all the output
 since `cursor`.
 
+The output after a power switch is from another boot. When another request
+switches the power before a match, `expect` stops with 409
+`power_switched`, and `switch` in the error gives the `number`, `cursor`,
+`power` and `time` of that switch. A match before the switch counts. Without
+the `switch` parameter, a switch during the call counts. With it, the number
+from the answer of a power on, a switch made since that power on also
+counts: two clients that share a session cannot read each other's boot.
 ### POST /console/run
 
 Sends a command line and waits for the prompt. The prompt is looked for
 after the first line received, which is the echo of the command.
 
 Parameters: `command`, `prompt` (regex, default set on the server:
-`[#$>] $`), `timeout` (default 30), `clean` (default true).
+`[#$>] $`), `timeout` (default 30), `clean` (default true), `switch`. A power
+switch before the prompt stops it with 409 `power_switched`, as for expect.
+With `switch`, the command is not sent if the power was switched since.
 
 Answer: `{"matched": true, "next": 5120, "time": 15.678, "output": "..."}`.
 `output` has neither the echoed command nor the prompt line. `time` is as for
@@ -366,8 +379,9 @@ return `time`, the seconds from power on to their match, and `GET /console`
 with `timestamps=1` gives the time of each line. So a boot time is:
 
 1. `POST /power/cycle` (or `PUT /power` with `state=on`),
-2. `POST /console/expect` with `since=boot` and the pattern that ends the
-   boot, like `login: `. Its `time` is the boot time.
+2. `POST /console/expect` with the pattern that ends the boot, like
+   `login: `, `since` set to the `boot` of the answer of step 1, and `switch`
+   set to its `switch`. Its `time` is the boot time.
 
 All times are measured on the BooBoot board: the network does not change
 them. They also do not depend on when `expect` is called. Accuracy is about

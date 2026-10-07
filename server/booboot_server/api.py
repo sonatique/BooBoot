@@ -486,6 +486,17 @@ def _since(r, default):
     return r.dut.console.resolve(str(r.param("since", default)))
 
 
+def _switch(r):
+    """The switch parameter: the number of the last power switch that the output may follow."""
+    value = r.param("switch")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise BadRequest("switch must be a whole number") from None
+
+
 def _text(r, data, clean=False):
     text = data.decode("utf-8", "replace")
     return clean_text(text) if r.param_bool("clean", clean) else text
@@ -670,7 +681,7 @@ def console_expect(r, m):
     since = _since(r, "last")
     timeout = r.param_float("timeout", 30.0, high=MAX_TIMEOUT)
     c = r.dut.console
-    matched, start, data, match, nxt = c.expect(pattern, since, timeout)
+    matched, start, data, match, nxt = c.expect(pattern, since, timeout, _switch(r))
     return {"matched": matched, "match": match.group(0).decode("utf-8", "replace") if match else None,
             "cursor": start, "next": nxt, "time": _time(c, nxt - 1) if matched else None,
             "text": _text(r, data)}
@@ -684,6 +695,6 @@ def console_run(r, m):
     pattern = _regex(r, "prompt", r.unit.prompt)
     timeout = r.param_float("timeout", 30.0, high=MAX_TIMEOUT)
     c = r.dut.console
-    matched, out, nxt = c.run(str(command), pattern, timeout)
+    matched, out, nxt = c.run(str(command), pattern, timeout, _switch(r))
     return {"matched": matched, "next": nxt, "time": _time(c, nxt - 1) if matched else None,
             "output": _text(r, out, clean=True)}

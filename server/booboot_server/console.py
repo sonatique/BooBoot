@@ -15,7 +15,7 @@ import time
 from array import array
 
 from .board import named_log
-from .errors import BadRequest, HardwareError, Unavailable
+from .errors import BadRequest, Conflict, HardwareError, Unavailable
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +28,19 @@ OVERLAP = 64 * 1024
 MAX_TIMES = 100000
 # Power switch events kept at most.
 MAX_EVENTS = 1000
+
+
+class PowerSwitched(Conflict):
+    """The power was switched before a match: the output after it comes from another boot."""
+
+    code = "power_switched"
+
+    def __init__(self, event):
+        number, cursor, on, when = event
+        state = "on" if on else "off"
+        super().__init__("the DUT was switched %s at %s by another request, before a match: the output after it "
+                         "is from another boot" % (state, time.strftime("%H:%M:%S", time.localtime(when))),
+                         switch={"number": number, "cursor": cursor, "power": state, "time": when})
 
 
 def clean_text(text):
@@ -415,6 +428,15 @@ class Console:
         with self._cond:
             self._event(self.end, False)
 
+    @property
+    def switches(self):
+        """Number of the last power switch: they count from 1 since the server started."""
+        return self._seq
+
+    def _switched(self, after):
+        """The first power switch after number after, or None. Call with _cond held."""
+        return next((e for e in self._events if e[0] > after), None)
+
     def _event(self, cursor, on):
         self._seq += 1
         self._events.append((self._seq, cursor, on, time.time()))
@@ -461,15 +483,21 @@ class Console:
             return ("output", pos, bytes(self._buf[pos - self._base:stop - self._base]))
         return None
 
-    def expect(self, pattern, since, timeout):
+    def expect(self, pattern, since, timeout, switch=None):
         """Wait for a bytes regex in the output after cursor since.
 
         Return (matched, start, data, match, next): data is the output from
         start up to the end of the match, next is the cursor after it.
+        The output after a power switch comes from another boot: a switch
+        before a match raises PowerSwitched. switch: the number of the last
+        switch that the output may follow, like the power on of the boot that
+        since is in. Without it, a switch during the wait raises.
         """
         deadline = time.monotonic() + timeout
         with self._cond:
             since = min(since, self.end)
+            # A number from before a restart of the server counts from now.
+            after = self._seq if switch is None or switch > self._seq else switch
         scanned = since
         while True:
             with self._cond:
@@ -477,8 +505,9 @@ class Console:
                 frm = max(start, scanned - OVERLAP)
                 # Keep one byte before frm so that "^" works as in the full text.
                 lead = 1 if frm > start else 0
-                data = bytes(self._buf[frm - lead - self._base:])
-                end = self.end
+                event = self._switched(after)
+                end = self.end if event is None else max(frm, min(self.end, event[1]))
+                data = bytes(self._buf[frm - lead - self._base:end - self._base])
             m = pattern.search(data, lead)
             if m:
                 stop = frm - lead + m.end()
@@ -487,31 +516,41 @@ class Console:
                     out = bytes(self._buf[i:max(i, stop - self._base)])
                     self.last = stop
                 return True, start, out, m, stop
+            if event:
+                raise PowerSwitched(event)
             scanned = end
             with self._cond:
-                while self.end == end:
+                while self.end == end and self._seq <= after:
                     left = deadline - time.monotonic()
                     if left <= 0:
                         i = max(start, self._base) - self._base
                         return False, start, bytes(self._buf[i:]), None, self.end
                     self._cond.wait(left)
 
-    def run(self, command, pattern, timeout):
+    def run(self, command, pattern, timeout, switch=None):
         """Send a command line and wait for the prompt.
 
         Return (matched, output, next). The output has neither the echoed
-        command line nor the prompt line.
+        command line nor the prompt line. A power switch after number switch,
+        or during the call, raises PowerSwitched.
         """
         deadline = time.monotonic() + timeout
         start = self.end
+        with self._cond:
+            if switch is None or switch > self._seq:
+                switch = self._seq
+            # Not sent to another boot.
+            event = self._switched(switch)
+        if event:
+            raise PowerSwitched(event)
         self.write(command.encode("utf-8") + self.eol)
         # Look for the prompt only after the first line: it is the echo of
         # the command, which can look like a prompt while it arrives.
-        ok, _, first, _, line_end = self.expect(re.compile(b"\n"), start, timeout)
+        ok, _, first, _, line_end = self.expect(re.compile(b"\n"), start, timeout, switch)
         if not ok:
             return False, first, line_end
         left = max(0.0, deadline - time.monotonic())
-        matched, _, out, m, nxt = self.expect(pattern, line_end, left)
+        matched, _, out, m, nxt = self.expect(pattern, line_end, left, switch)
         if m:
             out = out[:len(out) - len(m.group(0))]
             out = out[:out.rfind(b"\n") + 1]

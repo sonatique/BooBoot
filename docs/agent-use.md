@@ -35,7 +35,12 @@ on the user's computer, follow section 6.
    message says that the client is gone (a viewer or MCP server closed
    abruptly), say so: with the user's OK, take the DUT with
    `bb session open --force gone` (MCP: session tool, force `"gone"`), which
-   takes it only while that client is still gone.
+   takes it only while that client is still gone. When the client is
+   another agent of the user ("agent of ME on COMPUTER" with another `TAG`),
+   the user runs several agents at once: tell them that you wait for it, and
+   run the command again with `--wait 900`, like `bb --wait 900 power on`. It
+   waits up to 15 minutes for the DUT to be free, then goes on (exit code 4
+   if it is still used).
 3. **Ask before you disturb.** A colleague may use the DUT without holding
    the session: a test that runs on its own, or someone watching. Before the
    first power switch or card change of your work, if the DUT is on, tell
@@ -78,6 +83,7 @@ do not work.
 | `TOOLS` | `%LOCALAPPDATA%\BooBoot` on Windows, `~/.local/share/booboot` elsewhere | tool folder on the user's computer |
 | `ME` | the user's login name | for the session name |
 | `COMPUTER` | the computer name | for the session name |
+| `TAG` | 4 random letters or digits | for the session name: choose it once, at the start of this agent session, and keep it for all its commands |
 
 With `USER`, read-only checks on the BooBoot board run through SSH, without
 password:
@@ -89,11 +95,15 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new US
 Below, `pi '<command>'` means that, and `bb` means:
 
 ```sh
-python3 TOOLS/booboot.py --url URL --name "agent of ME on COMPUTER"
+python3 TOOLS/booboot.py --url URL --name "agent of ME on COMPUTER (TAG)"
 ```
 
 Viewers and `busy` errors show this name to colleagues, so that they know
-whom to ask. On Windows, use `python` or `py` instead of `python3`.
+whom to ask. Each name has its own session: with `TAG`, two agent sessions
+that the user runs at the same time do not share one, and the second gets
+`busy` instead of mixing its work with the first (this needs a client of
+version 0.5.1 or later). On Windows, use `python` or `py` instead of
+`python3`.
 
 ## 3. The steps
 
@@ -294,7 +304,7 @@ Then tell them, once, in a few lines:
   the output from before. Watching is free: colleagues may watch too, and it
   disturbs nobody.
 - One client at a time uses the DUT, through the session. While you test,
-  you hold it as "agent of ME on COMPUTER", and others get `busy`. You
+  you hold it as "agent of ME on COMPUTER (TAG)", and others get `busy`. You
   release it when you are done or pause.
 - "Take control" in BooBoot Console or on the web page opens the session to
   type into the console and switch the power: it takes the DUT from you, or
@@ -325,7 +335,8 @@ Then go on with the task.
 - **Results.** `--json` before the command gives JSON. Exit codes: 0 ok,
   1 error, 3 timeout (the text was not seen), 4 busy.
 - **Session.** The first command that needs it opens the session, and the
-  client keeps the token in a local file for the next commands. After no
+  client keeps the token in a local file for the next commands, one for each
+  name. After no
   command for the session timeout (300 s by default), the session ends; the
   next command opens a new one and warns that another client may have used
   the DUT meanwhile. `bb session close` releases it.
@@ -450,6 +461,7 @@ looks after the unit can point an agent to agent-update.md.
 | `cannot reach URL` | wrong address or port, unit off, other network | U1 |
 | `busy`, exit code 4 | another client has the session | rule 2 |
 | `session expired, opening a new one` | no command for the session timeout | another client may have used the DUT meanwhile: check its state (U5) before going on |
+| `the DUT was switched off at ... by another request, before a match` (`power_switched`) | another request switched the power during your wait: the output after it is from another boot | check that your name has your `TAG`, look at the DUT (U5), then start again |
 | DUT on, session free, output coming | a colleague's test runs without the session | rule 3 |
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
 | `console write` succeeds, the DUT never reacts, but its output is shown | the TX path: the adapter (a faulty one can still receive), the TX wire to the DUT RX, or another chip on that line | report (rule 5); whoever looks after the unit follows bringup.md, "When the DUT does not receive", starting with the adapter loopback. `written` and `console.written` only show that the serial driver took the bytes, and the journal does not show successful writes |

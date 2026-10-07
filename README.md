@@ -129,6 +129,11 @@ Python script, which goes on if the connection drops:
 `booboot script run boots.py 500`. Scripts are off by default:
 [scripts.md](docs/scripts.md).
 
+Each client name (`--name`) has its own session: agents that run at the same
+time on one computer each give their own name, and the second gets `busy`
+(exit code 4) while the first works. With `--wait 600`, it waits up to 600 s
+for the DUT to be free instead.
+
 With several DUTs on the board, `booboot duts` lists them, and `--dut NAME`
 (or `BOOBOOT_DUT`) chooses one: its address is
 `http://booboot.local:8080/duts/NAME`. Without it, commands use the first DUT.
