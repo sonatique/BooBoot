@@ -12,7 +12,7 @@ public sealed class Settings
     public string Url { get; set; } = "http://booboot.local:8080";
     public string LogFolder { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BooBoot logs");
-    /// <summary>Log file names start with it. Empty: the DUT name.</summary>
+    /// <summary>Log file names start with it, then the DUT name with several DUTs. Empty: the DUT name.</summary>
     public string LogPrefix { get; set; } = "";
     public bool LogOnConnect { get; set; }
     public bool NewLogAtPowerOn { get; set; }
@@ -21,6 +21,8 @@ public sealed class Settings
     public string Fonts { get; set; } = TerminalView.DefaultFonts;
     /// <summary>The addresses that each server reported, for when its name is not found.</summary>
     public Dictionary<string, List<string>> Addresses { get; set; } = new();
+    /// <summary>The DUTs not shown, for each board with several.</summary>
+    public Dictionary<string, List<string>> HiddenDuts { get; set; } = new();
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BooBootConsole", "settings.json");

@@ -59,7 +59,8 @@ public sealed record ConsoleEvent(string Type, long Cursor, long Next, string Te
     JsonElement Data);
 
 /// <summary>
-/// Access to one BooBoot server, that is one DUT.
+/// Access to one DUT of a BooBoot server. Its URL is the one of the board for its first DUT, like
+/// http://booboot.local:8080, or the one of the board followed by /duts/NAME: see DutUrl.
 /// All calls but StatusAsync, OpenSessionAsync and the console reads need the session.
 /// Errors throw BooBootException. Answers are the JSON of the HTTP API.
 /// </summary>
@@ -105,6 +106,16 @@ public sealed class BooBootClient : IDisposable
 
     /// <summary>State of power, SD card, console and session.</summary>
     public Task<JsonElement> StatusAsync() => SendJsonAsync(HttpMethod.Get, "/status");
+
+    /// <summary>
+    /// The DUTs of the board: {"duts": [{"name", "url", "power", "session", ...}]}. "url" is the path of
+    /// the DUT on the board, like /duts/dut2: see DutUrl.
+    /// </summary>
+    public Task<JsonElement> DutsAsync() => SendJsonAsync(HttpMethod.Get, "/duts");
+
+    /// <summary>The URL of DUT name of the board at url: URL/duts/NAME.</summary>
+    public static string DutUrl(string url, string name) =>
+        Regex.Replace(url.TrimEnd('/'), "/duts/[^/]+$", "") + "/duts/" + Uri.EscapeDataString(name);
 
     /// <summary>Opens the session needed by all other calls.</summary>
     /// <param name="client">Name shown to other clients.</param>
@@ -462,7 +473,7 @@ public sealed class BooBootClient : IDisposable
             if (NameNotFound(e) && Base == Url && await UseOtherAddressAsync())
             {
                 // Nothing was sent: the same request goes to the other address.
-                var again = new HttpRequestMessage(request.Method, Base + request.RequestUri!.PathAndQuery)
+                var again = new HttpRequestMessage(request.Method, Base + request.RequestUri!.OriginalString[Url.Length..])
                 {
                     Content = request.Content,
                 };
@@ -514,7 +525,8 @@ public sealed class BooBootClient : IDisposable
         others.AddRange(Addresses);
         foreach (var other in others)
         {
-            var candidate = $"{url.Scheme}://{(other.Contains(':') ? $"[{other}]" : other)}:{url.Port}";
+            var candidate = $"{url.Scheme}://{(other.Contains(':') ? $"[{other}]" : other)}:{url.Port}"
+                            + url.AbsolutePath.TrimEnd('/');
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));

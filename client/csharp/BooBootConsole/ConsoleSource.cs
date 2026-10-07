@@ -11,7 +11,7 @@ using BooBoot;
 namespace BooBootConsole;
 
 /// <summary>
-/// Reads the console stream of one BooBoot server, and connects again when
+/// Reads the console stream of one DUT of a BooBoot server, and connects again when
 /// the connection is lost. Needs no session: other clients are not disturbed.
 /// Items are queued for the UI thread.
 /// </summary>
@@ -40,6 +40,9 @@ public sealed class ConsoleSource : IDisposable
 
     /// <summary>The name of the server was not found: the client goes on with another address.</summary>
     public sealed record AddressUsed(string Note) : Item;
+
+    /// <summary>The names of the DUTs of the board, from the status, when they change.</summary>
+    public sealed record Board(IReadOnlyList<string> Duts) : Item;
 
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
@@ -162,6 +165,7 @@ public sealed class ConsoleSource : IDisposable
     {
         var last = "";
         var lastAddresses = "";
+        var lastDuts = "";
         while (!token.IsCancellationRequested)
         {
             try
@@ -176,6 +180,16 @@ public sealed class ConsoleSource : IDisposable
                     {
                         lastAddresses = string.Join(" ", addresses);
                         Post(new Network(addresses));
+                    }
+                }
+                // A server older than several DUTs per board has no list.
+                if (status.TryGetProperty("duts", out var duts))
+                {
+                    var names = duts.EnumerateArray().Select(d => d.GetString()!).ToList();
+                    if (string.Join("\n", names) != lastDuts)
+                    {
+                        lastDuts = string.Join("\n", names);
+                        Post(new Board(names));
                     }
                 }
                 var session = status.GetProperty("session");

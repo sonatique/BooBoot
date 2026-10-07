@@ -1,9 +1,15 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="using:BooBootConsole"
         x:Class="BooBootConsole.MainWindow"
         Title="BooBoot Console" Icon="/Assets/booboot.ico"
         Width="1180" Height="700" MinWidth="400" MinHeight="200">
+  <Window.Styles>
+    <Style Selector="TabStripItem">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
+  </Window.Styles>
   <DockPanel>
     <WrapPanel DockPanel.Dock="Top" Margin="6" ItemSpacing="6" LineSpacing="6">
       <TextBox Name="UrlBox" Width="240" PlaceholderText="http://booboot.local:8080" VerticalAlignment="Center" />
@@ -33,7 +39,8 @@
                 <Button Name="OpenFolderButton" Content="Open folder" />
               </StackPanel>
               <TextBlock Grid.Row="2" Text="File name prefix" VerticalAlignment="Center" />
-              <TextBox Name="PrefixBox" Grid.Row="2" Grid.Column="1" PlaceholderText="DUT name" />
+              <TextBox Name="PrefixBox" Grid.Row="2" Grid.Column="1" PlaceholderText="DUT name"
+                       ToolTip.Tip="With several DUTs, the DUT name is added to it" />
               <CheckBox Name="LogOnConnectBox" Grid.Row="3" Grid.Column="1"
                         Content="Start a log when connected" />
               <CheckBox Name="NewLogBox" Grid.Row="4" Grid.Column="1"
@@ -55,18 +62,19 @@
       <TextBlock Name="StatusText" Text="Not connected" TextTrimming="CharacterEllipsis" />
       <TextBlock Name="LogText" Grid.Column="1" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
     </Grid>
-    <local:TerminalView Name="View">
-      <local:TerminalView.ContextMenu>
-        <ContextMenu>
-          <MenuItem Header="Copy" Click="OnCopy" InputGesture="Ctrl+C" />
-          <MenuItem Header="Paste" Click="OnPaste" InputGesture="Ctrl+V" />
-          <MenuItem Header="Copy all" Click="OnCopyAll" />
-          <MenuItem Header="Select all" Click="OnSelectAll" InputGesture="Ctrl+A" />
-          <Separator />
-          <MenuItem Header="Clear" Click="OnClear" InputGesture="Ctrl+L" />
-          <MenuItem Header="Save..." Click="OnSave" InputGesture="Ctrl+S" />
-        </ContextMenu>
-      </local:TerminalView.ContextMenu>
-    </local:TerminalView>
+    <!-- With several DUTs on the board: a tab for each DUT shown. -->
+    <DockPanel Name="TabRow" DockPanel.Dock="Top" IsVisible="False" Margin="6,0">
+      <Button Name="DutsButton" DockPanel.Dock="Left" Content="DUTs" VerticalAlignment="Center"
+              ToolTip.Tip="Show or hide DUTs of the board">
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnDutsOpening">
+            <StackPanel Name="DutsList" Spacing="4" />
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+      <TabStrip Name="Tabs" Margin="6,0,0,0" />
+    </DockPanel>
+    <!-- The console views of the DUTs, the one of the current DUT visible. -->
+    <Panel Name="Views" />
   </DockPanel>
 </Window>

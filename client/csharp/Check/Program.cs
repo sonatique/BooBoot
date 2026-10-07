@@ -1,5 +1,5 @@
-// Checks all calls of BooBootClient against a server with a fake board, scripts on:
-//   cd server && python3 -m booboot_server --fake --port 8080 -c ../tests/fake.ini
+// Checks all calls of BooBootClient against a server with a fake board, scripts on, best with two DUTs:
+//   cd server && python3 -m booboot_server --fake --duts dut1,dut2 --port 8080 -c ../tests/fake.ini
 //   dotnet run --project client/csharp/Check -- http://127.0.0.1:8080
 
 using System.Globalization;
@@ -38,6 +38,24 @@ using (var local = new BooBootClient($"http://booboot-none.local:{server.Port}")
     Check((await Fails(() => local.StatusAsync())).Message.Contains(".local names work only on the local network"),
         "hint when a .local name is not found");
 
+// The DUTs of the board, each also at URL/duts/NAME.
+var duts = (await dut.DutsAsync()).GetProperty("duts").EnumerateArray().ToList();
+Check(duts[0].GetProperty("name").GetString() == "dut1" && duts[0].GetProperty("url").GetString() == "/duts/dut1",
+    "DUTs of the board");
+Check(BooBootClient.DutUrl("http://h:8080/duts/a/", "b c") == "http://h:8080/duts/b%20c"
+    && BooBootClient.DutUrl("http://h:8080", "b") == "http://h:8080/duts/b", "URL of a DUT");
+var lastDut = duts[^1].GetProperty("name").GetString()!;
+using (var last = new BooBootClient(BooBootClient.DutUrl(url, lastDut)))
+    Check((await last.StatusAsync()).GetProperty("name").GetString() == lastDut, "a DUT at its URL");
+using (var named = new BooBootClient($"http://booboot-none.invalid:{server.Port}/duts/{lastDut}")
+       {
+           Addresses = { server.Host },
+       })
+{
+    Check((await named.StatusAsync()).GetProperty("name").GetString() == lastDut
+        && named.Base == $"http://{server.Host}:{server.Port}/duts/{lastDut}", "other address of a DUT, same path");
+}
+
 await dut.OpenSessionAsync("csharp-check");
 var busy = await Fails(() => other.OpenSessionAsync("other"));
 Check(busy.Status == 423 && busy.Code == "busy", "second client is refused");
@@ -48,6 +66,14 @@ Check((await dut.HeartbeatAsync()).GetProperty("alive").GetBoolean(), "heartbeat
 var connected = await Fails(() => other.OpenSessionAsync("other", ifGone: true));
 Check(connected.Code == "busy" && connected.Info?.GetProperty("session").GetProperty("alive").GetBoolean() == true,
     "a connected client keeps the session");
+if (duts.Count > 1)
+{
+    using var second = new BooBootClient(BooBootClient.DutUrl(url, lastDut));
+    await second.OpenSessionAsync("other");
+    Check((await second.StatusAsync()).GetProperty("session").GetProperty("yours").GetBoolean(),
+        "each DUT has its own session");
+    await second.CloseSessionAsync();
+}
 
 // Files
 await dut.PowerOffAsync();

@@ -1,40 +1,46 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Layout;
-using Avalonia.Threading;
 using BooBoot;
 
 namespace BooBootConsole;
 
 public partial class MainWindow : Window
 {
+    static readonly Regex DutPath = new("/duts/[^/]+$");
+
     readonly Settings settings;
     readonly bool persist;
-    readonly TerminalBuffer buffer;
-    readonly LogFile log = new();
-    ConsoleSource? source;
-    ConsoleInput? input;
-    string connection = "Not connected", dutName = "", power = "", session = "", note = "";
-    // Another address of the server, for where its name does not work.
-    string alsoAt = "";
+    // The DUTs shown, in the order of the tabs.
+    readonly List<DutTab> tabs = new();
+    readonly TerminalBuffer noBuffer = new(1);
+    DutTab? current;
+    // The address given, and the one of its board: the same, unless it is the address of one DUT.
+    string url = "", board = "";
+    // The tabs follow the DUTs of the board, and not one DUT.
+    bool wholeBoard;
+    List<string> boardDuts = new();
+    // Shown while no DUT is.
+    string connection = "Not connected";
+    // Set from Connect to Disconnect.
+    CancellationTokenSource? opening;
     bool closing;
-    // True while a power switch of the power button runs.
-    bool switching;
+    // True while the tabs change, to ignore the selection changes it makes.
+    bool changingTabs;
     // The question before a power off, with its answers, while it shows.
     (Flyout Flyout, Button Yes, Button No)? powerOffQuestion;
-    // True while output from before the connection is added: it is not logged.
-    bool history;
-    bool connectedOnce;
 
     public MainWindow() : this(new Settings(), null, false)
     {
@@ -47,17 +53,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         this.settings = settings;
         this.persist = persist;
-        buffer = new TerminalBuffer(settings.ScrollbackLines);
-        buffer.LineDone += line =>
+        FollowButton.IsCheckedChanged += (_, _) =>
         {
-            if (!history)
-                log.WriteLine(line.Text);
+            if (current != null)
+                current.View.Follow = FollowButton.IsChecked == true;
         };
-        View.Buffer = buffer;
-        View.TextSize = settings.TextSize;
-        View.Fonts = settings.Fonts;
-        View.FollowChanged += (_, _) => FollowButton.IsChecked = View.Follow;
-        FollowButton.IsCheckedChanged += (_, _) => View.Follow = FollowButton.IsChecked == true;
         UrlBox.Text = url ?? settings.Url;
         UrlBox.KeyDown += (_, e) =>
         {
@@ -66,285 +66,328 @@ public partial class MainWindow : Window
         };
         ConnectButton.Click += (_, _) =>
         {
-            if (source == null)
+            if (opening == null)
                 Connect();
             else
                 Disconnect();
         };
+        Tabs.SelectionChanged += (_, _) =>
+        {
+            if (!changingTabs && tabs.FirstOrDefault(t => t.Header == Tabs.SelectedItem) is DutTab tab)
+                Select(tab, focus: true);
+        };
+        // Before the console view, which sends Tab to the DUT.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.Tab && e.KeyModifiers.HasFlag(KeyModifiers.Control) && current != null && tabs.Count > 1)
+            {
+                var next = tabs.IndexOf(current) + (e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1);
+                Select(tabs[(next + tabs.Count) % tabs.Count], focus: true);
+                e.Handled = true;
+            }
+        }, RoutingStrategies.Tunnel);
         ClearButton.Click += OnClear;
         CopyButton.Click += OnCopy;
         SaveButton.Click += OnSave;
-        StartLogButton.Click += (_, _) => StartLog();
-        StopLogButton.Click += (_, _) => StopLog();
+        StartLogButton.Click += (_, _) => current?.StartLog();
+        StopLogButton.Click += (_, _) => current?.StopLog();
         BrowseButton.Click += OnBrowse;
         OpenFolderButton.Click += OnOpenFolder;
         ControlButton.Click += async (_, _) =>
         {
-            if (input?.Token != null)
-                await ReleaseControl();
+            if (current?.InControl == true)
+                await current.ReleaseControl();
             else
                 await TakeControl();
         };
         PowerButton.Click += async (_, _) =>
         {
-            if (power == "on")
-                AskPowerOff();
+            if (current == null)
+                return;
+            if (current.PowerState == "on")
+                AskPowerOff(current);
             else
-                await SwitchPower(true);
-        };
-        View.Input += text => input?.Send(text);
-        View.ReadOnlyKey += (_, _) =>
-        {
-            if (source != null && input?.Token == null)
-            {
-                note = "read only: Take control to type";
-                UpdateStatus();
-            }
+                await current.SwitchPower(true);
         };
         ShowSettings();
-        UpdateLogText();
-        Opened += (_, _) =>
-        {
-            View.Focus();
-            Connect();
-        };
+        Refresh();
+        Opened += (_, _) => Connect();
         Closing += async (_, e) =>
         {
-            // Release the session before closing.
-            if (input?.Token != null && !closing)
+            // Release the sessions before closing.
+            var held = tabs.Where(t => t.InControl).ToList();
+            if (held.Count > 0 && !closing)
             {
                 e.Cancel = true;
                 closing = true;
-                await input.ReleaseAsync();
+                await Task.WhenAll(held.Select(t => t.ReleaseControl()));
                 Close();
                 return;
             }
             Disconnect();
-            StopLog();
+            foreach (var tab in tabs)
+                tab.StopLog();
         };
     }
 
-    /// <summary>The text buffer, for tests.</summary>
-    public TerminalBuffer Buffer => buffer;
+    /// <summary>The text buffer of the current DUT, for tests.</summary>
+    public TerminalBuffer Buffer => current?.Buffer ?? noBuffer;
 
-    public TerminalView Terminal => View;
+    public TerminalView Terminal => current?.View ?? throw new InvalidOperationException("no DUT shown");
 
     /// <summary>The power button, for tests.</summary>
     public Button Power => PowerButton;
 
     /// <summary>The current log file, for tests.</summary>
-    public string? LogPath => log.Active ? log.Path : null;
+    public string? LogPath => current?.LogPath;
 
     public string Status => StatusText.Text ?? "";
+
+    /// <summary>The DUTs shown, in the order of the tabs. For tests.</summary>
+    public IReadOnlyList<DutTab> Duts => tabs;
+
+    /// <summary>The DUT shown. For tests.</summary>
+    public DutTab? CurrentDut => current;
+
+    /// <summary>True when the tabs and the DUTs button show, for a board with several DUTs. For tests.</summary>
+    public bool TabsShown => TabRow.IsVisible;
 
     // Connection
 
     void Connect()
     {
         Disconnect();
-        var url = (UrlBox.Text ?? "").Trim();
-        if (url.Length == 0)
+        var text = (UrlBox.Text ?? "").Trim();
+        if (text.Length == 0)
             return;
-        if (!url.Contains("://"))
-            url = "http://" + url;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+        if (!text.Contains("://"))
+            text = "http://" + text;
+        if (!Uri.TryCreate(text, UriKind.Absolute, out _))
         {
-            connection = "Bad server address: " + url;
-            UpdateStatus();
+            connection = "Bad server address: " + text;
+            Refresh();
             return;
         }
-        UrlBox.Text = url;
-        settings.Url = url;
+        UrlBox.Text = text;
+        settings.Url = text;
         SaveSettings();
-        buffer.Clear();
-        View.Refresh();
-        connectedOnce = false;
-        var known = settings.Addresses.TryGetValue(url.TrimEnd('/'), out var list) ? list : new List<string>();
-        source = new ConsoleSource(url, known);
-        source.Available += () => Dispatcher.UIThread.Post(Drain, DispatcherPriority.Background);
-        input = new ConsoleInput(url, known);
-        input.Lost += reason => SetControl(false, reason);
-        input.Failed += text =>
-        {
-            note = text;
-            UpdateStatus();
-        };
+        url = text.TrimEnd('/');
+        board = DutPath.Replace(url, "");
+        foreach (var tab in tabs)
+            tab.Clear();
         connection = "Connecting to " + url;
-        ConnectButton.Content = "Disconnect";
-        ControlButton.IsEnabled = true;
-        UpdateStatus();
-        source.Start();
+        opening = new CancellationTokenSource();
+        _ = Open(opening.Token);
+        Refresh();
     }
+
+    /// <summary>Finds the DUTs at the address, then shows them.</summary>
+    async Task Open(CancellationToken stop)
+    {
+        var known = settings.Addresses.TryGetValue(board, out var list) ? list : new List<string>();
+        using var client = new BooBootClient(url, TimeSpan.FromSeconds(10)) { Addresses = known.ToList() };
+        while (true)
+        {
+            try
+            {
+                var status = await client.StatusAsync();
+                if (stop.IsCancellationRequested)
+                    return;
+                var name = status.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                // A server older than several DUTs per board has no list.
+                var hasList = status.TryGetProperty("duts", out var duts);
+                wholeBoard = url == board && hasList;
+                ShowDuts(wholeBoard ? duts.EnumerateArray().Select(d => d.GetString() ?? "").ToList()
+                    : new List<string> { name }, name);
+                return;
+            }
+            catch (BooBootException e)
+            {
+                if (stop.IsCancellationRequested)
+                    return;
+                connection = "No connection, trying again: " + e.Message;
+                Refresh();
+            }
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), stop);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Shows a tab for each DUT but the hidden ones, and connects them.</summary>
+    /// <param name="first">The DUT to show first.</param>
+    void ShowDuts(IReadOnlyList<string> names, string? first = null)
+    {
+        if (names.Count == 0)
+            return;
+        boardDuts = names.ToList();
+        var hidden = wholeBoard && settings.HiddenDuts.TryGetValue(board, out var h) ? h : new List<string>();
+        var shown = names.Where(n => !hidden.Contains(n)).ToList();
+        if (shown.Count == 0)
+            shown = names.ToList();
+        foreach (var tab in tabs.Where(t => !shown.Contains(t.Name)).ToList())
+        {
+            tab.Close();
+            tabs.Remove(tab);
+            Views.Children.Remove(tab.View);
+        }
+        var ordered = shown.Select(n => tabs.FirstOrDefault(t => t.Name == n) ?? Add(n)).ToList();
+        changingTabs = true;
+        tabs.Clear();
+        tabs.AddRange(ordered);
+        Tabs.Items.Clear();
+        foreach (var tab in tabs)
+        {
+            Tabs.Items.Add(tab.Header);
+            tab.Several = wholeBoard && names.Count > 1;
+            if (!tab.Connected)
+                tab.Connect(wholeBoard ? BooBootClient.DutUrl(board, tab.Name) : url, board);
+        }
+        changingTabs = false;
+        TabRow.IsVisible = wholeBoard && names.Count > 1;
+        var focused = FocusManager?.GetFocusedElement();
+        Select(current != null && tabs.Contains(current) ? current : tabs.FirstOrDefault(t => t.Name == first) ?? tabs[0],
+            focus: focused is null or TerminalView);
+    }
+
+    DutTab Add(string name)
+    {
+        var tab = new DutTab(name, settings, SaveSettings);
+        tab.View.ContextMenu = ViewMenu();
+        tab.Changed += () =>
+        {
+            if (tab == current)
+                Refresh();
+        };
+        tab.BoardChanged += names =>
+        {
+            if (wholeBoard && tabs.Contains(tab))
+                ShowDuts(names);
+        };
+        Views.Children.Add(tab.View);
+        return tab;
+    }
+
+    void Select(DutTab tab, bool focus)
+    {
+        if (current != null && current != tab)
+            current.Current = false;
+        current = tab;
+        tab.Current = true;
+        changingTabs = true;
+        Tabs.SelectedItem = tab.Header;
+        changingTabs = false;
+        Refresh();
+        if (focus)
+            tab.View.Focus();
+    }
+
+    /// <summary>Selects the tab of a DUT. For tests.</summary>
+    public void SelectDut(DutTab tab) => Select(tab, focus: true);
 
     void Disconnect()
     {
-        if (source == null)
-            return;
-        source.Dispose();
-        source = null;
-        if (input != null)
-        {
-            _ = Release(input);
-            input = null;
-            SetControl(false, "");
-        }
-        (connection, dutName, power, session, alsoAt) = ("Not connected", "", "", "", "");
-        ConnectButton.Content = "Connect";
-        ControlButton.IsEnabled = false;
-        Title = "BooBoot Console";
-        UpdateStatus();
+        opening?.Cancel();
+        opening = null;
+        foreach (var tab in tabs)
+            tab.Disconnect();
+        connection = "Not connected";
+        Refresh();
     }
 
-    /// <summary>Adds the queued console items to the view, a bit at a time to keep the window responsive.</summary>
-    void Drain()
+    /// <summary>Shows the status and the buttons of the current DUT.</summary>
+    void Refresh()
     {
-        if (source == null)
-            return;
-        var watch = Stopwatch.StartNew();
-        while (source.TryTake(out var item))
-        {
-            Handle(item);
-            if (watch.ElapsedMilliseconds > 50)
-            {
-                Dispatcher.UIThread.Post(Drain, DispatcherPriority.Background);
-                break;
-            }
-        }
-        log.Flush();
-        View.Refresh();
-        UpdateStatus();
-    }
-
-    void Handle(ConsoleSource.Item item)
-    {
-        switch (item)
-        {
-            case ConsoleSource.Connected c:
-                if (c.Restarted)
-                    buffer.AddMarker(Marker("server restarted", DateTime.Now));
-                (dutName, power) = (c.Name, c.Power);
-                connection = "Connected to " + source!.Url;
-                Title = $"{dutName} - BooBoot Console";
-                if (!connectedOnce && settings.LogOnConnect && !log.Active)
-                    StartLog();
-                connectedOnce = true;
-                break;
-            case ConsoleSource.Disconnected d:
-                connection = "No connection, trying again: " + d.Message;
-                break;
-            case ConsoleSource.Output o:
-                history = o.History;
-                buffer.Feed(o.Text);
-                history = false;
-                break;
-            case ConsoleSource.Power p:
-                if (!p.History)
-                {
-                    power = p.On ? "on" : "off";
-                    if (p.On && settings.NewLogAtPowerOn && log.Active)
-                    {
-                        // The unfinished line goes to the old file, the marker to the new one.
-                        buffer.EndLine();
-                        StartLog();
-                    }
-                }
-                history = p.History;
-                buffer.AddMarker(Marker(p.On ? "power on" : "power off", p.Time));
-                history = false;
-                break;
-            case ConsoleSource.Lost l:
-                buffer.AddMarker($"---- {l.Bytes} bytes lost ----");
-                break;
-            case ConsoleSource.Network n:
-                var server = new Uri(source!.Url);
-                alsoAt = n.Addresses.Count == 0 || n.Addresses.Contains(server.Host) ? "" : $"{n.Addresses[0]}:{server.Port}";
-                // Kept for when the name of the server is not found, like a .local name over a VPN.
-                if (server.HostNameType == UriHostNameType.Dns
-                    && !(settings.Addresses.TryGetValue(source.Url, out var old) && old.SequenceEqual(n.Addresses)))
-                {
-                    settings.Addresses[source.Url] = n.Addresses.ToList();
-                    SaveSettings();
-                }
-                break;
-            case ConsoleSource.AddressUsed a:
-                note = a.Note;
-                break;
-            case ConsoleSource.Session s:
-                session = s.Text;
-                // Only an answer about the current session counts.
-                if (s.Token != null && s.Token == input?.Token && !s.Yours)
-                {
-                    input.Forget();
-                    SetControl(false, s.Text == "free" ? "control ended after the idle time"
-                        : "control lost: the DUT is " + s.Text);
-                }
-                break;
-        }
-    }
-
-    static string Marker(string what, DateTime time) => $"---- {what} {time:yyyy-MM-dd HH:mm:ss.fff} ----";
-
-    void UpdateStatus()
-    {
-        var parts = new[]
-        {
-            connection,
-            alsoAt != "" ? "also at " + alsoAt : "",
-            dutName,
-            power != "" ? "power " + power : "",
-            session != "" ? "session " + session : "",
-            $"{buffer.Count:N0} lines",
-            input?.Token != null ? (note != "" ? "in control, " + note : "in control") : note,
-        };
-        StatusText.Text = string.Join("    ", parts.Where(p => p != ""));
+        var tab = current;
+        var connected = tab?.Connected == true;
+        StatusText.Text = connected ? tab!.Status : connection;
+        Title = connected && tab!.Name != "" ? $"{tab.Name} - BooBoot Console" : "BooBoot Console";
+        ConnectButton.Content = opening != null ? "Disconnect" : "Connect";
+        ControlButton.IsEnabled = connected;
+        ControlButton.Content = tab?.InControl == true ? "Release control" : "Take control";
+        ControlButton.Classes.Set("accent", tab?.InControl == true);
         // The power button follows the power state, and works only in control.
-        PowerButton.Content = power == "on" ? "Power off" : "Power on";
-        PowerButton.IsEnabled = input?.Token != null && !switching;
+        PowerButton.Content = tab?.PowerState == "on" ? "Power off" : "Power on";
+        PowerButton.IsEnabled = tab?.InControl == true && !tab.Switching;
+        foreach (var button in new Control[] { ClearButton, CopyButton, SaveButton, FollowButton, StartLogButton })
+            button.IsEnabled = tab != null;
+        FollowButton.IsChecked = tab?.View.Follow ?? true;
+        StopLogButton.IsEnabled = tab?.LogPath != null;
+        LogText.Text = tab?.LogText ?? "No log";
+        ToolTip.SetTip(LogText, tab?.LogPath);
+    }
+
+    // DUTs of the board
+
+    void OnDutsOpening(object? sender, EventArgs e) => FillDutsList();
+
+    void FillDutsList()
+    {
+        DutsList.Children.Clear();
+        foreach (var name in boardDuts)
+        {
+            var shown = tabs.Any(t => t.Name == name);
+            var box = new CheckBox
+            {
+                Content = name,
+                IsChecked = shown,
+                // One DUT at least stays shown.
+                IsEnabled = !shown || tabs.Count > 1,
+            };
+            box.IsCheckedChanged += (_, _) =>
+            {
+                ShowDut(name, box.IsChecked == true);
+                FillDutsList();
+            };
+            DutsList.Children.Add(box);
+        }
+    }
+
+    /// <summary>Shows or hides the tab of a DUT of the board, and remembers it for the board.</summary>
+    public void ShowDut(string name, bool shown)
+    {
+        if (!wholeBoard)
+            return;
+        var hidden = settings.HiddenDuts.TryGetValue(board, out var h) ? h.ToList() : new List<string>();
+        hidden.Remove(name);
+        if (!shown)
+            hidden.Add(name);
+        if (boardDuts.All(hidden.Contains))
+            return;
+        if (hidden.Count > 0)
+            settings.HiddenDuts[board] = hidden;
+        else
+            settings.HiddenDuts.Remove(board);
+        SaveSettings();
+        ShowDuts(boardDuts);
     }
 
     // Control
 
-    /// <summary>Opens the session to type. When another client has it, asks before taking it over.</summary>
-    public async Task TakeControl(bool force = false, bool ifGone = false)
+    /// <summary>Opens the session of the current DUT to type. When another client has it, asks before taking it over.</summary>
+    public Task TakeControl(bool force = false, bool ifGone = false) =>
+        current == null ? Task.CompletedTask : TakeControl(current, force, ifGone);
+
+    async Task TakeControl(DutTab tab, bool force, bool ifGone)
     {
-        if (input == null)
-            return;
-        try
-        {
-            if (await input.TakeAsync(force, ifGone) is JsonElement busy)
-                AskTakeOver(busy);
-            else
-                SetControl(true, "");
-        }
-        catch (BooBootException e)
-        {
-            SetControl(false, "cannot take control: " + e.Message);
-        }
+        if (await tab.TakeControl(force, ifGone) is JsonElement busy && tab == current)
+            AskTakeOver(tab, busy);
     }
 
-    public async Task ReleaseControl()
-    {
-        if (input == null)
-            return;
-        await input.ReleaseAsync();
-        SetControl(false, "");
-        session = "free";
-        UpdateStatus();
-    }
+    public Task ReleaseControl() => current?.ReleaseControl() ?? Task.CompletedTask;
 
-    static async Task Release(ConsoleInput old)
-    {
-        await old.ReleaseAsync();
-        old.Dispose();
-    }
-
-    void AskTakeOver(JsonElement busy)
+    void AskTakeOver(DutTab tab, JsonElement busy)
     {
         var who = busy.GetProperty("client").GetString();
         var idle = busy.GetProperty("idle").GetDouble();
         var gone = ConsoleInput.IsGone(busy);
         var connected = busy.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.True;
-        var text = $"The DUT is used by {who}, " + (
+        var text = $"{tab.Name} is used by {who}, " + (
             gone ? $"which is gone: no heartbeat for {busy.GetProperty("heartbeat_age").GetDouble():0} s."
             : connected ? $"which is connected. Last action {idle:0} s ago.\nTaking over interrupts their work."
             : $"idle for {idle:0} s.");
@@ -366,40 +409,16 @@ public partial class MainWindow : Window
         {
             flyout.Hide();
             // Taken only if its client is still gone, else asked again.
-            await TakeControl(force: !gone, ifGone: gone);
+            await TakeControl(tab, force: !gone, ifGone: gone);
         };
         cancel.Click += (_, _) => flyout.Hide();
         flyout.ShowAt(ControlButton);
     }
 
-    /// <summary>Switches the DUT power, in control.</summary>
-    public async Task SwitchPower(bool on)
-    {
-        if (input?.Token == null)
-            return;
-        switching = true;
-        UpdateStatus();
-        try
-        {
-            if (await input.PowerAsync(on) is string state)
-            {
-                power = state;
-                note = "";
-            }
-        }
-        catch (BooBootException e)
-        {
-            note = $"power {(on ? "on" : "off")} failed: {e.Message}";
-        }
-        finally
-        {
-            switching = false;
-            UpdateStatus();
-            View.Focus();
-        }
-    }
+    /// <summary>Switches the power of the current DUT, in control.</summary>
+    public Task SwitchPower(bool on) => current?.SwitchPower(on) ?? Task.CompletedTask;
 
-    void AskPowerOff()
+    void AskPowerOff(DutTab tab)
     {
         var yes = new Button { Content = "Power off" };
         var no = new Button { Content = "Cancel" };
@@ -410,7 +429,7 @@ public partial class MainWindow : Window
                 Spacing = 8,
                 Children =
                 {
-                    new TextBlock { Text = "Switch the DUT off?" },
+                    new TextBlock { Text = $"Switch {tab.Name} off?" },
                     new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { yes, no } },
                 },
             },
@@ -418,7 +437,7 @@ public partial class MainWindow : Window
         yes.Click += async (_, _) =>
         {
             flyout.Hide();
-            await SwitchPower(false);
+            await tab.SwitchPower(false);
         };
         no.Click += (_, _) => flyout.Hide();
         powerOffQuestion = (flyout, yes, no);
@@ -435,92 +454,56 @@ public partial class MainWindow : Window
             (yes ? yesButton : noButton).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     }
 
-    void SetControl(bool on, string text)
-    {
-        note = text;
-        View.Typing = on;
-        if (source != null)
-            source.Token = on ? input?.Token : null;
-        ControlButton.Content = on ? "Release control" : "Take control";
-        ControlButton.Classes.Set("accent", on);
-        if (on)
-        {
-            session = "yours";
-            View.Focus();
-        }
-        UpdateStatus();
-    }
-
-    // Log
-
-    string Prefix()
-    {
-        var prefix = settings.LogPrefix.Trim();
-        if (prefix == "")
-            prefix = dutName != "" ? dutName : "console";
-        return string.Concat(prefix.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-    }
-
-    void StartLog()
-    {
-        try
-        {
-            log.Start(settings.LogFolder, Prefix());
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            LogText.Text = "Cannot write the log: " + e.Message;
-            return;
-        }
-        UpdateLogText();
-    }
-
-    void StopLog()
-    {
-        if (!log.Active)
-            return;
-        if (buffer.Pending.Length > 0)
-            log.WriteLine(buffer.Pending);
-        log.Stop();
-        UpdateLogText();
-    }
-
-    void UpdateLogText()
-    {
-        LogText.Text = log.Active ? "Log: " + Path.GetFileName(log.Path) : "No log";
-        ToolTip.SetTip(LogText, log.Active ? log.Path : null);
-        StopLogButton.IsEnabled = log.Active;
-    }
-
     // Commands
 
-    void OnClear(object? sender, RoutedEventArgs e)
+    ContextMenu ViewMenu()
     {
-        buffer.Clear();
-        View.ClearSelection();
-        View.Follow = true;
-        View.Refresh();
-        UpdateStatus();
+        var menu = new ContextMenu();
+        foreach (var (header, gesture, click) in new (string, string?, EventHandler<RoutedEventArgs>?)[]
+                 {
+                     ("Copy", "Ctrl+C", OnCopy),
+                     ("Paste", "Ctrl+V", OnPaste),
+                     ("Copy all", null, OnCopyAll),
+                     ("Select all", "Ctrl+A", OnSelectAll),
+                     ("-", null, null),
+                     ("Clear", "Ctrl+L", OnClear),
+                     ("Save...", "Ctrl+S", OnSave),
+                 })
+        {
+            if (click == null)
+            {
+                menu.Items.Add(new Separator());
+                continue;
+            }
+            var item = new MenuItem { Header = header, InputGesture = gesture != null ? KeyGesture.Parse(gesture) : null };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
+        return menu;
     }
 
-    void OnCopy(object? sender, RoutedEventArgs e) => View.CopySelection();
+    void OnClear(object? sender, RoutedEventArgs e) => current?.Clear();
 
-    void OnPaste(object? sender, RoutedEventArgs e) => View.Paste();
+    void OnCopy(object? sender, RoutedEventArgs e) => current?.View.CopySelection();
+
+    void OnPaste(object? sender, RoutedEventArgs e) => current?.View.Paste();
 
     void OnCopyAll(object? sender, RoutedEventArgs e)
     {
-        View.SelectAll();
-        View.CopySelection();
+        current?.View.SelectAll();
+        current?.View.CopySelection();
     }
 
-    void OnSelectAll(object? sender, RoutedEventArgs e) => View.SelectAll();
+    void OnSelectAll(object? sender, RoutedEventArgs e) => current?.View.SelectAll();
 
     async void OnSave(object? sender, RoutedEventArgs e)
     {
+        if (current is not DutTab tab)
+            return;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save the console text",
-            SuggestedFileName = $"{Prefix()}-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
+            SuggestedFileName = $"{tab.Prefix()}-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
             DefaultExtension = "txt",
             FileTypeChoices = new[]
             {
@@ -534,11 +517,11 @@ public partial class MainWindow : Window
         {
             await using var stream = await file.OpenWriteAsync();
             await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
-            await writer.WriteAsync(buffer.GetAllText(Environment.NewLine));
+            await writer.WriteAsync(tab.Buffer.GetAllText(Environment.NewLine));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            LogText.Text = "Cannot save: " + ex.Message;
+            tab.ShowLogProblem("Cannot save: " + ex.Message);
         }
     }
 
@@ -581,9 +564,8 @@ public partial class MainWindow : Window
         settings.TextSize = (double)(TextSizeBox.Value ?? (decimal)settings.TextSize);
         settings.Fonts = string.IsNullOrWhiteSpace(FontsBox.Text) ? TerminalView.DefaultFonts : FontsBox.Text.Trim();
         ShowSettings();
-        buffer.MaxLines = settings.ScrollbackLines;
-        View.TextSize = settings.TextSize;
-        View.Fonts = settings.Fonts;
+        foreach (var tab in tabs)
+            tab.ApplySettings();
         SaveSettings();
     }
 
@@ -606,7 +588,10 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            LogText.Text = "Cannot open the folder: " + ex.Message;
+            if (current != null)
+                current.ShowLogProblem("Cannot open the folder: " + ex.Message);
+            else
+                LogText.Text = "Cannot open the folder: " + ex.Message;
         }
     }
 

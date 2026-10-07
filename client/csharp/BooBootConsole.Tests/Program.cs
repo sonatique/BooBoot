@@ -1,6 +1,6 @@
 // Checks of BooBoot Console. Without argument: the terminal buffer only.
-// With a server URL: also the window, headless, against a server with a fake board:
-//   cd server && python3 -m booboot_server --fake --port 8080
+// With a server URL: also the window, headless, against a server with a fake board, best with two DUTs:
+//   cd server && python3 -m booboot_server --fake --duts dut1,dut2 --port 8080
 //   dotnet run --project client/csharp/BooBootConsole.Tests -- http://127.0.0.1:8080 [screenshot.png]
 
 using System.Text.Json;
@@ -111,10 +111,15 @@ static void CheckSettings()
     try
     {
         var path = Path.Combine(dir.FullName, "settings.json");
-        new Settings { Url = "http://test:8081", LogPrefix = "lab", NewLogAtPowerOn = true, TextSize = 15.5 }.Save(path);
+        new Settings
+        {
+            Url = "http://test:8081", LogPrefix = "lab", NewLogAtPowerOn = true, TextSize = 15.5,
+            HiddenDuts = { ["http://test:8080"] = new() { "dut2" } },
+        }.Save(path);
         var s = Settings.Load(path);
         Check(s.Url == "http://test:8081" && s.LogPrefix == "lab" && s.NewLogAtPowerOn && s.TextSize == 15.5
-            && s.ScrollbackLines == 200_000, "settings saved and loaded");
+            && s.ScrollbackLines == 200_000 && s.HiddenDuts["http://test:8080"].SequenceEqual(new[] { "dut2" }),
+            "settings saved and loaded");
         Check(File.ReadAllText(path).Contains("\n  \"LogPrefix\": \"lab\","), "settings file indented");
         Check(Settings.Load(Path.Combine(dir.FullName, "none.json")).Url == new Settings().Url, "default settings");
     }
@@ -129,14 +134,17 @@ static async Task CheckAll(string url, string? screenshot)
     var tmp = Directory.CreateTempSubdirectory("booboot-console-");
     using var dut = new BooBootClient(url);
     await dut.OpenSessionAsync("console-check", force: true);
-    MainWindow? window = null;
+    var windows = new List<MainWindow>();
     try
     {
-        await CheckWindow(dut, tmp.FullName, url, screenshot, w => window = w);
+        await CheckWindow(dut, tmp.FullName, url, screenshot, windows.Add);
+        if ((await dut.StatusAsync()).TryGetProperty("duts", out var duts) && duts.GetArrayLength() > 1)
+            await CheckDuts(url, tmp.FullName, windows.Add);
     }
     finally
     {
-        window?.Close();
+        foreach (var window in windows)
+            window.Close();
         await dut.CloseSessionAsync();
         tmp.Delete(true);
     }
@@ -176,7 +184,9 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     await WaitFor(() => window.Buffer.Pending.EndsWith("login: "), "live output");
     await dut.RunAsync("root", timeout: 5);
     await dut.RunAsync("uname -a", timeout: 5);
-    await WaitFor(() => window.Buffer.GetAllText().Contains("Linux fake 6.6.0-fake"), "command output");
+    // The whole line, then it is in the log.
+    await WaitFor(() => window.Buffer.GetAllText().Contains("Linux fake 6.6.0-fake #1 SMP armv7l GNU/Linux\n"),
+        "command output");
     var text = window.Buffer.GetAllText();
     Check(text.Contains("---- power off ") && text.Contains("---- power on "), "power markers");
     var ok = Enumerable.Range(0, window.Buffer.Count).Select(i => window.Buffer[window.Buffer.First + i])
@@ -291,6 +301,86 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
         "session released with the window");
 }
 
+// A board with two DUTs: a tab for each.
+static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
+{
+    var settings = new Settings { LogFolder = tmp, LogPrefix = "lab", LogOnConnect = true };
+    var window = new MainWindow(settings, url, persist: false) { Width = 1180, Height = 540 };
+    created(window);
+    window.Show();
+    await WaitFor(() => window.Duts.Count == 2 && window.Duts.All(d => d.Status.Contains("Connected")),
+        "a tab for each DUT", () => window.Status);
+    var (first, second) = (window.Duts[0], window.Duts[1]);
+    Check(first.Name == "dut1" && second.Name == "dut2" && window.CurrentDut == first && window.TabsShown
+        && window.Title == "dut1 - BooBoot Console", "tabs, the first DUT shown");
+    Check(Path.GetFileName(second.LogPath)!.StartsWith("lab-dut2-"), "log file with the prefix and the DUT name");
+
+    // Output of the other DUT marks its tab.
+    var bootFile = Path.Combine(tmp, "BOOT.BIN");
+    File.WriteAllText(bootFile, "boot");
+    using var dut2 = new BooBootClient(BooBootClient.DutUrl(url, "dut2"));
+    await dut2.OpenSessionAsync("console-check", force: true);
+    await dut2.PutFileAsync(bootFile, "1:/BOOT.BIN");
+    await dut2.PowerOnAsync();
+    Check((await dut2.ExpectAsync("login: $", since: "boot", timeout: 10)).Matched, "dut2 boots");
+    await dut2.RunAsync("root", timeout: 5);
+    await dut2.RunAsync("echo only-on-dut2", timeout: 5);
+    await WaitFor(() => second.Buffer.GetAllText().Contains("\nonly-on-dut2") && second.NewOutput,
+        "new output of the other DUT");
+    Check(!first.Buffer.GetAllText().Contains("only-on-dut2") && !first.NewOutput, "output in its tab only");
+
+    // Ctrl+Tab and Ctrl+Shift+Tab go through the DUTs, the status and buttons follow.
+    window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Control);
+    Check(window.CurrentDut == second && !second.NewOutput && window.Status.Contains("dut2    power on")
+        && window.Title == "dut2 - BooBoot Console", "Ctrl+Tab shows the next DUT");
+    window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Control | RawInputModifiers.Shift);
+    Check(window.CurrentDut == first && window.Status.Contains("dut1    power off"), "Ctrl+Shift+Tab, the previous");
+    window.SelectDut(second);
+
+    // Each DUT has its session.
+    await dut2.CloseSessionAsync();
+    await window.TakeControl();
+    await WaitFor(() => second.InControl && window.Status.Contains("in control"), "control of dut2");
+    Check(window.Power.IsEnabled && (string?)window.Power.Content == "Power off", "power button of dut2");
+    window.SelectDut(first);
+    Check(!window.Power.IsEnabled && (string?)window.Power.Content == "Power on" && !first.InControl,
+        "power button of dut1, not in control");
+    window.SelectDut(second);
+    await window.SwitchPower(false);
+    Check(second.PowerState == "off", "dut2 off from its tab");
+
+    // A hidden DUT is released, and stays hidden for the board.
+    window.ShowDut("dut2", false);
+    Check(window.Duts.Count == 1 && window.CurrentDut == first && window.TabsShown
+        && settings.HiddenDuts[url].SequenceEqual(new[] { "dut2" }), "DUT hidden, the tabs still shown");
+    await WaitForAsync(async () => !(await dut2.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(),
+        "session of a hidden DUT released");
+    window.ShowDut("dut1", false);
+    Check(window.Duts.Count == 1 && window.CurrentDut == first, "one DUT at least stays shown");
+    var again = new MainWindow(settings, url, persist: false) { Width = 800, Height = 300 };
+    created(again);
+    again.Show();
+    await WaitFor(() => again.Duts.Count == 1 && again.Status.Contains("Connected"), "window after a DUT was hidden");
+    Check(again.CurrentDut!.Name == "dut1" && again.TabsShown, "hidden DUT remembered");
+    again.Close();
+    window.ShowDut("dut2", true);
+    await WaitFor(() => window.Duts.Count == 2 && window.Duts[1].Status.Contains("Connected"), "DUT shown again");
+    Check(!settings.HiddenDuts.ContainsKey(url), "nothing hidden");
+
+    // The address of one DUT shows that DUT only.
+    var single = new MainWindow(new Settings { LogFolder = tmp }, BooBootClient.DutUrl(url, "dut2"), persist: false);
+    created(single);
+    single.Show();
+    await WaitFor(() => single.Status.Contains("Connected"), "window of one DUT");
+    Check(single.Duts.Count == 1 && single.CurrentDut!.Name == "dut2" && !single.TabsShown,
+        "the address of one DUT shows that DUT only, without tabs");
+    single.Close();
+
+    await dut2.OpenSessionAsync("console-check", force: true);
+    await dut2.DeleteAsync("1:/BOOT.BIN");
+    await dut2.CloseSessionAsync();
+}
+
 static async Task WaitFor(Func<bool> condition, string what, Func<string>? state = null)
 {
     var deadline = DateTime.UtcNow.AddSeconds(15);
@@ -299,6 +389,18 @@ static async Task WaitFor(Func<bool> condition, string what, Func<string>? state
         if (DateTime.UtcNow > deadline)
             throw new Exception($"timeout: {what} {state?.Invoke()}");
         await Task.Delay(20);
+    }
+    Check(true, what);
+}
+
+static async Task WaitForAsync(Func<Task<bool>> condition, string what)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(15);
+    while (!await condition())
+    {
+        if (DateTime.UtcNow > deadline)
+            throw new Exception($"timeout: {what}");
+        await Task.Delay(100);
     }
     Check(true, what);
 }
