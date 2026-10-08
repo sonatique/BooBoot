@@ -97,7 +97,7 @@ class Browser:
         for ch in text:
             self.key(ch, ch)
 
-    def accept_dialog(self, timeout=10, accept=True):
+    def accept_dialog(self, timeout=10, accept=True, text=None):
         deadline = time.monotonic() + timeout
         while not any(e.get("method") == "Page.javascriptDialogOpening" for e in self.events):
             if time.monotonic() > deadline:
@@ -105,7 +105,8 @@ class Browser:
             self.events.append(self._read(timeout))
         message = [e for e in self.events if e.get("method") == "Page.javascriptDialogOpening"][-1]
         self.events.clear()
-        self.call("Page.handleJavaScriptDialog", session=True, accept=accept)
+        answer = {} if text is None else {"promptText": text}
+        self.call("Page.handleJavaScriptDialog", session=True, accept=accept, **answer)
         return message["params"]["message"]
 
     def close(self):
@@ -285,10 +286,23 @@ class WebTest(unittest.TestCase):
         b.eval(power + ".click()")
         b.wait(power + ".textContent === 'Power off' && !%s.disabled" % power, "button after power on")
         self.assertEqual(power_state(), "on")
+
+        # The label, set in control, shows with the name.
+        label, name = "document.getElementById('label')", "document.getElementById('name').textContent"
+        b.eval("setTimeout(() => %s.click())" % label)
+        self.assertIn("Label of dut1", b.accept_dialog(text="ZCU102 rev B"))
+        b.wait(name + " === 'ZCU102 rev B (dut1)'", "label shown")
+        self.assertEqual((booboot.Client(self.url).status()["label"], b.eval("document.title")),
+                         ("ZCU102 rev B", "ZCU102 rev B (dut1) - BooBoot"))
+        b.eval("setTimeout(() => %s.click())" % label)
+        b.accept_dialog(text="")
+        b.wait(name + " === 'dut1'", "label removed")
+
         b.eval("document.getElementById('control').click()")
         b.wait(info + ".includes('session free')", "control released")
         self.assertFalse(self.status()["active"])
         self.assertEqual(b.eval(power + ".disabled"), True)
+        self.assertEqual(b.eval(label + ".disabled"), True)
 
         # Leaving the page releases the session.
         b.eval("document.getElementById('control').click()")
@@ -320,15 +334,21 @@ class DutsWebTest(unittest.TestCase):
         chrome = find_chrome()
         if not chrome or not shutil.which("bash"):
             self.skipTest("Chrome or bash not found (set BOOBOOT_CHROME)")
+        dut2 = booboot.Client(self.url + "/duts/dut2")
+        dut2.open_session("test")
+        self.addCleanup(dut2.close_session)
+        dut2.set_label("bench 3")
+        self.addCleanup(dut2.set_label, "")
         b = Browser(chrome)
         self.addCleanup(b.close)
         b.call("Page.navigate", session=True, url=self.url + "/")
         b.wait("document.querySelectorAll('#duts tr').length === 2", "list of the DUTs")
         rows = b.eval("[...document.querySelectorAll('#duts tr')].map(r => r.innerText.split('\\t').join(' '))")
-        self.assertEqual(rows, ["dut1 off free ", "dut2 off free "])
+        self.assertEqual(rows, ["dut1  off free ", "dut2 bench 3 off used by test "])
         b.call("Page.navigate", session=True, url=self.url + "/duts/dut2/")
         select = "document.getElementById('duts')"
         b.wait("!%s.hidden && %s.value.endsWith('/duts/dut2/')" % (select, select), "list on the page of dut2")
+        self.assertEqual(b.eval("[...%s.options].map(o => o.text)" % select), ["dut1", "bench 3 (dut2)"])
         self.assertEqual(b.eval("document.getElementById('name').hidden"), True)
         b.eval("%s.value = '/duts/dut1/'; %s.dispatchEvent(new Event('change'))" % (select, select))
         b.wait("location.pathname === '/duts/dut1/' && %s.value.endsWith('/duts/dut1/')" % select, "page of dut1")

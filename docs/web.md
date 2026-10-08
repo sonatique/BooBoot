@@ -17,7 +17,8 @@ With several DUTs on the board, `http://booboot.local:8080/` lists them, with
 the power state, the client that has the session and the running script of
 each, updated every 3 s. A click on a name opens the console page of that
 DUT, at `http://booboot.local:8080/duts/NAME/`. On a console page, a list
-next to the DUT name goes to another DUT of the board.
+next to the DUT name goes to another DUT of the board. Both show the label
+of each DUT, if it has one.
 
 ## Features
 
@@ -71,6 +72,9 @@ While in control, the page sends a heartbeat every 10 s.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
   asks first. Power on also gives the SD card back to the DUT.
+- **Label.** "Label..." sets the label of the DUT, free text shown with its
+  name here, in BooBoot Console and by `booboot status`, like
+  `ZCU102 rev B, bench 3`. It works only in control. Empty removes it.
 - **Release.** "Release control" closes the session. Closing or reloading the
   page also does. When no key is sent for the session timeout (300 s by
   default), the session ends and the status line says so.

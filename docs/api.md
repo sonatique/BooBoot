@@ -58,7 +58,7 @@ same at the base URL of each DUT.
 ```json
 {
   "duts": [
-    {"name": "dut1", "url": "/duts/dut1", "power": "on", "console": true, "operation": null,
+    {"name": "dut1", "url": "/duts/dut1", "label": "ZCU102 rev B", "power": "on", "console": true, "operation": null,
      "session": {"active": true, "client": "me@desk", "...": "..."}, "script": null},
     {"name": "dut2", "url": "/duts/dut2",
      "error": "uses the same USB-SD-Mux m1 as dut1: each DUT needs its own"}
@@ -79,6 +79,7 @@ No session needed.
 ```json
 {
   "name": "dut1",
+  "label": "ZCU102 rev B, bench 3",
   "version": "0.1.0",
   "power": {"state": "off", "backend": "gpio", "error": ""},
   "sd": {"mode": "dut", "error": "", "card": {"state": "written", "sha256": "...", "bytes": 123, "time": 1790000000.0}},
@@ -111,7 +112,8 @@ key typed in a viewer is a write). Like `written` (`POST /console/write`),
 it does not show that the DUT received them. `network`: the host name of the
 BooBoot board and its addresses (IPv4, then global IPv6), for clients where
 its `.local` name does not work, like over a VPN ([remote.md](remote.md)).
-`duts`: the names of the DUTs of the board, this one included.
+`duts`: the names of the DUTs of the board, this one included. `label`: free
+text shown with the name of the DUT, empty for none (`PUT /label`).
 
 ### POST /session
 
@@ -139,6 +141,17 @@ after its idle time. Answer: session state.
 
 Ends the session: `{"closed": true}`. While a script of the session runs,
 the session ends when the script ends: `{"closed": false, "script": ...}`.
+
+### PUT /label
+
+Sets the label of the DUT: free text that the viewers and the clients show
+with its name, like `ZCU102 rev B, bench 3`. The name stays the identifier of
+the DUT, in its address. Parameter: `label`, one line of 100 characters at
+most; empty removes it. Answer: `{"label": "ZCU102 rev B, bench 3"}`.
+
+The server keeps it in `state_dir` of the `[server]` configuration (default
+`/var/lib/booboot/NAME`), so that it survives restarts and updates. Until it
+is set, the label is `label` of the `[server]` section of the DUT file.
 
 ## Power
 

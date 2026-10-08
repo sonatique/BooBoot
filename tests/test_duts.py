@@ -17,6 +17,8 @@ import booboot
 from booboot_server import config
 from booboot_server.__main__ import build_units
 from booboot_server.api import Server
+from booboot_server.board import Label
+from booboot_server.errors import BadRequest
 
 
 def free_port():
@@ -100,6 +102,14 @@ class DutsTest(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             return p.stdout
 
+        self.assertEqual(cli("--dut", "dut2", "label", "bench 3"), "label set: bench 3\n")
+        self.assertEqual(cli("--dut", "dut2", "label"), "bench 3\n")
+        self.assertIn("  label: bench 3", cli("duts"))
+        out = cli("--dut", "dut2", "status")
+        self.assertIn("\nlabel:   bench 3\n", out)
+        self.assertEqual(cli("--dut", "dut2", "label", ""), "label removed\n")
+        cli("--dut", "dut2", "session", "close")
+        self.assertEqual(cli("--dut", "dut2", "label"), "(no label)\n")
         out = cli("--dut", "dut2", "status")
         self.assertTrue(out.startswith("dut2, BooBoot"), out)
         self.assertIn("other DUTs of the board: dut1 (booboot duts)", out)
@@ -107,6 +117,25 @@ class DutsTest(unittest.TestCase):
         lines = cli("duts").splitlines()
         self.assertEqual([line.split()[:3] for line in lines],
                          [["dut1", self.url + "/duts/dut1", "power"], ["dut2", self.url + "/duts/dut2", "power"]])
+
+    def test_label(self):
+        c = booboot.Client(self.url + "/duts/dut2")
+        with self.assertRaises(booboot.Error) as e:
+            c.set_label("bench 3")
+        self.assertEqual(e.exception.status, 401)  # it needs the session
+        c.open_session("labeller")
+        self.addCleanup(c.close_session)
+        self.assertEqual(c.set_label(" ZCU102 rev B, bench 3 ")["label"], "ZCU102 rev B, bench 3")
+        self.addCleanup(c.set_label, "")
+        self.assertEqual(c.status()["label"], "ZCU102 rev B, bench 3")
+        self.assertEqual({d["name"]: d["label"] for d in c.duts()["duts"]},
+                         {"dut1": "", "dut2": "ZCU102 rev B, bench 3"})
+        with self.assertRaises(booboot.Error) as e:
+            booboot.Client(self.url + "/duts/dut2").set_label("mine")
+        self.assertEqual(e.exception.code, "busy")
+        with self.assertRaises(booboot.Error) as e:
+            c.set_label("two\nlines")
+        self.assertEqual(e.exception.status, 400)
 
     def test_name_not_found(self):
         # The address the client goes on with keeps the path of the DUT.
@@ -169,6 +198,19 @@ class ConfigTest(unittest.TestCase):
             "f": "uses the same USB-SD-Mux (the only one: set serial in [sdmux]) as e: each DUT needs its own"})
         self.assertEqual([u.name for u in units if not u.error], ["a", "d", "e"])
 
+    def test_label_file(self):
+        path = os.path.join(self.tmp, "state", "label")
+        label = Label(path, "from the configuration")
+        self.assertEqual(label.text, "from the configuration")
+        label.set("  ZCU102 rev B, bench 3 ")
+        self.assertEqual(Label(path, "from the configuration").text, "ZCU102 rev B, bench 3")
+        label.set("")
+        self.assertEqual(Label(path, "from the configuration").text, "")  # removed for good
+        for bad in ("two\nlines", "x" * 101):
+            with self.assertRaises(BadRequest):
+                label.set(bad)
+        self.assertEqual(label.text, "")
+
     def test_load_dir(self):
         self.write("server.ini", "[server]\nport = 9000\n[scripts]\nenabled = yes\n")
         self.write("a.ini", "[server]\nname = alpha\nport = 9001\n[console]\ndevice = none\n")
@@ -204,9 +246,14 @@ class ConfigTest(unittest.TestCase):
     def test_main(self):
         port, own = free_port(), free_port()
         self.write("server.ini", "[server]\nport = %d\n" % port)
-        self.write("dut1.ini", "")
+        self.write("dut1.ini", "[server]\nlabel = from the configuration\n")
         self.write("dut2.ini", "[server]\nport = %d\n" % own)
+        # A label set before a restart.
+        os.makedirs(os.path.join(self.tmp, "fake", "dut2", "state"))
+        self.write(os.path.join("fake", "dut2", "state", "label"), "bench 3\n")
         self.assertEqual(self.start(port), ["dut1", "dut2"])
+        self.assertEqual(booboot.Client("http://127.0.0.1:%d" % port).status()["label"], "from the configuration")
+        self.assertEqual(booboot.Client("http://127.0.0.1:%d" % own).status()["label"], "bench 3")
         self.assertEqual(booboot.Client("http://127.0.0.1:%d" % own).status()["name"], "dut2")
         self.assertEqual(booboot.Client("http://127.0.0.1:%d/duts/dut2" % port).status()["name"], "dut2")
 

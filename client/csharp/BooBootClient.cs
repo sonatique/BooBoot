@@ -113,6 +113,10 @@ public sealed class BooBootClient : IDisposable
     /// </summary>
     public Task<JsonElement> DutsAsync() => SendJsonAsync(HttpMethod.Get, "/duts");
 
+    /// <summary>Sets the label of the DUT, free text shown with its name. Empty: none.</summary>
+    public Task<JsonElement> SetLabelAsync(string label) =>
+        SendJsonAsync(HttpMethod.Put, "/label", Body(("label", label)));
+
     /// <summary>The URL of DUT name of the board at url: URL/duts/NAME.</summary>
     public static string DutUrl(string url, string name) =>
         Regex.Replace(url.TrimEnd('/'), "/duts/[^/]+$", "") + "/duts/" + Uri.EscapeDataString(name);

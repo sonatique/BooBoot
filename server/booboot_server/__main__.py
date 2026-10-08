@@ -13,7 +13,7 @@ import threading
 
 from . import __version__, config, gpio
 from .api import Server
-from .board import Unit, claims
+from .board import Label, Unit, claims
 from .console import Console, NoPort, SerialPort, find_serial_ports
 from .dut import Dut
 from .power import CommandPower, GpioPower, NoPower, SdmuxGpioPower
@@ -45,12 +45,14 @@ def build(cfg, fake_dir=None, own_port=None):
     name = s.get("name")
     log_dir = config.expand(s.get("log_dir"), name)
     run_dir = config.expand(s.get("run_dir"), name)
+    state_dir = config.expand(s.get("state_dir"), name)
     scripts_dir = config.expand(sc.get("dir"), name)
     if fake_dir is not None:
         from .fake import FakeBoard
         board = FakeBoard(fake_dir)
         power, mux, storage, port = board.power, board.mux, board.storage, board.port
         log_dir = os.path.join(fake_dir, "log")
+        state_dir = os.path.join(fake_dir, "state")
         scripts_dir = os.path.join(fake_dir, "scripts")
     else:
         mux = UsbSdMux(cfg.get("sdmux", "serial"))
@@ -64,7 +66,8 @@ def build(cfg, fake_dir=None, own_port=None):
     scripts = Scripts(scripts_dir, sessions, sc.getboolean("enabled"), sc.get("user"), sc.getfloat("max_time"),
                       sc.getint("memory") << 20, sc.getint("output") << 20, sc.getint("keep"),
                       sc.getint("file_size") << 20, name)
-    return Unit(name, dut, sessions, scripts, c.get("prompt"), own_port)
+    label = Label(os.path.join(state_dir, "label"), s.get("label").strip())
+    return Unit(name, dut, sessions, scripts, c.get("prompt"), own_port, label=label)
 
 
 def build_units(duts, fake_dir=None):

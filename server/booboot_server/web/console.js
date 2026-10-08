@@ -12,6 +12,7 @@
   const $ = id => document.getElementById(id);
   const screen = $("screen"), panel = $("panel"), followButton = $("follow"), controlButton = $("control");
   const powerButton = $("power");
+  const labelButton = $("label");
   const BLOCK = 100;  // lines per block of the screen
   const PALETTE = [
     "#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
@@ -20,7 +21,9 @@
 
   let name = "", connection = "Connecting...", power = "", session = "", address = "";
   // Names of the DUTs of the board, as last shown in the list.
-  let dutNames = "";
+  let dutList = "";
+  // Free text shown with the name of the DUT.
+  let label = "";
   let follow = true, holding = false, scheduled = false;
   // Control: the session token, and the keys waiting to be sent.
   let token = "", note = "", keys = "", sending = false;
@@ -183,8 +186,10 @@
     // The power button follows the power state, and works only in control.
     powerButton.textContent = power === "on" ? "Power off" : "Power on";
     powerButton.disabled = !token || switching;
-    $("name").textContent = name || "BooBoot";
-    document.title = name ? name + " - BooBoot" : "BooBoot";
+    labelButton.disabled = !token;
+    const shown = label ? label + " (" + name + ")" : name;
+    $("name").textContent = shown || "BooBoot";
+    document.title = shown ? shown + " - BooBoot" : "BooBoot";
   }
 
   function setFollow(on) {
@@ -297,9 +302,15 @@
             : "control ended after the idle time");
         power = s.power.state;
         name = s.name;
-        if (s.duts && s.duts.join() !== dutNames) {
-          dutNames = s.duts.join();
-          showDuts(s.duts);
+        label = s.label || "";
+        if (s.duts) {
+          // The other DUTs of the board with their labels, when there are any.
+          const duts = s.duts.length > 1 ? (await (await fetch("api/v1/duts", { cache: "no-store" })).json()).duts : [];
+          const list = JSON.stringify(duts.map(d => [d.name, d.label]));
+          if (list !== dutList) {
+            dutList = list;
+            showDuts(duts);
+          }
         }
         // Where the page uses a name, the address of the board, for where the name does not work.
         const addresses = (s.network && s.network.addresses) || [];
@@ -314,10 +325,11 @@
   }
 
   // With several DUTs on the board, a list in place of the name goes to the page of another one.
-  function showDuts(names) {
+  function showDuts(duts) {
     const select = $("duts");
-    select.replaceChildren(...names.map(n => new Option(n, "/duts/" + encodeURIComponent(n) + "/", false, n === name)));
-    select.hidden = names.length < 2;
+    select.replaceChildren(...duts.map(d => new Option(d.label ? d.label + " (" + d.name + ")" : d.name,
+      "/duts/" + encodeURIComponent(d.name) + "/", false, d.name === name)));
+    select.hidden = duts.length < 2;
     $("name").hidden = !select.hidden;
   }
 
@@ -399,6 +411,23 @@
   function lost(err) {
     setControl("", err.code === "busy" ? "control lost: the DUT is used by " + err.info.session.client
       : "control ended after the idle time");
+  }
+
+  async function setLabel() {
+    const text = prompt(`Label of ${name}, shown with its name, like "ZCU102 rev B, bench 3" (empty: none)`, label);
+    if (text === null)
+      return;
+    try {
+      label = (await api("PUT", "/label", { label: text })).label;
+      note = "";
+      dutList = "";
+    } catch (err) {
+      if (err.code === "busy" || err.code === "no_session")
+        lost(err);
+      else
+        note = "label not set: " + err.message;
+    }
+    schedule();
   }
 
   async function switchPower() {
@@ -530,6 +559,7 @@
   controlButton.onclick = () => (token ? releaseControl() : takeControl());
   $("duts").onchange = e => { location.href = e.target.value; };
   powerButton.onclick = switchPower;
+  labelButton.onclick = setLabel;
   $("clear").onclick = () => {
     term.clear();
     setFollow(true);

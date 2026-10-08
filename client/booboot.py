@@ -225,6 +225,10 @@ class Client:
         """
         return self.request("GET", "/duts")
 
+    def set_label(self, label):
+        """Set the label of the DUT, free text shown with its name. Empty: none. Needs the session."""
+        return self.request("PUT", "/label", json_body={"label": label})
+
     def open_session(self, client=None, timeout=None, force=False):
         """Open the session needed by all other calls.
 
@@ -670,8 +674,10 @@ def _status_text(s):
     else:
         who = "used by " + _holder(ses)
     con = s["console"]
-    lines = [
-        "%s, BooBoot %s" % (s["name"], s["version"]),
+    lines = ["%s, BooBoot %s" % (s["name"], s["version"])]
+    if s.get("label"):
+        lines.append("label:   " + s["label"])
+    lines += [
         "power:   %s" % s["power"]["state"] + (" (%s)" % s["power"]["error"] if s["power"]["error"] else ""),
         "sd card: %s" % s["sd"]["mode"] + (" (%s)" % s["sd"]["error"] if s["sd"]["error"] else "")
         + ", content %s" % s["sd"]["card"]["state"],
@@ -711,7 +717,22 @@ def cmd_duts(args):
         else:
             ses = d.get("session") or {}
             state = "power %s, %s" % (d.get("power"), "used by " + _holder(ses) if ses.get("active") else "free")
-        print("%-10s %s%-20s %s" % (d["name"], board, d["url"], state))
+        print("%-10s %s%-20s %s%s" % (d["name"], board, d["url"], state,
+                                      "  label: " + d["label"] if d.get("label") else ""))
+    return None
+
+
+def cmd_label(args):
+    if args.text is None:
+        r = {"label": _client(args, session=False).status().get("label", "")}
+    else:
+        r = _client(args).set_label(args.text)
+    if args.json:
+        return _print_json(r)
+    if args.text is None:
+        print(r["label"] or "(no label)")
+    else:
+        print("label set: " + r["label"] if r["label"] else "label removed")
     return None
 
 
@@ -1815,6 +1836,11 @@ def build_parser():
     sp.set_defaults(func=cmd_status)
     sp = sub.add_parser("duts", help="list the DUTs of the board, with their state")
     sp.set_defaults(func=cmd_duts)
+    sp = sub.add_parser("label", help="show or set the label of the DUT, shown with its name",
+                        description="Show the label of the DUT, or set it: free text shown with its name, "
+                                    "like \"ZCU102 rev B, bench 3\". \"\" removes it. Setting it needs the session.")
+    sp.add_argument("text", nargs="?", help="the new label")
+    sp.set_defaults(func=cmd_label)
 
     ses = sub.add_parser("session", help="open or close the session").add_subparsers(dest="action", metavar="ACTION")
     ses.required = True

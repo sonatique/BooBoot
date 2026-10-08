@@ -63,6 +63,10 @@ Check(busy.Info?.GetProperty("session").GetProperty("client").GetString() == "cs
     "busy error names the client");
 Check((await Fails(() => other.PowerOnAsync())).Code == "busy", "calls without the session are refused");
 Check((await dut.HeartbeatAsync()).GetProperty("alive").GetBoolean(), "heartbeat");
+Check((await dut.SetLabelAsync(" check ")).GetProperty("label").GetString() == "check"
+    && (await other.StatusAsync()).GetProperty("label").GetString() == "check", "label");
+Check((await Fails(() => other.SetLabelAsync("x"))).Code == "busy", "label needs the session");
+await dut.SetLabelAsync("");
 var connected = await Fails(() => other.OpenSessionAsync("other", ifGone: true));
 Check(connected.Code == "busy" && connected.Info?.GetProperty("session").GetProperty("alive").GetBoolean() == true,
     "a connected client keeps the session");

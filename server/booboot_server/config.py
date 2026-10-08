@@ -16,6 +16,8 @@ DEFAULTS = {
         "port": "8080",
         "log_dir": "/var/log/booboot/{name}",
         "run_dir": "/run/booboot/{name}",
+        "state_dir": "/var/lib/booboot/{name}",
+        "label": "",
         "session_timeout": "300",
         "session_timeout_max": "3600",
         "web": "yes",

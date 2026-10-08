@@ -372,8 +372,8 @@ def _summary(u):
         found["error"] = u.error
         return found
     s = u.dut.status()
-    found.update(power=s["power"]["state"], console=s["console"]["connected"], operation=s["operation"],
-                 session=u.sessions.status(), script=u.scripts.running())
+    found.update(label=u.label.text, power=s["power"]["state"], console=s["console"]["connected"],
+                 operation=s["operation"], session=u.sessions.status(), script=u.scripts.running())
     return found
 
 
@@ -392,6 +392,7 @@ def dut_root(r, m):
 @route("GET", "/status", session=False)
 def get_status(r, m):
     status = r.dut.status()
+    status["label"] = r.unit.label.text
     status["session"] = r.unit.sessions.status(r.token())
     status["network"] = netinfo.info()
     status["script"] = r.unit.scripts.running()
@@ -420,6 +421,16 @@ def close_session(r, m):
 @route("POST", "/session/keepalive")
 def keepalive(r, m):
     return r.unit.sessions.status(r.token())
+
+
+@route("PUT", "/label")
+def put_label(r, m):
+    text = r.param("label")
+    if not isinstance(text, str):
+        raise BadRequest("label is required: text, empty for none")
+    r.unit.label.set(text)
+    log.info("%s: label %r, set by %s", r.unit.name, r.unit.label.text, r.unit.sessions.status(r.token())["client"])
+    return {"label": r.unit.label.text}
 
 
 @route("POST", "/session/heartbeat", session=False)

@@ -41,6 +41,8 @@ public partial class MainWindow : Window
     bool changingTabs;
     // The question before a power off, with its answers, while it shows.
     (Flyout Flyout, Button Yes, Button No)? powerOffQuestion;
+    // The label editor, while it shows.
+    (Flyout Flyout, TextBox Text, Button Set, Button Cancel)? labelQuestion;
 
     public MainWindow() : this(new Settings(), null, false)
     {
@@ -259,6 +261,7 @@ public partial class MainWindow : Window
     {
         var tab = new DutTab(name, settings, SaveSettings);
         tab.View.ContextMenu = ViewMenu();
+        tab.Header.ContextMenu = LabelMenu(() => tab);
         tab.Changed += () =>
         {
             if (tab == current)
@@ -306,7 +309,7 @@ public partial class MainWindow : Window
         var tab = current;
         var connected = tab?.Connected == true;
         StatusText.Text = connected ? tab!.Status : connection;
-        Title = connected && tab!.Name != "" ? $"{tab.Name} - BooBoot Console" : "BooBoot Console";
+        Title = connected && tab!.Name != "" ? $"{tab.DisplayName} - BooBoot Console" : "BooBoot Console";
         ConnectButton.Content = opening != null ? "Disconnect" : "Connect";
         ControlButton.IsEnabled = connected;
         ControlButton.Content = tab?.InControl == true ? "Release control" : "Take control";
@@ -387,7 +390,7 @@ public partial class MainWindow : Window
         var idle = busy.GetProperty("idle").GetDouble();
         var gone = ConsoleInput.IsGone(busy);
         var connected = busy.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.True;
-        var text = $"{tab.Name} is used by {who}, " + (
+        var text = $"{tab.DisplayName} is used by {who}, " + (
             gone ? $"which is gone: no heartbeat for {busy.GetProperty("heartbeat_age").GetDouble():0} s."
             : connected ? $"which is connected. Last action {idle:0} s ago.\nTaking over interrupts their work."
             : $"idle for {idle:0} s.");
@@ -429,7 +432,7 @@ public partial class MainWindow : Window
                 Spacing = 8,
                 Children =
                 {
-                    new TextBlock { Text = $"Switch {tab.Name} off?" },
+                    new TextBlock { Text = $"Switch {tab.DisplayName} off?" },
                     new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { yes, no } },
                 },
             },
@@ -479,7 +482,83 @@ public partial class MainWindow : Window
             item.Click += click;
             menu.Items.Add(item);
         }
+        menu.Items.Add(new Separator());
+        AddLabelItem(menu, () => current);
         return menu;
+    }
+
+    ContextMenu LabelMenu(Func<DutTab?> tab)
+    {
+        var menu = new ContextMenu();
+        AddLabelItem(menu, tab);
+        return menu;
+    }
+
+    /// <summary>Adds "Set label..." to a menu, for the DUT that tab gives. It works only in control.</summary>
+    void AddLabelItem(ContextMenu menu, Func<DutTab?> tab)
+    {
+        var item = new MenuItem();
+        item.Click += (_, _) =>
+        {
+            if (tab() is DutTab t)
+                AskLabel(t);
+        };
+        menu.Opening += (_, _) =>
+        {
+            var inControl = tab()?.InControl == true;
+            item.Header = inControl ? "Set label..." : "Set label... (take control first)";
+            item.IsEnabled = inControl;
+        };
+        menu.Items.Add(item);
+    }
+
+    /// <summary>Asks for the label of the DUT: free text shown with its name, kept on the server.</summary>
+    public void AskLabel(DutTab tab)
+    {
+        var text = new TextBox { Text = tab.Label, Width = 320, PlaceholderText = "like ZCU102 rev B, bench 3" };
+        var set = new Button { Content = "Set" };
+        var cancel = new Button { Content = "Cancel" };
+        var flyout = new Flyout
+        {
+            Placement = TabRow.IsVisible ? PlacementMode.BottomEdgeAlignedLeft : PlacementMode.TopEdgeAlignedLeft,
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = $"Label of {tab.Name}, shown with its name (empty: none)" },
+                    text,
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { set, cancel } },
+                },
+            },
+        };
+        set.Click += async (_, _) =>
+        {
+            flyout.Hide();
+            await tab.SetLabel(text.Text ?? "");
+        };
+        cancel.Click += (_, _) => flyout.Hide();
+        text.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+                set.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        };
+        labelQuestion = (flyout, text, set, cancel);
+        flyout.ShowAt(TabRow.IsVisible ? tab.Header : StatusText);
+        text.Focus();
+    }
+
+    /// <summary>True while the label editor shows. For tests.</summary>
+    public bool AskingLabel => labelQuestion?.Flyout.IsOpen == true;
+
+    /// <summary>Sets the label in the editor, or cancels with null. For tests.</summary>
+    public void AnswerLabel(string? label)
+    {
+        if (labelQuestion is not var (_, text, set, cancel))
+            return;
+        if (label != null)
+            text.Text = label;
+        (label != null ? set : cancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     }
 
     void OnClear(object? sender, RoutedEventArgs e) => current?.Clear();

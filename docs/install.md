@@ -112,6 +112,8 @@ changed:
 
 - `[power] line` and `active_low`: the relay (step 2),
 - `[console] baudrate`: the DUT serial speed (921600 by default),
+- `[server] label`: free text shown with the DUT name, like
+  `ZCU102 rev B, bench 3`. Clients can change it later, without a restart.
 - `[console] device`: with several USB serial adapters, the path of the right
   one in `/dev/serial/by-id/`.
 

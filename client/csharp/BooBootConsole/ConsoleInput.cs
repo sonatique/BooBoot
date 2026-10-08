@@ -140,6 +140,20 @@ public sealed class ConsoleInput : IDisposable
         }
     }
 
+    /// <summary>Sets the label of the DUT with the session. Returns it, or null when the control ended.</summary>
+    public async Task<string?> LabelAsync(string text)
+    {
+        try
+        {
+            return (await client.SetLabelAsync(text)).GetProperty("label").GetString();
+        }
+        catch (BooBootException e) when (e.Code is "busy" or "no_session")
+        {
+            End(e);
+            return null;
+        }
+    }
+
     /// <summary>Forgets a session that another client took, or that ended, and says why.</summary>
     void End(BooBootException e)
     {

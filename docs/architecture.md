@@ -84,7 +84,7 @@ Automation GmbH (pure Python, no dependencies) to switch the mux. Also used:
 | Module | Job |
 |---|---|
 | `api.py` | HTTP server (one thread per request), routes, parameters, errors |
-| `board.py` | The DUTs of the board, and the hardware that each one uses |
+| `board.py` | The DUTs of the board, the hardware that each one uses, and their labels |
 | `session.py` | One client at a time (see Sessions) |
 | `scripts.py` | Python scripts of clients, run on the board as another user ([scripts.md](scripts.md)) |
 | `dut.py` | State and safety rules; one hardware operation at a time |

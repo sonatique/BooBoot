@@ -144,7 +144,8 @@ only:
 
 **Several DUTs.** One board can serve several DUTs, on the same port. `duts`
 in the status lists their names, and `curl -sS -m 10 URL/api/v1/duts` the
-state of each. DUT NAME is at `http://HOST:PORT/duts/NAME`: use that as
+state of each, with its `label`: free text that the user may name it by,
+like "ZCU102 rev B". DUT NAME is at `http://HOST:PORT/duts/NAME`: use that as
 `URL` for the DUT that the user names, or ask which one. `http://HOST:PORT`
 alone is the first DUT. A unit before version 0.5 has no `duts`: there each
 DUT has its own port, from 8080 up. If the user names a DUT, try the ports in
@@ -330,6 +331,7 @@ Then go on with the task.
 | Boot time | `bb boottime "login: " --runs 5` |
 | Long or unattended work, on the board | `bb script run --detach FILE.py ARGS`, then `bb script output -f` |
 | Card files | `bb sd ls 1:/`, `bb sd get 1:/FILE LOCAL`, `bb sd put FILES 1:/` |
+| Label of the DUT, shown to everyone with its name: only when the user asks | `bb label "TEXT"` (`""` removes it) |
 | State | `bb status` |
 
 - **Results.** `--json` before the command gives JSON. Exit codes: 0 ok,

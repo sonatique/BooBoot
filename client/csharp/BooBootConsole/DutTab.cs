@@ -32,7 +32,11 @@ public sealed class DutTab
     {
         Width = 8, Height = 8, Stroke = OffBrush, StrokeThickness = 1, VerticalAlignment = VerticalAlignment.Center,
     };
-    readonly TextBlock title = new() { Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    readonly TextBlock title = new()
+    {
+        Margin = new Thickness(6, 0, 0, 0), MaxWidth = 260, TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     readonly TextBlock state = new()
     {
         Margin = new Thickness(6, 0, 0, 0), Opacity = 0.7, MaxWidth = 200, TextTrimming = TextTrimming.CharacterEllipsis,
@@ -88,6 +92,12 @@ public sealed class DutTab
 
     public string Name { get; private set; }
 
+    /// <summary>Free text shown with the name, set on the server. Empty: none.</summary>
+    public string Label { get; private set; } = "";
+
+    /// <summary>The label with the name, or the name.</summary>
+    public string DisplayName => Label != "" ? $"{Label} ({Name})" : Name;
+
     public TerminalBuffer Buffer { get; }
 
     public TerminalView View { get; }
@@ -135,7 +145,7 @@ public sealed class DutTab
     {
         connection,
         alsoAt != "" ? "also at " + alsoAt : "",
-        Name,
+        DisplayName,
         power != "" ? "power " + power : "",
         session != "" ? "session " + session : "",
         $"{Buffer.Count:N0} lines",
@@ -276,6 +286,9 @@ public sealed class DutTab
             case ConsoleSource.Board b:
                 BoardChanged?.Invoke(b.Duts);
                 break;
+            case ConsoleSource.Label l:
+                Label = l.Text;
+                break;
             case ConsoleSource.Session s:
                 session = s.Text;
                 // Only an answer about the current session counts.
@@ -295,10 +308,10 @@ public sealed class DutTab
     void Update()
     {
         dot.Fill = power == "on" ? OnBrush : power == "off" ? OffBrush : Brushes.Transparent;
-        title.Text = Name;
+        title.Text = DisplayName;
         state.Text = InControl ? "in control" : session.StartsWith("used by ") ? session : "";
         mark.IsVisible = NewOutput;
-        ToolTip.SetTip(Header, string.Join(", ", new[] { Name, power != "" ? "power " + power : "", state.Text,
+        ToolTip.SetTip(Header, string.Join(", ", new[] { DisplayName, power != "" ? "power " + power : "", state.Text,
             NewOutput ? "new output" : "" }.Where(p => p != "")));
         Changed?.Invoke();
     }
@@ -345,6 +358,33 @@ public sealed class DutTab
     {
         await old.ReleaseAsync();
         old.Dispose();
+    }
+
+    /// <summary>Sets the label of the DUT, in control. Returns false when it was not set: the status says why.</summary>
+    public async Task<bool> SetLabel(string text)
+    {
+        if (input?.Token == null)
+        {
+            note = "take control to set the label";
+            Update();
+            return false;
+        }
+        try
+        {
+            if (await input.LabelAsync(text) is not string label)
+                return false;
+            (Label, note) = (label, "");
+            return true;
+        }
+        catch (BooBootException e)
+        {
+            note = "label not set: " + e.Message;
+            return false;
+        }
+        finally
+        {
+            Update();
+        }
     }
 
     /// <summary>Switches the DUT power, in control.</summary>

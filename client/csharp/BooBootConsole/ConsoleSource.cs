@@ -44,6 +44,9 @@ public sealed class ConsoleSource : IDisposable
     /// <summary>The names of the DUTs of the board, from the status, when they change.</summary>
     public sealed record Board(IReadOnlyList<string> Duts) : Item;
 
+    /// <summary>The label of the DUT, from the status, when it changes.</summary>
+    public sealed record Label(string Text) : Item;
+
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
     readonly ConcurrentQueue<Item> queue = new();
@@ -166,6 +169,7 @@ public sealed class ConsoleSource : IDisposable
         var last = "";
         var lastAddresses = "";
         var lastDuts = "";
+        string? lastLabel = null;
         while (!token.IsCancellationRequested)
         {
             try
@@ -192,6 +196,9 @@ public sealed class ConsoleSource : IDisposable
                         Post(new Board(names));
                     }
                 }
+                var label = status.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
+                if (label != lastLabel)
+                    Post(new Label(lastLabel = label));
                 var session = status.GetProperty("session");
                 var yours = session.TryGetProperty("yours", out var y) && y.GetBoolean();
                 var gone = session.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.False;

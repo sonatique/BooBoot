@@ -84,6 +84,10 @@ cursor, and follows the output at each key.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
   asks first. Power on also gives the SD card back to the DUT.
+- **Label.** "Set label...", in the menu of the console view or of a tab,
+  sets the label of the DUT: free text shown with its name in the tab, the
+  title and the status bar, here and in the other viewers, like
+  `ZCU102 rev B, bench 3`. It works only in control. Empty removes it.
 - **Release.** "Release control" closes the session. Closing the window also
   does. When no key is sent for the session timeout (300 s by default), the
   session ends and the status bar says so.

@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
+
+from .errors import ApiError, BadRequest
+
+# Longest label, in characters.
+MAX_LABEL = 100
 
 
 class _Named(logging.LoggerAdapter):
@@ -22,7 +28,7 @@ class Unit:
     port: its own port besides /duts/NAME on the port of the board, or None.
     """
 
-    def __init__(self, name, dut=None, sessions=None, scripts=None, prompt="", port=None, error=""):
+    def __init__(self, name, dut=None, sessions=None, scripts=None, prompt="", port=None, error="", label=None):
         self.name = name
         self.dut = dut
         self.sessions = sessions
@@ -30,6 +36,38 @@ class Unit:
         self.prompt = prompt
         self.port = port
         self.error = error
+        self.label = label
+
+
+class Label:
+    """Free text shown with the name of a DUT, like "ZCU102 rev B, bench 3". The name stays its identifier.
+
+    Kept in a file, so that it survives restarts. Until it is set, the label is the one of the configuration.
+    """
+
+    def __init__(self, path, default=""):
+        self.path = path
+        try:
+            with open(path, encoding="utf-8") as f:
+                self.text = f.read().strip()
+        except (OSError, UnicodeDecodeError):
+            self.text = default
+
+    def set(self, text):
+        text = text.strip()
+        if len(text) > MAX_LABEL:
+            raise BadRequest("the label has more than %d characters" % MAX_LABEL)
+        if any(ord(c) < 32 or ord(c) == 127 for c in text):
+            raise BadRequest("the label must be one line of text")
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(text + "\n")
+            os.replace(tmp, self.path)
+        except OSError as e:
+            raise ApiError("cannot keep the label: %s" % e) from e
+        self.text = text
 
 
 def claims(cfg):

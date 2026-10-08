@@ -283,8 +283,23 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     ClickPower();
     await WaitFor(() => (string?)powerButton.Content == "Power off" && powerButton.IsEnabled, "button after power on");
     Check(await PowerState() == "on", "DUT on");
+
+    // The label, set in control, shows with the name.
+    var tab = window.CurrentDut!;
+    window.AskLabel(tab);
+    await WaitFor(() => window.AskingLabel, "label editor");
+    window.AnswerLabel("ZCU102 rev B");
+    await WaitFor(() => tab.Label == "ZCU102 rev B" && window.Title == "ZCU102 rev B (dut1) - BooBoot Console"
+        && window.Status.Contains("ZCU102 rev B (dut1)"), "label shown", () => window.Status);
+    Check((await dut.StatusAsync()).GetProperty("label").GetString() == "ZCU102 rev B", "label on the server");
+    window.AskLabel(tab);
+    window.AnswerLabel("");
+    await WaitFor(() => tab.Label == "" && window.Title == "dut1 - BooBoot Console", "label removed");
+
     await window.ReleaseControl();
     Check(!powerButton.IsEnabled, "power button off without control");
+    Check(!await tab.SetLabel("x") && window.Status.Contains("take control to set the label"),
+        "no label without control");
     Check(!(await dut.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(), "control released");
 
     await dut.OpenSessionAsync("console-check");
@@ -336,6 +351,12 @@ static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
     window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Control | RawInputModifiers.Shift);
     Check(window.CurrentDut == first && window.Status.Contains("dut1    power off"), "Ctrl+Shift+Tab, the previous");
     window.SelectDut(second);
+
+    // A label set by another client shows in the tab.
+    await dut2.SetLabelAsync("bench 3");
+    await WaitFor(() => second.DisplayName == "bench 3 (dut2)", "label of another client", () => second.Status);
+    await dut2.SetLabelAsync("");
+    await WaitFor(() => second.DisplayName == "dut2", "label removed by another client");
 
     // Each DUT has its session.
     await dut2.CloseSessionAsync();
