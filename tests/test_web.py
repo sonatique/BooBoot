@@ -32,6 +32,22 @@ class Browser:
     """Headless Chrome, driven with the DevTools protocol over pipes."""
 
     def __init__(self, chrome):
+        # The first start of Chrome on a machine can be slow, as it builds its caches, or get no answer: one
+        # more start then.
+        for attempt in range(2):
+            self._start(chrome)
+            try:
+                target = self.call("Target.createTarget", url="about:blank")["targetId"]
+                break
+            except AssertionError:
+                self.close()
+                if attempt:
+                    raise
+        self.answer_time = 30
+        self.session = self.call("Target.attachToTarget", targetId=target, flatten=True)["sessionId"]
+        self.call("Page.enable", session=True)
+
+    def _start(self, chrome):
         self.profile = tempfile.mkdtemp()
         cmd_r, self._cmd = os.pipe()
         self._out, out_w = os.pipe()
@@ -46,9 +62,7 @@ class Browser:
         self._buf = b""
         self._id = 0
         self.events = []
-        target = self.call("Target.createTarget", url="about:blank")["targetId"]
-        self.session = self.call("Target.attachToTarget", targetId=target, flatten=True)["sessionId"]
-        self.call("Page.enable", session=True)
+        self.answer_time = 60
 
     def call(self, method, session=False, **params):
         self._id += 1
@@ -57,7 +71,7 @@ class Browser:
             msg["sessionId"] = self.session
         os.write(self._cmd, json.dumps(msg).encode() + b"\0")
         while True:
-            m = self._read(30)
+            m = self._read(self.answer_time)
             if m.get("id") == self._id:
                 if "error" in m:
                     raise AssertionError("%s: %s" % (method, m["error"]))
