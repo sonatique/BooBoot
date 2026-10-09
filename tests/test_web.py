@@ -95,10 +95,19 @@ class Browser:
 
     def wait(self, expression, what, timeout=10):
         deadline = time.monotonic() + timeout
-        while not self.eval(expression):
+        while not self._true(expression):
             if time.monotonic() > deadline:
                 raise AssertionError("timeout: %s; screen: %r" % (what, self.eval("document.body.innerText")[-500:]))
             time.sleep(0.05)
+
+    def _true(self, expression):
+        try:
+            return self.eval(expression)
+        except AssertionError as e:
+            # While the page goes to another address, it has no context to evaluate in for a moment.
+            if "navigated" in str(e) or "context" in str(e).lower():
+                return False
+            raise
 
     def key(self, key, text=None, modifiers=0):
         params = {"key": key, "modifiers": modifiers}
