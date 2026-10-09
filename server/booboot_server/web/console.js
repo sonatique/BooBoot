@@ -12,7 +12,6 @@
   const $ = id => document.getElementById(id);
   const screen = $("screen"), panel = $("panel"), followButton = $("follow"), controlButton = $("control");
   const powerButton = $("power");
-  const labelButton = $("label");
   const BLOCK = 100;  // lines per block of the screen
   const PALETTE = [
     "#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
@@ -24,6 +23,10 @@
   let dutList = "";
   // Free text shown with the name of the DUT.
   let label = "";
+  // The last status, for the DUT panel.
+  let status = null;
+  // What the panel shows: "logs" or "dut".
+  let panelKind = "";
   let follow = true, holding = false, scheduled = false;
   // Control: the session token, and the keys waiting to be sent.
   let token = "", note = "", keys = "", sending = false;
@@ -186,10 +189,10 @@
     // The power button follows the power state, and works only in control.
     powerButton.textContent = power === "on" ? "Power off" : "Power on";
     powerButton.disabled = !token || switching;
-    labelButton.disabled = !token;
     const shown = label ? label + " (" + name + ")" : name;
     $("name").textContent = shown || "BooBoot";
     document.title = shown ? shown + " - BooBoot" : "BooBoot";
+    fillDut();
   }
 
   function setFollow(on) {
@@ -293,7 +296,7 @@
     for (;;) {
       try {
         const t = token;
-        const s = await (await fetch("api/v1/status", { cache: "no-store", headers: auth(t) })).json();
+        const s = status = await (await fetch("api/v1/status", { cache: "no-store", headers: auth(t) })).json();
         session = !s.session.active ? "free" : s.session.yours ? "yours"
           : "used by " + s.session.client + (s.session.alive === false ? " (gone)" : "");
         // Only an answer about the current session counts.
@@ -413,19 +416,89 @@
       : "control ended after the idle time");
   }
 
-  async function setLabel() {
-    const text = prompt(`Label of ${name}, shown with its name, like "ZCU102 rev B, bench 3" (empty: none)`, label);
-    if (text === null)
+  // DUT panel: the DUT on the board, the same for everyone.
+
+  function showDut() {
+    if (!panel.hidden && panelKind === "dut") {
+      panel.hidden = true;
       return;
+    }
+    panelKind = "dut";
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    const field = (label, id, input) => {
+      const name = document.createElement("span");
+      name.textContent = label;
+      const value = document.createElement(input ? "input" : "span");
+      value.id = id;
+      grid.append(name, value);
+      return value;
+    };
+    field("Name", "dut-name", true).readOnly = true;
+    field("Address", "dut-address", true).readOnly = true;
+    const box = field("Label", "dut-label", true);
+    box.placeholder = "like ZCU102 rev B, bench 3";
+    box.maxLength = 100;
+    box.value = label;
+    box.onkeydown = e => {
+      if (e.key === "Enter" && token)
+        setLabel();
+    };
+    const set = document.createElement("button");
+    set.id = "dut-set";
+    set.textContent = "Set label";
+    set.title = "Shown with the name, to everyone. Empty: no label";
+    set.onclick = setLabel;
+    const note = document.createElement("span");
+    note.id = "dut-note";
+    const row = document.createElement("span");
+    row.append(set, " ", note);
+    grid.append(document.createElement("span"), row);
+    for (const [label, id] of [["Console", "dut-console"], ["Power", "dut-power"], ["SD card", "dut-sd"],
+      ["Server", "dut-server"]])
+      field(label, id);
+    panel.replaceChildren(grid);
+    panel.hidden = false;
+    fillDut();
+    if (token)
+      box.focus();
+  }
+
+  // The DUT panel, from the last status. The label box keeps what is typed.
+  function fillDut() {
+    if (panel.hidden || panelKind !== "dut")
+      return;
+    $("dut-name").value = name;
+    $("dut-address").value = location.origin + location.pathname.replace(/\/[^/]*$/, "");
+    $("dut-label").readOnly = !token;
+    $("dut-set").disabled = !token;
+    const note = $("dut-note");
+    if (!token)
+      note.textContent = "Take control to change it";
+    else if (note.textContent === "Take control to change it")
+      note.textContent = "";
+    if (!status)
+      return;
+    const c = status.console || {}, p = status.power || {}, sd = status.sd || {}, net = status.network || {};
+    const withError = (text, e) => e.error ? text + " (" + e.error + ")" : text;
+    $("dut-console").textContent = c.connected === false ? withError(`${c.device} at ${c.baudrate} baud, not connected`, c)
+      : `${c.device} at ${c.baudrate} baud`;
+    $("dut-power").textContent = withError(`${p.backend} relay, ${power}`, p);
+    $("dut-sd").textContent = withError(`on the ${sd.mode} side`, sd);
+    $("dut-server").textContent = `BooBoot ${status.version}` + (net.hostname ? " on " + net.hostname : "")
+      + (net.addresses && net.addresses.length ? " (" + net.addresses.join(", ") + ")" : "");
+  }
+
+  async function setLabel() {
+    const note = $("dut-note");
     try {
-      label = (await api("PUT", "/label", { label: text })).label;
-      note = "";
+      label = (await api("PUT", "/label", { label: $("dut-label").value })).label;
+      note.textContent = label ? "Label set" : "Label removed";
       dutList = "";
     } catch (err) {
       if (err.code === "busy" || err.code === "no_session")
         lost(err);
-      else
-        note = "label not set: " + err.message;
+      note.textContent = "Not set: " + err.message;
     }
     schedule();
   }
@@ -507,10 +580,11 @@
   }
 
   async function showLogs() {
-    if (!panel.hidden) {
+    if (!panel.hidden && panelKind === "logs") {
       panel.hidden = true;
       return;
     }
+    panelKind = "logs";
     panel.textContent = "Loading...";
     panel.hidden = false;
     try {
@@ -559,7 +633,7 @@
   controlButton.onclick = () => (token ? releaseControl() : takeControl());
   $("duts").onchange = e => { location.href = e.target.value; };
   powerButton.onclick = switchPower;
-  labelButton.onclick = setLabel;
+  $("dut").onclick = showDut;
   $("clear").onclick = () => {
     term.clear();
     setFollow(true);
@@ -581,6 +655,14 @@
       screen.scrollTop = screen.scrollHeight;
   });
   document.addEventListener("keydown", e => {
+    // Keys typed in the panel, like a label, stay there.
+    if (panel.contains(e.target)) {
+      if (e.key === "Escape") {
+        panel.hidden = true;
+        screen.focus();
+      }
+      return;
+    }
     if (token) {
       // Page Up and Page Down still scroll the page.
       const data = e.key.startsWith("Page") ? null : T.keyData(e, !getSelection().isCollapsed);
@@ -598,7 +680,7 @@
     }
   });
   document.addEventListener("paste", e => {
-    if (token) {
+    if (token && !panel.contains(e.target)) {
       e.preventDefault();
       type(e.clipboardData.getData("text").replace(/\r?\n/g, "\r"));
     }
@@ -609,7 +691,7 @@
       fetch("api/v1/session", { method: "DELETE", headers: auth(token), keepalive: true });
   });
   document.addEventListener("click", e => {
-    if (!panel.hidden && !panel.contains(e.target) && e.target !== $("logs"))
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== $("logs") && e.target !== $("dut"))
       panel.hidden = true;
   });
 

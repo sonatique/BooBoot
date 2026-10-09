@@ -301,22 +301,37 @@ class WebTest(unittest.TestCase):
         b.wait(power + ".textContent === 'Power off' && !%s.disabled" % power, "button after power on")
         self.assertEqual(power_state(), "on")
 
-        # The label, set in control, shows with the name.
-        label, name = "document.getElementById('label')", "document.getElementById('name').textContent"
-        b.eval("setTimeout(() => %s.click())" % label)
-        self.assertIn("Label of dut1", b.accept_dialog(text="ZCU102 rev B"))
+        # The DUT panel: name, address and details, and the label, set in control, shown with the name.
+        field = "document.getElementById('dut-%s')"
+        name = "document.getElementById('name').textContent"
+        b.eval("document.getElementById('dut').click()")
+        b.wait("%s && %s.textContent.startsWith('BooBoot ')" % (field % "server", field % "server"), "DUT panel")
+        self.assertEqual((b.eval(field % "name" + ".value"), b.eval(field % "address" + ".value")),
+                         ("dut1", self.url))
+        self.assertIn(" baud", b.eval(field % "console" + ".textContent"))
+        self.assertEqual(b.eval(field % "power" + ".textContent"), "fake relay, on")
+        self.assertEqual(b.eval("document.activeElement.id"), "dut-label")
+        # Keys typed in the panel go to the label, not to the DUT.
+        b.type("ZCU102 rev B")
+        b.key("Enter")
         b.wait(name + " === 'ZCU102 rev B (dut1)'", "label shown")
-        self.assertEqual((booboot.Client(self.url).status()["label"], b.eval("document.title")),
-                         ("ZCU102 rev B", "ZCU102 rev B (dut1) - BooBoot"))
-        b.eval("setTimeout(() => %s.click())" % label)
-        b.accept_dialog(text="")
+        self.assertEqual((booboot.Client(self.url).status()["label"], b.eval("document.title"),
+                          b.eval(field % "note" + ".textContent")),
+                         ("ZCU102 rev B", "ZCU102 rev B (dut1) - BooBoot", "Label set"))
+        self.assertNotIn("ZCU102", b.eval(screen))
+        b.eval(field % "label" + ".value = ''; " + field % "set" + ".click()")
         b.wait(name + " === 'dut1'", "label removed")
+        b.key("Escape")
+        b.wait("document.getElementById('panel').hidden", "panel closed")
 
         b.eval("document.getElementById('control').click()")
         b.wait(info + ".includes('session free')", "control released")
         self.assertFalse(self.status()["active"])
         self.assertEqual(b.eval(power + ".disabled"), True)
-        self.assertEqual(b.eval(label + ".disabled"), True)
+        b.eval("document.getElementById('dut').click()")
+        b.wait("%s.disabled && %s.readOnly" % (field % "set", field % "label"), "label locked without control")
+        self.assertEqual(b.eval(field % "note" + ".textContent"), "Take control to change it")
+        b.eval("document.getElementById('dut').click()")
 
         # Leaving the page releases the session.
         b.eval("document.getElementById('control').click()")

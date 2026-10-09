@@ -43,6 +43,17 @@ of each DUT, if it has one.
   (`also at 10.1.2.3:8080`), for where the name does not work, like over a
   VPN ([remote.md](remote.md)).
 
+## DUT panel
+
+The DUT button, next to "Power", shows the DUT on the board, the same for
+everyone: its name and address (to copy), its label, its serial adapter and
+baud rate, its relay and power state, the side of its SD card, and the
+version and addresses of the BooBoot server. The label is free text shown
+with the name here, in BooBoot Console and by `booboot status`, like
+`ZCU102 rev B, bench 3`. In control, "Set label" (or Enter) changes it for
+everyone; empty removes it. Keys typed in the panel stay there, also in
+control. Escape or a click elsewhere closes it.
+
 ## Typing
 
 "Take control" opens the BooBoot session, in the name of the address of the
@@ -72,9 +83,8 @@ While in control, the page sends a heartbeat every 10 s.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
   asks first. Power on also gives the SD card back to the DUT.
-- **Label.** "Label..." sets the label of the DUT, free text shown with its
-  name here, in BooBoot Console and by `booboot status`, like
-  `ZCU102 rev B, bench 3`. It works only in control. Empty removes it.
+- **Label.** The DUT panel sets the label of the DUT, in control: see
+  [DUT panel](#dut-panel).
 - **Release.** "Release control" closes the session. Closing or reloading the
   page also does. When no key is sent for the session timeout (300 s by
   default), the session ends and the status line says so.

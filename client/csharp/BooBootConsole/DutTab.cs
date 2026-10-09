@@ -98,6 +98,15 @@ public sealed class DutTab
     /// <summary>The label with the name, or the name.</summary>
     public string DisplayName => Label != "" ? $"{Label} ({Name})" : Name;
 
+    /// <summary>Details of the DUT and its server, once connected.</summary>
+    public ConsoleSource.Details? Details { get; private set; }
+
+    /// <summary>The address of the DUT, while connected.</summary>
+    public string Url => source?.Url ?? "";
+
+    /// <summary>The last note of the status bar, like why the label was not set.</summary>
+    public string Note => note;
+
     public TerminalBuffer Buffer { get; }
 
     public TerminalView View { get; }
@@ -288,6 +297,9 @@ public sealed class DutTab
                 break;
             case ConsoleSource.Label l:
                 Label = l.Text;
+                break;
+            case ConsoleSource.Details d:
+                Details = d;
                 break;
             case ConsoleSource.Session s:
                 session = s.Text;

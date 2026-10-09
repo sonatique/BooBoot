@@ -200,6 +200,13 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     var second = File.ReadAllLines(secondLog);
     Check(second[0].StartsWith("---- power on ") && second.Contains("U-Boot 2024.01 (fake)")
         && second.Contains("Linux fake 6.6.0-fake #1 SMP armv7l GNU/Linux"), "second log");
+    // The Log menu.
+    var (startLog, stopLog) = (window.LogMenuItems[0], window.LogMenuItems[1]);
+    Check(stopLog.IsEnabled, "stop log enabled while logging");
+    stopLog.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.MenuItem.ClickEvent));
+    Check(window.LogPath == null && !stopLog.IsEnabled, "log stopped from the menu");
+    startLog.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.MenuItem.ClickEvent));
+    Check(window.LogPath != null && window.LogPath != secondLog && stopLog.IsEnabled, "new log from the menu");
 
     var frame = window.CaptureRenderedFrame()!;
     if (screenshot != null)
@@ -284,20 +291,25 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     await WaitFor(() => (string?)powerButton.Content == "Power off" && powerButton.IsEnabled, "button after power on");
     Check(await PowerState() == "on", "DUT on");
 
-    // The label, set in control, shows with the name.
+    // The DUT panel: name, address and details, and the label, set in control, shown with the name.
     var tab = window.CurrentDut!;
-    window.AskLabel(tab);
-    await WaitFor(() => window.AskingLabel, "label editor");
-    window.AnswerLabel("ZCU102 rev B");
+    window.OpenDutPanel();
+    await WaitFor(() => window.DutPanelOpen && window.DutPanelText.Contains("BooBoot "), "DUT panel",
+        () => window.DutPanelText);
+    var panel = window.DutPanelText.Split('\n');
+    Check(panel[0] == "dut1" && panel[1].EndsWith("/duts/dut1") && panel[4].Contains(" baud")
+        && panel[5].EndsWith("relay, on") && window.CanSetLabel, "DUT panel content");
+    await window.SetLabelFromPanel("ZCU102 rev B");
     await WaitFor(() => tab.Label == "ZCU102 rev B" && window.Title == "ZCU102 rev B (dut1) - BooBoot Console"
-        && window.Status.Contains("ZCU102 rev B (dut1)"), "label shown", () => window.Status);
+        && window.Status.Contains("ZCU102 rev B (dut1)") && window.DutPanelText.Contains("\nLabel set\n"),
+        "label shown", () => window.Status);
     Check((await dut.StatusAsync()).GetProperty("label").GetString() == "ZCU102 rev B", "label on the server");
-    window.AskLabel(tab);
-    window.AnswerLabel("");
+    await window.SetLabelFromPanel("");
     await WaitFor(() => tab.Label == "" && window.Title == "dut1 - BooBoot Console", "label removed");
 
     await window.ReleaseControl();
     Check(!powerButton.IsEnabled, "power button off without control");
+    Check(!window.CanSetLabel && window.DutPanelText.Contains("Take control to change it"), "panel without control");
     Check(!await tab.SetLabel("x") && window.Status.Contains("take control to set the label"),
         "no label without control");
     Check(!(await dut.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(), "control released");

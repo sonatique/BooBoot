@@ -26,8 +26,9 @@ To watch with nothing to install, the BooBoot server also has a
 - **Copy and save.** Select with the mouse (double-click: word, triple-click:
   line), copy with Ctrl+C, select all with Ctrl+A. Save writes all the text
   to a file (Ctrl+S). Clear (Ctrl+L) empties the view.
-- **Logs.** "Start new log" writes all output from now on to a new file
-  `PREFIX-YYYYMMDD-HHMMSS.log` in the log folder. The prefix is the DUT name
+- **Logs.** In the Log menu, "Start new log" writes all output from now on to
+  a new file `PREFIX-YYYYMMDD-HHMMSS.log` in the log folder; "Stop log" stops
+  it, and "Open log folder" opens the folder. The prefix is the DUT name
   unless set; with several DUTs, a prefix set is followed by the DUT name.
   Options: start a log when connected, and a new log file at each power on.
   Logs have the text without escape codes, one line per line.
@@ -60,6 +61,23 @@ program remembers it for that board. With the address of one DUT, like
 `http://booboot.local:8080/duts/dut2`, the window shows that DUT only. With
 one DUT on the board, there are no tabs.
 
+## DUT panel
+
+The DUT button, next to "Power", shows the DUT on the board, the same for
+everyone (Settings are those of this program, on this computer):
+
+- its name and its address, like `http://booboot.local:8080/duts/dut1`, to
+  copy for `booboot --dut dut1`, an agent or a colleague,
+- its label: free text shown with its name in the tab, the title and the
+  status bar, here and in the other viewers, like `ZCU102 rev B, bench 3`.
+  In control, "Set label" (or Enter) changes it for everyone; empty removes
+  it,
+- its serial adapter and baud rate, its relay and power state, the side of
+  its SD card, and the version and addresses of the BooBoot server.
+
+With several DUTs, it shows the DUT of the current tab. A right-click on a
+tab, then "DUT...", opens it for that DUT.
+
 ## Typing
 
 "Take control" opens the BooBoot session, in the name of
@@ -84,10 +102,8 @@ cursor, and follows the output at each key.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
   asks first. Power on also gives the SD card back to the DUT.
-- **Label.** "Set label...", in the menu of the console view or of a tab,
-  sets the label of the DUT: free text shown with its name in the tab, the
-  title and the status bar, here and in the other viewers, like
-  `ZCU102 rev B, bench 3`. It works only in control. Empty removes it.
+- **Label.** The DUT panel sets the label of the DUT, in control: see
+  [DUT panel](#dut-panel).
 - **Release.** "Release control" closes the session. Closing the window also
   does. When no key is sent for the session timeout (300 s by default), the
   session ends and the status bar says so.

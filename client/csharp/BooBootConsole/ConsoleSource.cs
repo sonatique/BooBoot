@@ -47,6 +47,9 @@ public sealed class ConsoleSource : IDisposable
     /// <summary>The label of the DUT, from the status, when it changes.</summary>
     public sealed record Label(string Text) : Item;
 
+    /// <summary>Details of the DUT and its server, from the status, when they change.</summary>
+    public sealed record Details(string Console, string Power, string Sd, string Server) : Item;
+
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
     readonly ConcurrentQueue<Item> queue = new();
@@ -164,12 +167,39 @@ public sealed class ConsoleSource : IDisposable
         }
     }
 
+    static Details DetailsOf(JsonElement status)
+    {
+        string Text(JsonElement e, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v)
+            ? v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : v.ValueKind == JsonValueKind.Number ? v.ToString() : ""
+            : "";
+        JsonElement Part(string name) => status.TryGetProperty(name, out var v) ? v : default;
+        string WithError(string text, JsonElement e) => Text(e, "error") is var error and not "" ? $"{text} ({error})" : text;
+
+        var console = Part("console");
+        var baud = Text(console, "baudrate");
+        var consoleText = Text(console, "device") + (baud != "" ? $" at {baud} baud" : "");
+        if (console.ValueKind == JsonValueKind.Object && console.TryGetProperty("connected", out var c)
+            && c.ValueKind == JsonValueKind.False)
+            consoleText = WithError(consoleText + ", not connected", console);
+        var power = Part("power");
+        var sd = Part("sd");
+        var network = Part("network");
+        var addresses = network.ValueKind == JsonValueKind.Object && network.TryGetProperty("addresses", out var a)
+            && a.ValueKind == JsonValueKind.Array ? string.Join(", ", a.EnumerateArray().Select(x => x.GetString())) : "";
+        var host = Text(network, "hostname");
+        var server = $"BooBoot {Text(status, "version")}" + (host != "" ? " on " + host : "")
+            + (addresses != "" ? $" ({addresses})" : "");
+        return new Details(consoleText, WithError($"{Text(power, "backend")} relay", power),
+            WithError($"on the {Text(sd, "mode")} side", sd), server);
+    }
+
     async Task PollAsync(CancellationToken token)
     {
         var last = "";
         var lastAddresses = "";
         var lastDuts = "";
         string? lastLabel = null;
+        Details? lastDetails = null;
         while (!token.IsCancellationRequested)
         {
             try
@@ -199,6 +229,9 @@ public sealed class ConsoleSource : IDisposable
                 var label = status.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
                 if (label != lastLabel)
                     Post(new Label(lastLabel = label));
+                var details = DetailsOf(status);
+                if (details != lastDetails)
+                    Post(lastDetails = details);
                 var session = status.GetProperty("session");
                 var yours = session.TryGetProperty("yours", out var y) && y.GetBoolean();
                 var gone = session.TryGetProperty("alive", out var alive) && alive.ValueKind == JsonValueKind.False;

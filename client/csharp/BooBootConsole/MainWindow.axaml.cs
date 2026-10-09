@@ -41,8 +41,6 @@ public partial class MainWindow : Window
     bool changingTabs;
     // The question before a power off, with its answers, while it shows.
     (Flyout Flyout, Button Yes, Button No)? powerOffQuestion;
-    // The label editor, while it shows.
-    (Flyout Flyout, TextBox Text, Button Set, Button Cancel)? labelQuestion;
 
     public MainWindow() : this(new Settings(), null, false)
     {
@@ -91,8 +89,15 @@ public partial class MainWindow : Window
         ClearButton.Click += OnClear;
         CopyButton.Click += OnCopy;
         SaveButton.Click += OnSave;
-        StartLogButton.Click += (_, _) => current?.StartLog();
-        StopLogButton.Click += (_, _) => current?.StopLog();
+        StartLogItem.Click += (_, _) => current?.StartLog();
+        StopLogItem.Click += (_, _) => current?.StopLog();
+        OpenLogFolderItem.Click += OnOpenFolder;
+        SetLabelButton.Click += async (_, _) => await SetLabelFromPanel();
+        LabelBox.KeyDown += async (_, e) =>
+        {
+            if (e.Key == Key.Enter && SetLabelButton.IsEnabled)
+                await SetLabelFromPanel();
+        };
         BrowseButton.Click += OnBrowse;
         OpenFolderButton.Click += OnOpenFolder;
         ControlButton.Click += async (_, _) =>
@@ -261,7 +266,11 @@ public partial class MainWindow : Window
     {
         var tab = new DutTab(name, settings, SaveSettings);
         tab.View.ContextMenu = ViewMenu();
-        tab.Header.ContextMenu = LabelMenu(() => tab);
+        tab.Header.ContextMenu = DutMenu(() =>
+        {
+            Select(tab, focus: true);
+            OpenDutPanel();
+        });
         tab.Changed += () =>
         {
             if (tab == current)
@@ -317,13 +326,76 @@ public partial class MainWindow : Window
         // The power button follows the power state, and works only in control.
         PowerButton.Content = tab?.PowerState == "on" ? "Power off" : "Power on";
         PowerButton.IsEnabled = tab?.InControl == true && !tab.Switching;
-        foreach (var button in new Control[] { ClearButton, CopyButton, SaveButton, FollowButton, StartLogButton })
+        foreach (var button in new Control[] { DutButton, ClearButton, CopyButton, SaveButton, FollowButton, LogButton })
             button.IsEnabled = tab != null;
         FollowButton.IsChecked = tab?.View.Follow ?? true;
-        StopLogButton.IsEnabled = tab?.LogPath != null;
+        StopLogItem.IsEnabled = tab?.LogPath != null;
         LogText.Text = tab?.LogText ?? "No log";
         ToolTip.SetTip(LogText, tab?.LogPath);
+        ShowDutPanel(false);
     }
+
+    // DUT panel: the DUT on the board, the same for everyone
+
+    void OnDutPanelOpening(object? sender, EventArgs e) => ShowDutPanel(true);
+
+    void OnDutPanelOpened(object? sender, EventArgs e)
+    {
+        if (SetLabelButton.IsEnabled)
+            LabelBox.Focus();
+    }
+
+    /// <summary>Shows the current DUT in the panel. opening: also its label, which is not changed while typed.</summary>
+    void ShowDutPanel(bool opening)
+    {
+        var tab = current;
+        DutNameBox.Text = tab?.Name ?? "";
+        DutAddressBox.Text = tab?.Url ?? "";
+        var inControl = tab?.InControl == true;
+        if (opening)
+        {
+            LabelBox.Text = tab?.Label ?? "";
+            LabelNote.Text = "";
+        }
+        LabelBox.IsReadOnly = !inControl;
+        SetLabelButton.IsEnabled = inControl;
+        if (!inControl)
+            LabelNote.Text = "Take control to change it";
+        else if (LabelNote.Text == "Take control to change it")
+            LabelNote.Text = "";
+        var details = tab?.Details;
+        DutConsoleText.Text = details?.Console ?? "";
+        // The power state of the stream, which is newer than the one of the details.
+        DutPowerText.Text = details == null ? "" : details.Power + (tab!.PowerState != "" ? ", " + tab.PowerState : "");
+        DutSdText.Text = details?.Sd ?? "";
+        DutServerText.Text = details?.Server ?? "";
+    }
+
+    /// <summary>Sets the label of the current DUT to the text of the panel. For tests: with text.</summary>
+    public async Task SetLabelFromPanel(string? text = null)
+    {
+        if (current is not DutTab tab)
+            return;
+        if (text != null)
+            LabelBox.Text = text;
+        var ok = await tab.SetLabel(LabelBox.Text ?? "");
+        LabelNote.Text = !ok ? tab.Note : tab.Label != "" ? "Label set" : "Label removed";
+    }
+
+    public void OpenDutPanel() => DutButton.Flyout?.ShowAt(DutButton);
+
+    /// <summary>True while the DUT panel shows. For tests.</summary>
+    public bool DutPanelOpen => DutButton.Flyout?.IsOpen == true;
+
+    /// <summary>The texts of the DUT panel, one per line. For tests.</summary>
+    public string DutPanelText => string.Join("\n", DutNameBox.Text, DutAddressBox.Text, LabelBox.Text, LabelNote.Text,
+        DutConsoleText.Text, DutPowerText.Text, DutSdText.Text, DutServerText.Text);
+
+    /// <summary>True when the panel can set the label: in control. For tests.</summary>
+    public bool CanSetLabel => SetLabelButton.IsEnabled;
+
+    /// <summary>The items of the Log menu: start, stop, open folder. For tests.</summary>
+    public IReadOnlyList<MenuItem> LogMenuItems => new[] { StartLogItem, StopLogItem, OpenLogFolderItem };
 
     // DUTs of the board
 
@@ -483,82 +555,17 @@ public partial class MainWindow : Window
             menu.Items.Add(item);
         }
         menu.Items.Add(new Separator());
-        AddLabelItem(menu, () => current);
+        menu.Items.Add(DutItem(OpenDutPanel));
         return menu;
     }
 
-    ContextMenu LabelMenu(Func<DutTab?> tab)
-    {
-        var menu = new ContextMenu();
-        AddLabelItem(menu, tab);
-        return menu;
-    }
+    ContextMenu DutMenu(Action open) => new() { Items = { DutItem(open) } };
 
-    /// <summary>Adds "Set label..." to a menu, for the DUT that tab gives. It works only in control.</summary>
-    void AddLabelItem(ContextMenu menu, Func<DutTab?> tab)
+    static MenuItem DutItem(Action open)
     {
-        var item = new MenuItem();
-        item.Click += (_, _) =>
-        {
-            if (tab() is DutTab t)
-                AskLabel(t);
-        };
-        menu.Opening += (_, _) =>
-        {
-            var inControl = tab()?.InControl == true;
-            item.Header = inControl ? "Set label..." : "Set label... (take control first)";
-            item.IsEnabled = inControl;
-        };
-        menu.Items.Add(item);
-    }
-
-    /// <summary>Asks for the label of the DUT: free text shown with its name, kept on the server.</summary>
-    public void AskLabel(DutTab tab)
-    {
-        var text = new TextBox { Text = tab.Label, Width = 320, PlaceholderText = "like ZCU102 rev B, bench 3" };
-        var set = new Button { Content = "Set" };
-        var cancel = new Button { Content = "Cancel" };
-        var flyout = new Flyout
-        {
-            Placement = TabRow.IsVisible ? PlacementMode.BottomEdgeAlignedLeft : PlacementMode.TopEdgeAlignedLeft,
-            Content = new StackPanel
-            {
-                Spacing = 8,
-                Children =
-                {
-                    new TextBlock { Text = $"Label of {tab.Name}, shown with its name (empty: none)" },
-                    text,
-                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { set, cancel } },
-                },
-            },
-        };
-        set.Click += async (_, _) =>
-        {
-            flyout.Hide();
-            await tab.SetLabel(text.Text ?? "");
-        };
-        cancel.Click += (_, _) => flyout.Hide();
-        text.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter)
-                set.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        };
-        labelQuestion = (flyout, text, set, cancel);
-        flyout.ShowAt(TabRow.IsVisible ? tab.Header : StatusText);
-        text.Focus();
-    }
-
-    /// <summary>True while the label editor shows. For tests.</summary>
-    public bool AskingLabel => labelQuestion?.Flyout.IsOpen == true;
-
-    /// <summary>Sets the label in the editor, or cancels with null. For tests.</summary>
-    public void AnswerLabel(string? label)
-    {
-        if (labelQuestion is not var (_, text, set, cancel))
-            return;
-        if (label != null)
-            text.Text = label;
-        (label != null ? set : cancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var item = new MenuItem { Header = "DUT...", };
+        item.Click += (_, _) => open();
+        return item;
     }
 
     void OnClear(object? sender, RoutedEventArgs e) => current?.Clear();

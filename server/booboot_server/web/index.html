@@ -52,6 +52,13 @@
   #panel a { color: #4fc1ff; }
   #panel td { padding: 2px 12px 2px 0; white-space: nowrap; }
   #panel p { margin: 0 0 6px; color: #a0a0a0; }
+  #panel .grid { display: grid; grid-template-columns: auto minmax(14em, 26em); gap: 6px 10px; align-items: center; }
+  #panel .grid > span:nth-child(odd) { color: #a0a0a0; }
+  #panel input {
+    background: #3c3c3c; color: #cccccc; border: 1px solid #555555; border-radius: 2px;
+    padding: 3px 5px; font: inherit; width: 100%; box-sizing: border-box;
+  }
+  #panel input[readonly] { background: #2d2d2d; }
   /* Narrow screens: the state on its own line, under the buttons. */
   @media (max-width: 700px) { #info { order: 1; flex-basis: 100%; } }
 </style>
@@ -60,10 +67,10 @@
 <header>
   <span id="name">BooBoot</span>
   <select id="duts" title="Go to another DUT of this board" hidden></select>
-  <button id="label" title="Set the label of this DUT, shown with its name, while in control" disabled>Label...</button>
   <span id="info">Connecting...</span>
   <button id="control" title="Open the session, to type into the console">Take control</button>
   <button id="power" title="Switch the DUT power on or off, while in control" disabled>Power on</button>
+  <button id="dut" title="The DUT on the board, the same for everyone: its label, address and details">DUT</button>
   <button id="follow" class="on" title="Show new output as it comes (End)">Follow</button>
   <button id="clear" title="Clear the view">Clear</button>
   <button id="save" title="Save all the text to a file">Save</button>
