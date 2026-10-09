@@ -95,7 +95,7 @@ jobs:
       - run: python client/booboot.py --help
 
   csharp:
-    # C# client and BooBoot Console against a server with a fake board of two DUTs.
+    # C# client and BooBoot Console against a server with a fake board of three DUTs, one with a console only.
     runs-on: ubuntu-latest
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
@@ -111,7 +111,7 @@ jobs:
       - name: Start the server with a fake board
         run: |
           cd server
-          nohup python3 -m booboot_server --fake --duts dut1,dut2 -c ../tests/fake.ini --host 127.0.0.1 --port 8080 \
+          nohup python3 -m booboot_server --fake --config-dir ../tests/fake-board --host 127.0.0.1 --port 8080 \
             > ../server.log 2>&1 &
           for i in $(seq 20); do
             curl -sf http://127.0.0.1:8080/api/v1/status > /dev/null && exit 0

@@ -73,7 +73,9 @@ class Label:
 def claims(cfg):
     """The hardware that the configuration of a DUT uses, which two DUTs cannot share."""
     serial = cfg.get("sdmux", "serial")
-    found = {"USB-SD-Mux " + (serial or "(the only one: set serial in [sdmux])")}
+    found = set()
+    if serial != "none":
+        found.add("USB-SD-Mux " + (serial or "(the only one: set serial in [sdmux])"))
     power, console = cfg["power"], cfg["console"]
     if power.get("backend") == "gpio":
         chip = power.get("chip")

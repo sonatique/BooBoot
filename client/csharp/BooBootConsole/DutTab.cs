@@ -127,6 +127,11 @@ public sealed class DutTab
     /// <summary>"on", "off", or "" when not known.</summary>
     public string PowerState => power;
 
+    /// <summary>The DUT has a relay, or is not known yet. Without one, the power state is only recorded.</summary>
+    public bool HasRelay => Details?.Relay != false;
+
+    string PowerText => power != "" && HasRelay ? "power " + power : "";
+
     /// <summary>True while a power switch runs.</summary>
     public bool Switching => switching;
 
@@ -155,7 +160,7 @@ public sealed class DutTab
         connection,
         alsoAt != "" ? "also at " + alsoAt : "",
         DisplayName,
-        power != "" ? "power " + power : "",
+        PowerText,
         session != "" ? "session " + session : "",
         $"{Buffer.Count:N0} lines",
         InControl ? (note != "" ? "in control, " + note : "in control") : note,
@@ -319,11 +324,11 @@ public sealed class DutTab
     /// <summary>Updates the tab, and tells the window.</summary>
     void Update()
     {
-        dot.Fill = power == "on" ? OnBrush : power == "off" ? OffBrush : Brushes.Transparent;
+        dot.Fill = !HasRelay ? Brushes.Transparent : power == "on" ? OnBrush : power == "off" ? OffBrush : Brushes.Transparent;
         title.Text = DisplayName;
         state.Text = InControl ? "in control" : session.StartsWith("used by ") ? session : "";
         mark.IsVisible = NewOutput;
-        ToolTip.SetTip(Header, string.Join(", ", new[] { DisplayName, power != "" ? "power " + power : "", state.Text,
+        ToolTip.SetTip(Header, string.Join(", ", new[] { DisplayName, PowerText, state.Text,
             NewOutput ? "new output" : "" }.Where(p => p != "")));
         Changed?.Invoke();
     }

@@ -1,5 +1,5 @@
-// Checks all calls of BooBootClient against a server with a fake board, scripts on, best with two DUTs:
-//   cd server && python3 -m booboot_server --fake --duts dut1,dut2 --port 8080 -c ../tests/fake.ini
+// Checks all calls of BooBootClient against a server with a fake board, scripts on, best with several DUTs:
+//   cd server && python3 -m booboot_server --fake --config-dir ../tests/fake-board --port 8080
 //   dotnet run --project client/csharp/Check -- http://127.0.0.1:8080
 
 using System.Globalization;
@@ -74,8 +74,14 @@ if (duts.Count > 1)
 {
     using var second = new BooBootClient(BooBootClient.DutUrl(url, lastDut));
     await second.OpenSessionAsync("other");
-    Check((await second.StatusAsync()).GetProperty("session").GetProperty("yours").GetBoolean(),
-        "each DUT has its own session");
+    var status = await second.StatusAsync();
+    Check(status.GetProperty("session").GetProperty("yours").GetBoolean(), "each DUT has its own session");
+    // A DUT without USB-SD-Mux, like dut3 of the fake board of the tests.
+    if (!status.GetProperty("hardware").EnumerateArray().Any(p => p.GetString() == "sd"))
+    {
+        var missing = await Fails(() => second.ListDirAsync("1:/"));
+        Check(missing.Status == 503 && missing.Code == "no_sdmux", "no USB-SD-Mux");
+    }
     await second.CloseSessionAsync();
 }
 

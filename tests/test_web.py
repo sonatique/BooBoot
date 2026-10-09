@@ -356,12 +356,14 @@ class WebTest(unittest.TestCase):
 
 
 class DutsWebTest(unittest.TestCase):
-    """The page of the board, and the list of the DUTs on the page of each DUT."""
+    """The page of the board, and the list of the DUTs on the page of each DUT. dut2 has only a console."""
 
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
-        cls.server, cls.dut, cls.url = common.start_fake_server(os.path.join(cls.tmp, "fake"), duts=["dut1", "dut2"])
+        settings = {"dut2": {"power": {"backend": "none"}, "sdmux": {"serial": "none"}}}
+        cls.server, cls.dut, cls.url = common.start_fake_server(os.path.join(cls.tmp, "fake"), duts=["dut1", "dut2"],
+                                                                settings=settings)
 
     @classmethod
     def tearDownClass(cls):
@@ -382,15 +384,27 @@ class DutsWebTest(unittest.TestCase):
         b.call("Page.navigate", session=True, url=self.url + "/")
         b.wait("document.querySelectorAll('#duts tr').length === 2", "list of the DUTs")
         rows = b.eval("[...document.querySelectorAll('#duts tr')].map(r => r.innerText.split('\\t').join(' '))")
-        self.assertEqual(rows, ["dut1  off free ", "dut2 bench 3 off used by test "])
+        self.assertEqual(rows, ["dut1  off free ", "dut2 bench 3 no relay used by test "])
         b.call("Page.navigate", session=True, url=self.url + "/duts/dut2/")
         select = "document.getElementById('duts')"
         b.wait("!%s.hidden && %s.value.endsWith('/duts/dut2/')" % (select, select), "list on the page of dut2")
         self.assertEqual(b.eval("[...%s.options].map(o => o.text)" % select), ["dut1", "bench 3 (dut2)"])
         self.assertEqual(b.eval("document.getElementById('name').hidden"), True)
+        # No relay: no power button, and the DUT panel says what is missing.
+        b.wait("document.getElementById('info').textContent.includes('Connected')", "dut2 connected")
+        self.assertEqual(b.eval("document.getElementById('power').hidden"), True)
+        self.assertNotIn("power", b.eval("document.getElementById('info').textContent"))
+        field = "document.getElementById('dut-%s').textContent"
+        b.eval("document.getElementById('dut').click()")
+        b.wait((field % "server") + ".startsWith('BooBoot ')", "DUT panel")
+        self.assertEqual((b.eval(field % "power"), b.eval(field % "sd")), ("no relay", "no USB-SD-Mux"))
+        self.assertIn(" baud", b.eval(field % "console"))
+        b.eval("document.getElementById('dut').click()")
         b.eval("%s.value = '/duts/dut1/'; %s.dispatchEvent(new Event('change'))" % (select, select))
         b.wait("location.pathname === '/duts/dut1/' && %s.value.endsWith('/duts/dut1/')" % select, "page of dut1")
         b.wait("document.getElementById('info').textContent.includes('Connected')", "dut1 connected")
+        b.wait("document.getElementById('info').textContent.includes('power off')", "power state of dut1")
+        self.assertEqual(b.eval("document.getElementById('power').hidden"), False)
 
 
 if __name__ == "__main__":

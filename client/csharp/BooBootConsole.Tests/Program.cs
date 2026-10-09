@@ -1,6 +1,7 @@
 // Checks of BooBoot Console. Without argument: the terminal buffer only.
-// With a server URL: also the window, headless, against a server with a fake board, best with two DUTs:
-//   cd server && python3 -m booboot_server --fake --duts dut1,dut2 --port 8080
+// With a server URL: also the window, headless, against a server with a fake board, best the one of the tests,
+// with three DUTs, dut3 having a console only:
+//   cd server && python3 -m booboot_server --fake --config-dir ../tests/fake-board --port 8080
 //   dotnet run --project client/csharp/BooBootConsole.Tests -- http://127.0.0.1:8080 [screenshot.png]
 
 using System.Text.Json;
@@ -328,19 +329,38 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
         "session released with the window");
 }
 
-// A board with two DUTs: a tab for each.
+// A board with several DUTs: a tab for each.
 static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
 {
     var settings = new Settings { LogFolder = tmp, LogPrefix = "lab", LogOnConnect = true };
     var window = new MainWindow(settings, url, persist: false) { Width = 1180, Height = 540 };
     created(window);
     window.Show();
-    await WaitFor(() => window.Duts.Count == 2 && window.Duts.All(d => d.Status.Contains("Connected")),
+    using var board = new BooBootClient(url);
+    var names = (await board.StatusAsync()).GetProperty("duts").EnumerateArray().Select(d => d.GetString()!).ToList();
+    await WaitFor(() => window.Duts.Count == names.Count && window.Duts.All(d => d.Status.Contains("Connected")),
         "a tab for each DUT", () => window.Status);
     var (first, second) = (window.Duts[0], window.Duts[1]);
     Check(first.Name == "dut1" && second.Name == "dut2" && window.CurrentDut == first && window.TabsShown
         && window.Title == "dut1 - BooBoot Console", "tabs, the first DUT shown");
     Check(Path.GetFileName(second.LogPath)!.StartsWith("lab-dut2-"), "log file with the prefix and the DUT name");
+
+    // A DUT without relay, like dut3 of the fake board of the tests: no power button, no power state.
+    if (window.Duts.FirstOrDefault(d => d.Name == "dut3") is DutTab third)
+    {
+        await WaitFor(() => third.Details != null, "details of dut3");
+        window.SelectDut(third);
+        Check(!third.HasRelay && !window.Power.IsVisible && !window.Status.Contains("power "), "no power button");
+        window.OpenDutPanel();
+        await WaitFor(() => window.DutPanelOpen && window.DutPanelText.Contains("BooBoot "), "DUT panel of dut3");
+        var panel = window.DutPanelText.Split('\n');
+        Check(panel[4].Contains(" baud") && panel[5] == "no relay" && panel[6] == "no USB-SD-Mux",
+            "DUT panel says what is missing");
+        window.CloseDutPanel();
+        await WaitFor(() => !window.DutPanelOpen, "DUT panel closed");
+        window.SelectDut(first);
+        Check(window.Power.IsVisible, "power button of dut1");
+    }
 
     // Output of the other DUT marks its tab.
     var bootFile = Path.Combine(tmp, "BOOT.BIN");
@@ -384,10 +404,12 @@ static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
 
     // A hidden DUT is released, and stays hidden for the board.
     window.ShowDut("dut2", false);
-    Check(window.Duts.Count == 1 && window.CurrentDut == first && window.TabsShown
+    Check(window.Duts.Count == names.Count - 1 && window.CurrentDut == first && window.TabsShown
         && settings.HiddenDuts[url].SequenceEqual(new[] { "dut2" }), "DUT hidden, the tabs still shown");
     await WaitForAsync(async () => !(await dut2.StatusAsync()).GetProperty("session").GetProperty("active").GetBoolean(),
         "session of a hidden DUT released");
+    foreach (var name in names.Skip(2))
+        window.ShowDut(name, false);
     window.ShowDut("dut1", false);
     Check(window.Duts.Count == 1 && window.CurrentDut == first, "one DUT at least stays shown");
     var again = new MainWindow(settings, url, persist: false) { Width = 800, Height = 300 };
@@ -396,8 +418,10 @@ static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
     await WaitFor(() => again.Duts.Count == 1 && again.Status.Contains("Connected"), "window after a DUT was hidden");
     Check(again.CurrentDut!.Name == "dut1" && again.TabsShown, "hidden DUT remembered");
     again.Close();
-    window.ShowDut("dut2", true);
-    await WaitFor(() => window.Duts.Count == 2 && window.Duts[1].Status.Contains("Connected"), "DUT shown again");
+    foreach (var name in names.Skip(1))
+        window.ShowDut(name, true);
+    await WaitFor(() => window.Duts.Count == names.Count && window.Duts.All(d => d.Status.Contains("Connected")),
+        "DUTs shown again");
     Check(!settings.HiddenDuts.ContainsKey(url), "nothing hidden");
 
     // The address of one DUT shows that DUT only.

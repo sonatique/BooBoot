@@ -25,6 +25,7 @@ BOOT_LOG = [
 
 class FakePower(NoPower):
     name = "fake"
+    present = True
 
 
 class FakeMux:

@@ -18,7 +18,7 @@ from .console import Console, NoPort, SerialPort, find_serial_ports
 from .dut import Dut
 from .power import CommandPower, GpioPower, NoPower, SdmuxGpioPower
 from .scripts import Scripts
-from .sdmux import UsbSdMux, find_muxes
+from .sdmux import NoMux, UsbSdMux, find_muxes
 from .session import Sessions
 from .storage import Storage
 
@@ -31,6 +31,8 @@ def make_power(p, mux):
     if backend == "gpio":
         return GpioPower(p.get("line"), p.get("chip"), active_low)
     if backend == "sdmux":
+        if not getattr(mux, "present", True):
+            raise ValueError("the power backend sdmux needs a USB-SD-Mux, and [sdmux] serial is none")
         return SdmuxGpioPower(mux, p.getint("sdmux_gpio"), active_low)
     if backend == "command":
         return CommandPower(p.get("on_command"), p.get("off_command"))
@@ -54,8 +56,17 @@ def build(cfg, fake_dir=None, own_port=None):
         log_dir = os.path.join(fake_dir, "log")
         state_dir = os.path.join(fake_dir, "state")
         scripts_dir = os.path.join(fake_dir, "scripts")
+        # The simulated board leaves out the parts that the configuration leaves out. Without a relay, it
+        # still boots when marked on, as if switched by hand.
+        if p.get("backend") == "none":
+            power = NoPower(power.set)
+        if cfg.get("sdmux", "serial") == "none":
+            mux = NoMux()
+        if c.get("device") == "none":
+            port = NoPort()
     else:
-        mux = UsbSdMux(cfg.get("sdmux", "serial"))
+        serial = cfg.get("sdmux", "serial")
+        mux = NoMux() if serial == "none" else UsbSdMux(serial)
         storage = Storage(mux.block_device, os.path.join(run_dir, "mnt"))
         power = make_power(p, mux)
         device = c.get("device")

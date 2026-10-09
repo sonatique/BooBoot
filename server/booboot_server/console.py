@@ -130,6 +130,7 @@ class NoPort:
     """No serial port configured."""
 
     device = "none"
+    present = False
     path = ""
     baudrate = 0
 
@@ -395,7 +396,12 @@ class Console:
             i = start - self._base
             return start, bytes(self._buf[i:i + max_bytes])
 
+    def _require_port(self):
+        if not getattr(self.port, "present", True):
+            raise Unavailable("this DUT has no serial console ([console] device = none)", code="no_console")
+
     def write(self, data):
+        self._require_port()
         if not self.connected:
             raise Unavailable("console not connected: %s" % self.error)
         with self._write_lock:
@@ -493,6 +499,7 @@ class Console:
         switch that the output may follow, like the power on of the boot that
         since is in. Without it, a switch during the wait raises.
         """
+        self._require_port()
         deadline = time.monotonic() + timeout
         with self._cond:
             since = min(since, self.end)

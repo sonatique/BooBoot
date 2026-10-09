@@ -62,7 +62,10 @@
         cell(row, "not running: " + d.error, "error").colSpan = 3;
         continue;
       }
-      cell(row, d.power, d.power === "on" ? "on" : "");
+      if (d.hardware && !d.hardware.includes("power"))
+        cell(row, "no relay");
+      else
+        cell(row, d.power, d.power === "on" ? "on" : "");
       cell(row, session(d.session));
       cell(row, d.script ? d.script.name + " (" + d.script.id + ")" : "");
     }

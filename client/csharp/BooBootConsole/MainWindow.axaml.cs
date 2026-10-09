@@ -324,6 +324,7 @@ public partial class MainWindow : Window
         ControlButton.Content = tab?.InControl == true ? "Release control" : "Take control";
         ControlButton.Classes.Set("accent", tab?.InControl == true);
         // The power button follows the power state, and works only in control.
+        PowerButton.IsVisible = tab?.HasRelay != false;
         PowerButton.Content = tab?.PowerState == "on" ? "Power off" : "Power on";
         PowerButton.IsEnabled = tab?.InControl == true && !tab.Switching;
         foreach (var button in new Control[] { DutButton, ClearButton, CopyButton, SaveButton, FollowButton, LogButton })
@@ -366,7 +367,7 @@ public partial class MainWindow : Window
         var details = tab?.Details;
         DutConsoleText.Text = details?.Console ?? "";
         // The power state of the stream, which is newer than the one of the details.
-        DutPowerText.Text = details == null ? "" : details.Power + (tab!.PowerState != "" ? ", " + tab.PowerState : "");
+        DutPowerText.Text = details == null ? "" : details.Power + (details.Relay && tab!.PowerState != "" ? ", " + tab.PowerState : "");
         DutSdText.Text = details?.Sd ?? "";
         DutServerText.Text = details?.Server ?? "";
     }
@@ -383,6 +384,8 @@ public partial class MainWindow : Window
     }
 
     public void OpenDutPanel() => DutButton.Flyout?.ShowAt(DutButton);
+
+    public void CloseDutPanel() => DutButton.Flyout?.Hide();
 
     /// <summary>True while the DUT panel shows. For tests.</summary>
     public bool DutPanelOpen => DutButton.Flyout?.IsOpen == true;

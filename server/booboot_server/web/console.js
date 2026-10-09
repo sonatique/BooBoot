@@ -25,6 +25,8 @@
   let label = "";
   // The last status, for the DUT panel.
   let status = null;
+  // The parts of the DUT. A server older than this list has them all.
+  let hardware = ["power", "sd", "console"];
   // What the panel shows: "logs" or "dut".
   let panelKind = "";
   let follow = true, holding = false, scheduled = false;
@@ -183,10 +185,13 @@
   }
 
   function showInfo() {
-    const parts = [connection, address && "also at " + address, power && "power " + power, session && "session " + session,
-      term.lines.length.toLocaleString("en") + " lines", token ? (note ? "in control, " + note : "in control") : note];
+    const relay = hardware.includes("power");
+    const parts = [connection, address && "also at " + address, relay && power && "power " + power,
+      session && "session " + session, term.lines.length.toLocaleString("en") + " lines",
+      token ? (note ? "in control, " + note : "in control") : note];
     $("info").textContent = parts.filter(Boolean).join("   ");
     // The power button follows the power state, and works only in control.
+    powerButton.hidden = !relay;
     powerButton.textContent = power === "on" ? "Power off" : "Power on";
     powerButton.disabled = !token || switching;
     const shown = label ? label + " (" + name + ")" : name;
@@ -304,6 +309,7 @@
           setControl("", s.session.active ? "control lost: the DUT is used by " + s.session.client
             : "control ended after the idle time");
         power = s.power.state;
+        hardware = s.hardware || hardware;
         name = s.name;
         label = s.label || "";
         if (s.duts) {
@@ -481,10 +487,11 @@
       return;
     const c = status.console || {}, p = status.power || {}, sd = status.sd || {}, net = status.network || {};
     const withError = (text, e) => e.error ? text + " (" + e.error + ")" : text;
-    $("dut-console").textContent = c.connected === false ? withError(`${c.device} at ${c.baudrate} baud, not connected`, c)
-      : `${c.device} at ${c.baudrate} baud`;
-    $("dut-power").textContent = withError(`${p.backend} relay, ${power}`, p);
-    $("dut-sd").textContent = withError(`on the ${sd.mode} side`, sd);
+    $("dut-console").textContent = !hardware.includes("console") ? "no serial console"
+      : c.connected === false ? withError(`${c.device} at ${c.baudrate} baud, not connected`, c)
+        : `${c.device} at ${c.baudrate} baud`;
+    $("dut-power").textContent = hardware.includes("power") ? withError(`${p.backend} relay, ${power}`, p) : "no relay";
+    $("dut-sd").textContent = hardware.includes("sd") ? withError(`on the ${sd.mode} side`, sd) : "no USB-SD-Mux";
     $("dut-server").textContent = `BooBoot ${status.version}` + (net.hostname ? " on " + net.hostname : "")
       + (net.addresses && net.addresses.length ? " (" + net.addresses.join(", ") + ")" : "");
   }

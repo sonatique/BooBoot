@@ -19,6 +19,7 @@ from booboot_server.__main__ import build_units
 from booboot_server.api import Server
 from booboot_server.board import Label
 from booboot_server.errors import BadRequest
+from test_mcp import Mcp
 
 
 def free_port():
@@ -166,6 +167,127 @@ class DutsTest(unittest.TestCase):
         self.assertTrue(units[1].scripts.url.endswith(":%d/duts/dut2" % self.server.server_address[1]))
 
 
+class PartsTest(unittest.TestCase):
+    """DUTs without a relay, a USB-SD-Mux or a serial console, in any combination."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        parts = {"full": ("gpio", "", "auto"), "console": ("none", "none", "auto"),
+                 "relay": ("gpio", "none", "none"), "sd": ("none", "", "none")}
+        duts = []
+        for name, (backend, serial, device) in parts.items():
+            cfg = config.load(None)
+            cfg["server"]["name"] = name
+            cfg["power"]["backend"] = backend
+            cfg["sdmux"]["serial"] = serial
+            cfg["console"]["device"] = device
+            duts.append((name, cfg, None, ""))
+        cls.units = build_units(duts, cls.tmp)
+        cls.server = Server(("127.0.0.1", 0), cls.units)
+        for u in cls.units:
+            u.dut.start()
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.url = "http://127.0.0.1:%d/duts/" % cls.server.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        common.stop_server(cls.server)
+        shutil.rmtree(cls.tmp)
+
+    def client(self, name):
+        c = booboot.Client(self.url + name)
+        c.open_session("parts")
+        self.addCleanup(c.close_session)
+        return c
+
+    def assertError(self, code, call, *args):
+        with self.assertRaises(booboot.Error) as e:
+            call(*args)
+        self.assertEqual((e.exception.status, e.exception.code), (503, code))
+        return e.exception.message
+
+    def test_hardware(self):
+        c = booboot.Client(self.url + "full")
+        self.assertEqual({d["name"]: d["hardware"] for d in c.duts()["duts"]},
+                         {"full": ["power", "sd", "console"], "console": ["console"], "relay": ["power"],
+                          "sd": ["sd"]})
+        status = booboot.Client(self.url + "console").status()
+        self.assertEqual((status["hardware"], status["power"]["backend"], status["sd"]["mode"]),
+                         (["console"], "none", "none"))
+        self.assertEqual(booboot.Client(self.url + "relay").status()["console"]["connected"], False)
+
+    def test_console_only(self):
+        c = self.client("console")
+        os.makedirs(os.path.join(self.tmp, "console", "card", "p1"), exist_ok=True)
+        with open(os.path.join(self.tmp, "console", "card", "p1", "BOOT.BIN"), "w") as f:
+            f.write("boot")
+        message = self.assertError("no_sdmux", c.sd_mode, "host")
+        self.assertEqual(message, "this DUT has no USB-SD-Mux ([sdmux] serial = none)")
+        self.assertError("no_sdmux", c.partitions)
+        # Power on only records the state: here the simulated DUT boots, as if switched by hand.
+        self.addCleanup(c.power_off)
+        self.assertEqual(c.power_on()["power"], "on")
+        self.assertError("no_sdmux", c.list_dir, "1:/")  # not that the power is on
+        self.assertTrue(c.expect("login:", since="boot", timeout=10)["matched"])
+        self.assertEqual(c.status()["sd"]["mode"], "none")
+
+    def test_relay_only(self):
+        c = self.client("relay")
+        message = self.assertError("no_console", c.write, "root", True)
+        self.assertEqual(message, "this DUT has no serial console ([console] device = none)")
+        self.assertError("no_console", c.expect, "login:")
+        self.assertError("no_sdmux", c.sd_mode, "dut")
+        self.addCleanup(c.power_off)
+        self.assertEqual(c.power_cycle(0)["power"], "on")
+
+    def test_command_line(self):
+        board = self.url[:-len("/duts/")]
+        env = dict(os.environ, BOOBOOT_URL=board, XDG_CACHE_HOME=self.tmp, LOCALAPPDATA="")
+        env.pop("BOOBOOT_DUT", None)
+
+        def cli(*args, code=0):
+            p = subprocess.run([sys.executable, common.CLIENT] + list(args), env=env, capture_output=True,
+                               text=True, timeout=60)
+            self.assertEqual(p.returncode, code, p.stderr)
+            return p.stdout, p.stderr
+
+        for name in ("console", "relay"):
+            self.addCleanup(cli, "--dut", name, "session", "close")
+        out = cli("--dut", "console", "status")[0]
+        self.assertIn("\npower:   off, only recorded: no relay\nsd card: no USB-SD-Mux\nconsole: ", out)
+        self.assertIn("\nconsole: no serial console\n", cli("--dut", "relay", "status")[0])
+        self.assertIn(" power off, free, no relay, no USB-SD-Mux\n", cli("duts")[0])
+        # Nothing is switched when a part is missing.
+        switches = booboot.Client(self.url + "console").status()["console"]["switches"]
+        err = cli("--dut", "console", "deploy", "--expect", "login:", __file__, code=1)[1]
+        self.assertEqual(err, "booboot: console has no relay and no USB-SD-Mux, which deploy needs\n")
+        self.assertEqual(booboot.Client(self.url + "console").status()["console"]["switches"], switches)
+        err = cli("--dut", "relay", "boottime", "login:", code=1)[1]
+        self.assertEqual(err, "booboot: relay has no serial console, which boottime needs\n")
+        out, err = cli("--dut", "console", "power", "off")
+        self.assertEqual((out, err), ("power off\n", "booboot: console has no relay: the power state is only "
+                                                     "recorded; switch the DUT by hand\n"))
+
+    def test_mcp(self):
+        mcp = Mcp(self.url[:-len("/duts/")], "--dut", "console", "--name", "parts-mcp")
+        self.addCleanup(mcp.close)
+        mcp.start()
+        error, text = mcp.tool("deploy", files=[__file__], expect="login:")
+        self.assertTrue(error)
+        self.assertIn("console has no relay and no USB-SD-Mux, which deploy needs", text)
+        error, text = mcp.tool("power", action="off")
+        self.assertEqual((error, text), (False, "Power off. Note: console has no relay: the power state is only "
+                                                "recorded; switch the DUT by hand."))
+        self.assertIn("\nsd card: no USB-SD-Mux\n", mcp.tool("status")[1])
+
+    def test_sd_only(self):
+        c = self.client("sd")
+        self.assertEqual(c.sd_mode("host")["mode"], "host")
+        self.assertEqual(c.sd_mode("dut")["mode"], "dut")
+        self.assertError("no_console", c.run, "uname -a")
+
+
 class ConfigTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -186,7 +308,8 @@ class ConfigTest(unittest.TestCase):
     def test_conflicts(self):
         units = build_units([self.cfg("a", "m1", "/dev/ttyBOOBOOT1"), self.cfg("b", "m2", "/dev/ttyBOOBOOT1"),
                              self.cfg("c", "m1", "none"), self.cfg("a", "m3", "none"),
-                             self.cfg("d", "m4", "none"), self.cfg("e", "", "auto"), self.cfg("f", "", "none")])
+                             self.cfg("d", "m4", "none"), self.cfg("e", "", "auto"), self.cfg("f", "", "none"),
+                             self.cfg("g", "none", "none"), self.cfg("h", "none", "none")])
         for u in units:
             if u.dut:
                 self.addCleanup(u.dut.console.stop)
@@ -196,7 +319,14 @@ class ConfigTest(unittest.TestCase):
             "c": "uses the same USB-SD-Mux m1 as a: each DUT needs its own",
             "a": "another DUT has the same name",
             "f": "uses the same USB-SD-Mux (the only one: set serial in [sdmux]) as e: each DUT needs its own"})
-        self.assertEqual([u.name for u in units if not u.error], ["a", "d", "e"])
+        self.assertEqual([u.name for u in units if not u.error], ["a", "d", "e", "g", "h"])
+        self.assertEqual(units[-1].dut.hardware, [])
+
+    def test_sdmux_power_without_mux(self):
+        name, cfg, port, error = self.cfg("a", "none", "none")
+        cfg["power"]["backend"] = "sdmux"
+        self.assertEqual(build_units([(name, cfg, port, error)])[0].error,
+                         "the power backend sdmux needs a USB-SD-Mux, and [sdmux] serial is none")
 
     def test_label_file(self):
         path = os.path.join(self.tmp, "state", "label")

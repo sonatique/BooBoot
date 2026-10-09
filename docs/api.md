@@ -35,6 +35,7 @@ the base URL of a DUT.
 | 423 | `busy` | Another client has the session (`session` says who, and when it expires) |
 | 500 | `hardware_error` | Relay, mux, card or serial port problem |
 | 503 | `unavailable` | Hardware missing or not configured |
+| 503 | `no_sdmux`, `no_console` | The DUT has no USB-SD-Mux, or no serial console (`none` in its configuration) |
 | 503 | `scripts_off` | Scripts are off on this unit |
 | 503 | `dut_unavailable` | The DUT could not start, like with hardware of another DUT (`message` says why) |
 
@@ -58,7 +59,8 @@ same at the base URL of each DUT.
 ```json
 {
   "duts": [
-    {"name": "dut1", "url": "/duts/dut1", "label": "ZCU102 rev B", "power": "on", "console": true, "operation": null,
+    {"name": "dut1", "url": "/duts/dut1", "label": "ZCU102 rev B", "hardware": ["power", "sd", "console"],
+     "power": "on", "console": true, "operation": null,
      "session": {"active": true, "client": "me@desk", "...": "..."}, "script": null},
     {"name": "dut2", "url": "/duts/dut2",
      "error": "uses the same USB-SD-Mux m1 as dut1: each DUT needs its own"}
@@ -66,7 +68,7 @@ same at the base URL of each DUT.
 }
 ```
 
-`url`: the path of the DUT on the board. `session` and `script`: as in
+`url`: the path of the DUT on the board. `hardware`, `session` and `script`: as in
 `GET /status`. `error`: the DUT could not start. Its calls then answer 503
 `dut_unavailable`, saying why, and the other DUTs work.
 
@@ -86,6 +88,7 @@ No session needed.
   "console": {"connected": true, "device": "/dev/serial/by-id/...", "baudrate": 921600,
               "cursor": 5120, "boot": 1024, "last": 4800, "switches": 7, "written": 37, "error": ""},
   "operation": null,
+  "hardware": ["power", "sd", "console"],
   "session": {"active": true, "client": "me@desk", "opened": "2026-09-26T10:00:00",
               "timeout": 300, "idle": 12.5, "expires_in": 287.5, "alive": true,
               "heartbeat_age": 4.2, "yours": false},
@@ -101,8 +104,13 @@ gone. `null` for clients that send none, like `booboot` commands.
 `session.script`: name of the script that runs in the session, or `null`;
 `alive` is then `true`. `script`: the running script, as in
 `GET /scripts/ID`, or `null`.
-`power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off` or
-`unknown`. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
+`hardware`: the parts of the DUT: `power` (a relay), `sd` (a USB-SD-Mux)
+and `console` (a serial console). A part set to `none` in the configuration
+is not listed: its calls answer 503 `no_sdmux` or `no_console`, and without a
+relay the power calls only record the state, like for a switch made by hand.
+A server without `hardware` in its status has all three.
+`power.state`: `on`, `off` or `unknown`. `sd.mode`: `host`, `dut`, `off`,
+`unknown`, or `none` without a USB-SD-Mux. `sd.card.state`: `unknown`, `writing`, `written`, `incomplete` or
 `modified`. `operation`: running hardware operation or null.
 `console.switches`: the number of the last power switch, counted from 1
 since the server started. `console.written`: bytes that the serial driver of the BooBoot board took
@@ -158,7 +166,7 @@ is set, the label is `label` of the `[server]` section of the DUT file.
 ### PUT /power
 
 Parameter: `state`, `on` or `off`. Power on first switches the SD card to the
-DUT if it was on the host side.
+DUT if it was on the host side. Without a relay, the state is only recorded.
 
 Answer: `{"power": "on", "boot": 1024, "switch": 7}`. `boot` is the console
 cursor at power on. `switch` is the number of this power switch, or of the

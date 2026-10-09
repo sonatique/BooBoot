@@ -41,6 +41,9 @@ CHUNK = 1 << 20
 
 HEARTBEAT = 10  # seconds between heartbeats
 
+# The parts that a DUT can have, as listed in its status ("hardware"), and their names.
+PARTS = {"power": "relay", "sd": "USB-SD-Mux", "console": "serial console"}
+
 EXIT_ERROR = 1
 EXIT_TIMEOUT = 3
 EXIT_BUSY = 4
@@ -217,6 +220,17 @@ class Client:
     def status(self):
         """Return the state of power, SD card, console and session."""
         return self.request("GET", "/status")
+
+    def require(self, parts, what):
+        """Raise Error if the DUT lacks one of parts (keys of PARTS), naming what needs them.
+
+        A server older than the "hardware" list has them all.
+        """
+        s = self.status()
+        missing = [p for p in parts if p not in s.get("hardware", PARTS)]
+        if missing:
+            raise Error("%s has no %s, which %s needs" % (s["name"], " and no ".join(PARTS[p] for p in missing),
+                                                          what), code="no_hardware", info={"missing": missing})
 
     def duts(self):
         """The DUTs of the board: {"duts": [{"name", "url", "power", "session", ...}]}.
@@ -674,18 +688,24 @@ def _status_text(s):
     else:
         who = "used by " + _holder(ses)
     con = s["console"]
+    hardware = s.get("hardware", PARTS)
     lines = ["%s, BooBoot %s" % (s["name"], s["version"])]
     if s.get("label"):
         lines.append("label:   " + s["label"])
-    lines += [
-        "power:   %s" % s["power"]["state"] + (" (%s)" % s["power"]["error"] if s["power"]["error"] else ""),
-        "sd card: %s" % s["sd"]["mode"] + (" (%s)" % s["sd"]["error"] if s["sd"]["error"] else "")
-        + ", content %s" % s["sd"]["card"]["state"],
-        "console: %s at %s baud" % (con["device"], con["baudrate"])
-        + ("" if con["connected"] else " (not connected: %s)" % con["error"])
-        + (", %d bytes sent" % con["written"] if con.get("written") else ""),
-        "session: " + who,
-    ]
+    lines.append("power:   %s" % s["power"]["state"] + (" (%s)" % s["power"]["error"] if s["power"]["error"] else "")
+                 + ("" if "power" in hardware else ", only recorded: no relay"))
+    if "sd" in hardware:
+        lines.append("sd card: %s" % s["sd"]["mode"] + (" (%s)" % s["sd"]["error"] if s["sd"]["error"] else "")
+                     + ", content %s" % s["sd"]["card"]["state"])
+    else:
+        lines.append("sd card: no USB-SD-Mux")
+    if "console" in hardware:
+        lines.append("console: %s at %s baud" % (con["device"], con["baudrate"])
+                     + ("" if con["connected"] else " (not connected: %s)" % con["error"])
+                     + (", %d bytes sent" % con["written"] if con.get("written") else ""))
+    else:
+        lines.append("console: no serial console")
+    lines.append("session: " + who)
     net = s.get("network")
     if net:
         lines.append("network: " + ", ".join([net["hostname"]] + net["addresses"]))
@@ -717,6 +737,7 @@ def cmd_duts(args):
         else:
             ses = d.get("session") or {}
             state = "power %s, %s" % (d.get("power"), "used by " + _holder(ses) if ses.get("active") else "free")
+            state += "".join(", no " + PARTS[p] for p in PARTS if p not in d.get("hardware", PARTS))
         print("%-10s %s%-20s %s%s" % (d["name"], board, d["url"], state,
                                       "  label: " + d["label"] if d.get("label") else ""))
     return None
@@ -775,8 +796,22 @@ def cmd_session_close(args):
         _save_token(c.url, None, args.name)
 
 
+def _power_note(c):
+    """A note when the DUT has no relay, or "": then the server only records the power state."""
+    try:
+        s = c.status()
+    except Error:
+        return ""
+    if "power" in s.get("hardware", PARTS):
+        return ""
+    return "%s has no relay: the power state is only recorded; switch the DUT by hand" % s["name"]
+
+
 def cmd_power(args):
     c = _client(args)
+    note = _power_note(c)
+    if note:
+        _warn(note)
     if args.action == "on":
         r = c.power_on()
     elif args.action == "off":
@@ -1119,8 +1154,13 @@ def cmd_script_stop(args):
     return None
 
 
+def _deploy_parts(image, files, expect):
+    return ["power"] + (["sd"] if image or files else []) + (["console"] if expect else [])
+
+
 def cmd_deploy(args):
     c = _client(args)
+    c.require(_deploy_parts(args.image, args.files, args.expect), "deploy")
     result = {"power_off": c.power_off()}
     if args.image:
         _warn("writing %s" % args.image)
@@ -1149,6 +1189,7 @@ def cmd_deploy(args):
 
 def cmd_boottime(args):
     c = _client(args)
+    c.require(["power", "console"], "boottime")
     times = []
     code = None
     for n in range(1, args.runs + 1):
@@ -1187,6 +1228,8 @@ Local paths are files on this computer.
 Every byte of console output has a cursor. "since" takes a cursor or "boot" (last \
 power on), "last" (end of the last expect or run match), "now" or "start".
 The SD card can be used only while the power is off. Power on gives it back to the DUT.
+A DUT may lack a part: the status says so. Without a relay, power only records the \
+state, for a switch made by hand.
 Long or unattended work, like a boot loop, can run on the BooBoot board as a Python \
 script (script_run): it goes on if this connection drops, and its output stays on \
 the board (script_output)."""
@@ -1302,6 +1345,8 @@ def _mcp_status(s, a, report):
 def _mcp_power(s, a, report):
     action = _arg(a, "action")
     c = s.dut()
+    note = _power_note(c)
+    note = " Note: " + note + "." if note else ""
     if action == "on":
         r = c.power_on()
     elif action == "off":
@@ -1311,8 +1356,8 @@ def _mcp_power(s, a, report):
     else:
         raise ValueError("action must be on, off or cycle")
     if r["power"] == "on":
-        return "Power on. The console output of this boot starts at cursor %d (since \"boot\")." % r["boot"]
-    return "Power off."
+        return "Power on. The console output of this boot starts at cursor %d (since \"boot\")." % r["boot"] + note
+    return "Power off." + note
 
 
 def _mcp_sd_mode(s, a, report):
@@ -1413,6 +1458,7 @@ def _mcp_console_run(s, a, report):
 
 def _mcp_deploy(s, a, report):
     c = s.dut()
+    c.require(_deploy_parts(a.get("image"), a.get("files"), a.get("expect")), "deploy")
     c.power_off()
     lines = ["Power off."]
     image = a.get("image")
@@ -1440,6 +1486,7 @@ def _mcp_boot_time(s, a, report):
     runs = max(1, min(int(a.get("runs", 1)), 50))
     timeout = float(a.get("timeout", 120))
     c = s.dut()
+    c.require(["power", "console"], "boot_time")
     times, lines = [], []
     for n in range(1, runs + 1):
         t = c.boot_time(pattern, timeout, a.get("off_time"))
@@ -1581,7 +1628,7 @@ MCP_TOOLS = [
           {}, [], _mcp_status, read_only=True),
     _tool("power", "Switch the power",
           "Switch the DUT power on, off, or off then on (cycle). Power on first connects the SD card "
-          "to the DUT.",
+          "to the DUT. Without a relay, it only records the state.",
           {"action": {"type": "string", "enum": ["on", "off", "cycle"]},
            "off_time": {"type": "number", "description": "Seconds off during a cycle"}},
           ["action"], _mcp_power),

@@ -40,7 +40,8 @@ Other ways to switch the power, set in `[power] backend`:
   a pull-up) when the mux powers up: use a relay driver that switches on with
   a low input, and set `active_low = yes`.
 - `command`: any shell commands (USB relay, network power switch, ...).
-- `none`: no relay.
+- `none`: no relay. The power state is only recorded, like for a switch
+  made by hand.
 
 **USB-SD-Mux FAST.** Its micro SD adapter goes into the DUT SD slot, and the
 card goes into the mux. It is a USB 2.0 device; any USB port works. The
@@ -52,6 +53,12 @@ configuration. When the DUT is off, the idle high TX line of the adapter can
 feed the DUT through its I/O pins, so a power cycle is not a clean cold boot.
 If that happens, add a buffer powered from the DUT side, or at least a series
 resistor.
+
+**Parts left out.** A DUT can go without a relay (`[power] backend = none`),
+a USB-SD-Mux (`[sdmux] serial = none`) or a serial console
+(`[console] device = none`), in any combination, like a DUT whose console
+only is shown. Its status lists the parts it has (`hardware`). The calls of a
+missing USB-SD-Mux or console answer 503 `no_sdmux` or `no_console`.
 
 ## Supported boards
 

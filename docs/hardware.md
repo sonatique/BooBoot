@@ -20,7 +20,9 @@ connect it, [bringup.md](bringup.md) how to check each part.
 | Optional | A case with air holes; a heatsink or fan for Pi 4 and 5 | |
 
 Several DUTs on one board: one mux, one UART adapter and one relay per DUT.
-A relay board with several channels serves several DUTs.
+A relay board with several channels serves several DUTs. A DUT can also go
+without some of them, like one whose console only is shown: see
+[install.md](install.md#later).
 
 ## Choosing the Raspberry Pi
 

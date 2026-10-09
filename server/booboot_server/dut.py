@@ -17,7 +17,7 @@ from . import __version__
 from . import storage as st
 from .board import named_log
 from .errors import ApiError, BadRequest, Conflict, HardwareError, Unavailable
-from .sdmux import MODES
+from .sdmux import MODES, no_mux
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class Dut:
         self.off_time = off_time
         self.power_state = "unknown"
         self.power_error = ""
-        self.mux_mode = "unknown"
+        self.mux_mode = "unknown" if self.has("sd") else "none"
         self.mux_error = ""
         self.card = {"state": "unknown"}
         self.operation = None
@@ -51,9 +51,21 @@ class Dut:
             self.operation = None
             self._lock.release()
 
+    @property
+    def hardware(self):
+        """The parts that this DUT has: "power" (a relay), "sd" (a USB-SD-Mux) and "console"."""
+        parts = (("power", self.power), ("sd", self.mux), ("console", self.console.port))
+        return [name for name, part in parts if getattr(part, "present", True)]
+
+    def has(self, part):
+        return part in self.hardware
+
     def start(self):
         self.console.start()
-        for action in (lambda: self._set_power(False), lambda: self._set_mux("dut")):
+        actions = [lambda: self._set_power(False)]
+        if self.has("sd"):
+            actions.append(lambda: self._set_mux("dut"))
+        for action in actions:
             try:
                 action()
             except ApiError as e:
@@ -124,6 +136,7 @@ class Dut:
                 "error": c.error,
             },
             "operation": self.operation,
+            "hardware": self.hardware,
         }
 
     # Power
@@ -142,7 +155,7 @@ class Dut:
         if not on:
             self._set_power(False)
             return {"power": "off", "switch": self.console.switches}
-        if self.mux_mode in ("host", "unknown"):
+        if self.has("sd") and self.mux_mode in ("host", "unknown"):
             try:
                 self._set_mux("dut")
             except Unavailable as e:
@@ -157,8 +170,13 @@ class Dut:
         if self.power_state != "off":
             raise Conflict("power is %s: power off the DUT first" % self.power_state, code="power_on")
 
+    def _require_sd(self):
+        if not self.has("sd"):
+            raise no_mux()
+
     def _host(self):
         """Make sure the card is on the host side and ready."""
+        self._require_sd()
         self._require_off()
         if self.mux_mode != "host":
             self._set_mux("host")
@@ -167,6 +185,7 @@ class Dut:
     def set_sd(self, mode):
         if mode not in MODES:
             raise BadRequest("mode must be one of: " + ", ".join(MODES))
+        self._require_sd()
         with self._op("sd " + mode):
             if mode == "host":
                 self._require_off()

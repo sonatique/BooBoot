@@ -372,8 +372,9 @@ def _summary(u):
         found["error"] = u.error
         return found
     s = u.dut.status()
-    found.update(label=u.label.text, power=s["power"]["state"], console=s["console"]["connected"],
-                 operation=s["operation"], session=u.sessions.status(), script=u.scripts.running())
+    found.update(label=u.label.text, hardware=s["hardware"], power=s["power"]["state"],
+                 console=s["console"]["connected"], operation=s["operation"], session=u.sessions.status(),
+                 script=u.scripts.running())
     return found
 
 

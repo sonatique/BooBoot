@@ -48,7 +48,8 @@ of each DUT, if it has one.
 The DUT button, next to "Power", shows the DUT on the board, the same for
 everyone: its name and address (to copy), its label, its serial adapter and
 baud rate, its relay and power state, the side of its SD card, and the
-version and addresses of the BooBoot server. The label is free text shown
+version and addresses of the BooBoot server, or "no relay", "no USB-SD-Mux"
+or "no serial console" for a part that the DUT goes without. The label is free text shown
 with the name here, in BooBoot Console and by `booboot status`, like
 `ZCU102 rev B, bench 3`. In control, "Set label" (or Enter) changes it for
 everyone; empty removes it. Keys typed in the panel stay there, also in
@@ -82,7 +83,8 @@ While in control, the page sends a heartbeat every 10 s.
   line break sent as Enter.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
-  asks first. Power on also gives the SD card back to the DUT.
+  asks first. Power on also gives the SD card back to the DUT. A DUT without
+  relay has no power button.
 - **Label.** The DUT panel sets the label of the DUT, in control: see
   [DUT panel](#dut-panel).
 - **Release.** "Release control" closes the session. Closing or reloading the

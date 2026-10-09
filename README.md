@@ -7,7 +7,8 @@ A small Linux board (like an old Raspberry Pi) sits next to the board under
 test (the DUT). It switches the DUT power with a relay, changes the SD card
 content through a USB-SD-Mux FAST (Linux Automation GmbH), and reads and
 writes the DUT serial console through a USB UART adapter. One board can
-serve several DUTs, with a relay line, a mux and an adapter each. Any program
+serve several DUTs, with a relay line, a mux and an adapter each, or only
+some of them, like a DUT whose console only is shown. Any program
 on the network can use it through a simple HTTP and JSON API. A command line
 tool and a Python library are included.
 
@@ -166,7 +167,9 @@ Run the server with a simulated board, no hardware needed:
 cd server && python3 -m booboot_server --fake --port 8080
 ```
 
-With `--duts dut1,dut2`, the simulated board has two DUTs.
+With `--duts dut1,dut2`, the simulated board has two DUTs. With
+`--config-dir ../tests/fake-board`, it has three, the third with a serial
+console only.
 
 Run the tests (as root, the tests with loop devices and GPIO run too):
 

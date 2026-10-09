@@ -75,9 +75,10 @@ class CommandPower:
 
 
 class NoPower:
-    """No relay: only keeps track of the requested state."""
+    """No relay: only keeps track of the requested state, like to mark a switch made by hand."""
 
     name = "none"
+    present = False
 
     def __init__(self, on_change=None):
         self._on_change = on_change

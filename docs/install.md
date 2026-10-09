@@ -255,6 +255,17 @@ Clients use `http://booboot.local:8080/duts/dut2` for the second DUT, or
 `booboot --dut dut2`. The web page `http://booboot.local:8080/` lists the
 DUTs, and BooBoot Console shows a tab for each.
 
+**A DUT with some parts only.** A DUT can go without a relay, a USB-SD-Mux or
+a serial console, in any combination: in its file, set `backend = none` in
+`[power]`, `serial = none` in `[sdmux]`, or `device = none` in `[console]`.
+For example, to only show the console of a DUT that is powered and loaded by
+other means, set the first two. The status of the DUT lists the parts it has
+(`hardware`). Without a relay, the viewers show no power button, and
+`booboot power` only records the state, like for a switch made by hand.
+Without a USB-SD-Mux, the SD card calls answer that the DUT has none.
+`booboot deploy` and `booboot boottime` stop before switching anything when a
+part they need is missing.
+
 **Remove.**
 
 ```sh

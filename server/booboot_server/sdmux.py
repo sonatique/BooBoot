@@ -114,3 +114,23 @@ class UsbSdMux:
 
     def block_device(self):
         return self._find()["block"]
+
+
+def no_mux():
+    return Unavailable("this DUT has no USB-SD-Mux ([sdmux] serial = none)", code="no_sdmux")
+
+
+class NoMux:
+    """No USB-SD-Mux ([sdmux] serial = none)."""
+
+    serial = "none"
+    present = False
+
+    def get_mode(self):
+        return "none"
+
+    def set_mode(self, mode):
+        raise no_mux()
+
+    def block_device(self):
+        raise no_mux()

@@ -162,6 +162,7 @@ In the status of U1:
 | `sd.error` | empty | mux not found |
 | `console.connected` | `true` | UART adapter not found |
 | `operation` | `null` | a long operation (image write) is running: someone uses the DUT |
+| `hardware` | `["power", "sd", "console"]` (no `hardware`: an older unit, with all three) | the DUT goes without the missing parts, on purpose. No `power` (relay): `bb power` only records the state, and `deploy` and `boottime` stop. No `sd` (USB-SD-Mux): no card commands. No `console`: no console commands. Tell the user what the task then cannot do |
 | `session.active` | `false` | someone uses the DUT: rule 2 |
 | `version` | the latest release (its tag without the `v`: U4, step 2), or later (like `0.3.0-2-gabc1234`) | an older release, or `dev`: tell the user (rule 5, section 6) |
 
@@ -292,7 +293,7 @@ Send the user a short report:
 
 ```
 BooBoot ready: URL (DUT NAME, BooBoot VERSION)
-Unit: power <on|off>, SD card <mode>, console <connected|error>, session <free|used by X>
+Unit: power <on|off|no relay>, SD card <mode|no USB-SD-Mux>, console <connected|error|no serial console>, session <free|used by X>
 Unit notes: <none | errors, older version: tell whoever looks after the unit>
 Client: TOOLS/booboot.py, version <V>, used from my shell
 Viewer: BooBoot Console <version> <started | already running | user kept their copy | not available: why>; web page http://HOST:PORT/
@@ -468,6 +469,7 @@ looks after the unit can point an agent to agent-update.md.
 | `console run` times out, output shown | the prompt regex does not match the DUT prompt | `--prompt REGEX` |
 | `console write` succeeds, the DUT never reacts, but its output is shown | the TX path: the adapter (a faulty one can still receive), the TX wire to the DUT RX, or another chip on that line | report (rule 5); whoever looks after the unit follows bringup.md, "When the DUT does not receive", starting with the adapter loopback. `written` and `console.written` only show that the serial driver took the bytes, and the journal does not show successful writes |
 | `deploy` times out with no output | the DUT does not boot, or the console speed is wrong | `bb console read --since boot`, `bb status`; bringup.md step 7 |
+| `NAME has no relay, which deploy needs`, or `no_sdmux`, `no_console` | the DUT goes without that part (`hardware` in the status) | do what the task can without it, and tell the user what needs that part |
 | `power_on` error on an `sd` command | the card can go to the BooBoot board only while the DUT is off | `bb power off` first (`deploy` does it) |
 | The release download fails with 404 | no release yet, or none for that version | the next way of the step |
 | BooBoot Console does not start on Linux | no desktop session, or missing libraries | the web page |

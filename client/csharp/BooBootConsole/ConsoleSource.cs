@@ -47,8 +47,8 @@ public sealed class ConsoleSource : IDisposable
     /// <summary>The label of the DUT, from the status, when it changes.</summary>
     public sealed record Label(string Text) : Item;
 
-    /// <summary>Details of the DUT and its server, from the status, when they change.</summary>
-    public sealed record Details(string Console, string Power, string Sd, string Server) : Item;
+    /// <summary>Details of the DUT and its server, from the status, when they change. Relay: the DUT has one.</summary>
+    public sealed record Details(string Console, string Power, string Sd, string Server, bool Relay) : Item;
 
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
@@ -175,6 +175,10 @@ public sealed class ConsoleSource : IDisposable
         JsonElement Part(string name) => status.TryGetProperty(name, out var v) ? v : default;
         string WithError(string text, JsonElement e) => Text(e, "error") is var error and not "" ? $"{text} ({error})" : text;
 
+        // A server older than the list of the parts of the DUT has them all.
+        var hardware = Part("hardware");
+        bool Has(string part) => hardware.ValueKind != JsonValueKind.Array
+            || hardware.EnumerateArray().Any(p => p.GetString() == part);
         var console = Part("console");
         var baud = Text(console, "baudrate");
         var consoleText = Text(console, "device") + (baud != "" ? $" at {baud} baud" : "");
@@ -189,8 +193,9 @@ public sealed class ConsoleSource : IDisposable
         var host = Text(network, "hostname");
         var server = $"BooBoot {Text(status, "version")}" + (host != "" ? " on " + host : "")
             + (addresses != "" ? $" ({addresses})" : "");
-        return new Details(consoleText, WithError($"{Text(power, "backend")} relay", power),
-            WithError($"on the {Text(sd, "mode")} side", sd), server);
+        return new Details(Has("console") ? consoleText : "no serial console",
+            Has("power") ? WithError($"{Text(power, "backend")} relay", power) : "no relay",
+            Has("sd") ? WithError($"on the {Text(sd, "mode")} side", sd) : "no USB-SD-Mux", server, Has("power"));
     }
 
     async Task PollAsync(CancellationToken token)

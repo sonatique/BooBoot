@@ -73,7 +73,9 @@ everyone (Settings are those of this program, on this computer):
   In control, "Set label" (or Enter) changes it for everyone; empty removes
   it,
 - its serial adapter and baud rate, its relay and power state, the side of
-  its SD card, and the version and addresses of the BooBoot server.
+  its SD card, and the version and addresses of the BooBoot server. For a
+  part that the DUT goes without, it says "no relay", "no USB-SD-Mux" or
+  "no serial console".
 
 With several DUTs, it shows the DUT of the current tab. A right-click on a
 tab, then "DUT...", opens it for that DUT.
@@ -101,7 +103,8 @@ cursor, and follows the output at each key.
   Ctrl+Shift+A selects all, Ctrl+Shift+L clears, Ctrl+Shift+S saves.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
-  asks first. Power on also gives the SD card back to the DUT.
+  asks first. Power on also gives the SD card back to the DUT. A DUT without
+  relay has no power button.
 - **Label.** The DUT panel sets the label of the DUT, in control: see
   [DUT panel](#dut-panel).
 - **Release.** "Release control" closes the session. Closing the window also
