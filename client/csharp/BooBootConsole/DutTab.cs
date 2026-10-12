@@ -47,6 +47,7 @@ public sealed class DutTab
         Text = "•", FontWeight = FontWeight.Bold, Margin = new Thickness(4, 0, 0, 0), IsVisible = false,
         VerticalAlignment = VerticalAlignment.Center,
     };
+    readonly TextBlock paneTitle = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     ConsoleSource? source;
     ConsoleInput? input;
     // Key of the addresses of the board in the settings.
@@ -71,7 +72,7 @@ public sealed class DutTab
             if (!history)
                 log.WriteLine(line.Text);
         };
-        View = new TerminalView { Buffer = Buffer, TextSize = settings.TextSize, Fonts = settings.Fonts, IsVisible = false };
+        View = new TerminalView { Buffer = Buffer, TextSize = settings.TextSize, Fonts = settings.Fonts };
         View.FollowChanged += (_, _) => Changed?.Invoke();
         View.Input += text => input?.Send(text);
         View.ReadOnlyKey += (_, _) =>
@@ -86,6 +87,10 @@ public sealed class DutTab
         {
             Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { dot, title, state, mark } },
         };
+        PaneHeader = new Border { Child = paneTitle, IsVisible = false };
+        PaneHeader.Classes.Add("pane-header");
+        DockPanel.SetDock(PaneHeader, Dock.Top);
+        Pane = new DockPanel { IsVisible = false, Children = { PaneHeader, View } };
         UpdateLogText();
         Update();
     }
@@ -114,6 +119,12 @@ public sealed class DutTab
     /// <summary>The tab, in the tab strip of the window.</summary>
     public TabStripItem Header { get; }
 
+    /// <summary>The view, with a title above it when the window shows several DUTs at once.</summary>
+    public DockPanel Pane { get; }
+
+    /// <summary>The title above the view.</summary>
+    public Border PaneHeader { get; }
+
     /// <summary>Raised when what the window shows of this DUT changes.</summary>
     public event Action? Changed;
 
@@ -135,20 +146,30 @@ public sealed class DutTab
     /// <summary>True while a power switch runs.</summary>
     public bool Switching => switching;
 
-    /// <summary>Output came while another DUT was shown.</summary>
+    /// <summary>Output came while the view was not shown.</summary>
     public bool NewOutput { get; private set; }
 
     /// <summary>The board has several DUTs shown in the window: log file names get the DUT name.</summary>
     public bool Several { get; set; }
 
-    /// <summary>The DUT shown in the window.</summary>
+    /// <summary>The DUT that the buttons and the status bar of the window are for.</summary>
     public bool Current
     {
         get => current;
         set
         {
             current = value;
-            View.IsVisible = value;
+            Update();
+        }
+    }
+
+    /// <summary>The view is in the window: the current DUT, or all with several at once.</summary>
+    public bool Shown
+    {
+        get => Pane.IsVisible;
+        set
+        {
+            Pane.IsVisible = value;
             if (value)
                 NewOutput = false;
             Update();
@@ -262,7 +283,7 @@ public sealed class DutTab
                 history = o.History;
                 Buffer.Feed(o.Text);
                 history = false;
-                if (!o.History && !current)
+                if (!o.History && !Shown)
                     NewOutput = true;
                 break;
             case ConsoleSource.Power p:
@@ -330,6 +351,8 @@ public sealed class DutTab
         mark.IsVisible = NewOutput;
         ToolTip.SetTip(Header, string.Join(", ", new[] { DisplayName, PowerText, state.Text,
             NewOutput ? "new output" : "" }.Where(p => p != "")));
+        paneTitle.Text = string.Join(", ", new[] { DisplayName, PowerText, state.Text }.Where(p => p != ""));
+        PaneHeader.Classes.Set("current", current);
         Changed?.Invoke();
     }
 

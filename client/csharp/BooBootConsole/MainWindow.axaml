@@ -9,6 +9,20 @@
       <Setter Property="MinHeight" Value="30" />
       <Setter Property="Padding" Value="10,0" />
     </Style>
+    <!-- The title above each view, with several DUTs at once: the current one stands out. -->
+    <Style Selector="Border.pane-header">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+    </Style>
+    <Style Selector="Border.pane-header.current">
+      <Setter Property="Background" Value="{DynamicResource AccentButtonBackground}" />
+    </Style>
+    <Style Selector="Border.pane-header.current TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AccentButtonForeground}" />
+    </Style>
+    <Style Selector="GridSplitter.panes">
+      <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+    </Style>
   </Window.Styles>
   <DockPanel>
     <WrapPanel DockPanel.Dock="Top" Margin="6" ItemSpacing="6" LineSpacing="6">
@@ -108,9 +122,19 @@
           </Flyout>
         </Button.Flyout>
       </Button>
+      <Button Name="LayoutButton" DockPanel.Dock="Left" Content="Layout" Margin="6,0,0,0" VerticalAlignment="Center"
+              ToolTip.Tip="One DUT at a time in tabs, or all the DUTs shown at once">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Name="TabsItem" Header="Tabs" ToggleType="Radio" GroupName="layout" />
+            <MenuItem Name="ColumnsItem" Header="Side by side" ToggleType="Radio" GroupName="layout" />
+            <MenuItem Name="RowsItem" Header="Top and bottom" ToggleType="Radio" GroupName="layout" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
       <TabStrip Name="Tabs" Margin="6,0,0,0" />
     </DockPanel>
-    <!-- The console views of the DUTs, the one of the current DUT visible. -->
-    <Panel Name="Views" />
+    <!-- The console views of the DUTs: the one of the current DUT, or all of them. -->
+    <Grid Name="Views" />
   </DockPanel>
 </Window>

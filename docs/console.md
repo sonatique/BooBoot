@@ -4,8 +4,8 @@ A desktop program that shows the serial console of the DUT, live, as a
 terminal connected to it would. Watching needs no session, so agents and
 other clients use the DUT as usual, and the console data is not changed in
 any way. To type into the console, take control: see [Typing](#typing). With
-several DUTs on the board, it shows a tab for each: see
-[Several DUTs](#several-duts).
+several DUTs on the board, it shows a tab for each, or all of them at once,
+side by side or top and bottom: see [Several DUTs](#several-duts).
 
 ![BooBoot Console](console.png)
 
@@ -60,6 +60,21 @@ next to the tabs, shows or hides DUTs: a hidden DUT is not watched, and the
 program remembers it for that board. With the address of one DUT, like
 `http://booboot.local:8080/duts/dut2`, the window shows that DUT only. With
 one DUT on the board, there are no tabs.
+
+The Layout button, next to the DUTs button, shows the DUTs one at a time in
+tabs, or all the DUTs shown at once: "Side by side" or "Top and bottom". Each
+then has a title above its view, and a bar between two views changes their
+sizes. The current DUT, the one that the buttons and the status bar are for,
+has its title highlighted: a click in a view, its tab, or Ctrl+Tab makes
+another one current, and what is typed goes to the current one. The program
+remembers the layout.
+
+Several windows work too, like one for each DUT on another screen: start the
+program again with the address of the DUT, like
+`BooBootConsole-win-x64.exe http://booboot.local:8080/duts/dut2`. An address
+given this way is not kept: the next start without one uses the last address
+typed. With a log started on connect, hide that DUT in the window of the
+board, or its output goes to two log files.
 
 ## DUT panel
 
@@ -148,7 +163,7 @@ The build uses Avalonia, which sends anonymous usage data while building. Set
 `AVALONIA_TELEMETRY_OPTOUT=1` to turn this off.
 
 The server address comes from the command line, or else is the last one
-used. It is the address of the board, for all its DUTs, or of one DUT, like
+typed. It is the address of the board, for all its DUTs, or of one DUT, like
 `http://booboot.local:8080/duts/dut2`.
 
 ## Settings
@@ -166,6 +181,9 @@ and macOS.
 | Scrollback lines | 200,000 |
 | Text size | 13 |
 | Fonts | Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, monospace (the first one found) |
+
+The Layout button sets the layout, and the DUTs button the DUTs shown: both are
+kept in the same file.
 
 ## How it works
 

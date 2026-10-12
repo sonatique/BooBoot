@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     readonly List<DutTab> tabs = new();
     readonly TerminalBuffer noBuffer = new(1);
     DutTab? current;
+    // The address given at start, like on the command line: not kept as the last address.
+    readonly string? given;
     // The address given, and the one of its board: the same, unless it is the address of one DUT.
     string url = "", board = "";
     // The tabs follow the DUTs of the board, and not one DUT.
@@ -53,6 +55,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         this.settings = settings;
         this.persist = persist;
+        given = url == null ? null : Address(url);
         FollowButton.IsCheckedChanged += (_, _) =>
         {
             if (current != null)
@@ -86,6 +89,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
             }
         }, RoutingStrategies.Tunnel);
+        TabsItem.Click += (_, _) => SetLayout("tabs");
+        ColumnsItem.Click += (_, _) => SetLayout("columns");
+        RowsItem.Click += (_, _) => SetLayout("rows");
+        ShowLayout();
         ClearButton.Click += OnClear;
         CopyButton.Click += OnCopy;
         SaveButton.Click += OnSave;
@@ -161,14 +168,18 @@ public partial class MainWindow : Window
 
     // Connection
 
+    static string Address(string text)
+    {
+        text = text.Trim();
+        return text.Length == 0 || text.Contains("://") ? text : "http://" + text;
+    }
+
     void Connect()
     {
         Disconnect();
-        var text = (UrlBox.Text ?? "").Trim();
+        var text = Address(UrlBox.Text ?? "");
         if (text.Length == 0)
             return;
-        if (!text.Contains("://"))
-            text = "http://" + text;
         if (!Uri.TryCreate(text, UriKind.Absolute, out _))
         {
             connection = "Bad server address: " + text;
@@ -176,8 +187,12 @@ public partial class MainWindow : Window
             return;
         }
         UrlBox.Text = text;
-        settings.Url = text;
-        SaveSettings();
+        // A window for one DUT, opened with its address, leaves the address of the next start as it is.
+        if (text != given)
+        {
+            settings.Url = text;
+            SaveSettings();
+        }
         url = text.TrimEnd('/');
         board = DutPath.Replace(url, "");
         foreach (var tab in tabs)
@@ -241,7 +256,6 @@ public partial class MainWindow : Window
         {
             tab.Close();
             tabs.Remove(tab);
-            Views.Children.Remove(tab.View);
         }
         var ordered = shown.Select(n => tabs.FirstOrDefault(t => t.Name == n) ?? Add(n)).ToList();
         changingTabs = true;
@@ -257,6 +271,7 @@ public partial class MainWindow : Window
         }
         changingTabs = false;
         TabRow.IsVisible = wholeBoard && names.Count > 1;
+        Arrange();
         var focused = FocusManager?.GetFocusedElement();
         Select(current != null && tabs.Contains(current) ? current : tabs.FirstOrDefault(t => t.Name == first) ?? tabs[0],
             focus: focused is null or TerminalView);
@@ -281,7 +296,18 @@ public partial class MainWindow : Window
             if (wholeBoard && tabs.Contains(tab))
                 ShowDuts(names);
         };
-        Views.Children.Add(tab.View);
+        // With several DUTs at once, the one clicked or typed into becomes the current one.
+        tab.View.GotFocus += (_, _) =>
+        {
+            if (tab != current && tabs.Contains(tab))
+                Select(tab, focus: false);
+        };
+        tab.View.ContextRequested += (_, _) =>
+        {
+            if (tab != current && tabs.Contains(tab))
+                Select(tab, focus: true);
+        };
+        tab.PaneHeader.PointerPressed += (_, _) => Select(tab, focus: true);
         return tab;
     }
 
@@ -291,12 +317,90 @@ public partial class MainWindow : Window
             current.Current = false;
         current = tab;
         tab.Current = true;
+        ShowViews();
         changingTabs = true;
         Tabs.SelectedItem = tab.Header;
         changingTabs = false;
         Refresh();
         if (focus)
             tab.View.Focus();
+    }
+
+    // Layout
+
+    /// <summary>True when the DUTs show all at once, side by side or top and bottom.</summary>
+    bool AllAtOnce => settings.Layout is "columns" or "rows" && tabs.Count > 1;
+
+    /// <summary>Shows the DUTs in tabs ("tabs"), side by side ("columns") or top and bottom ("rows").</summary>
+    public void SetLayout(string layout)
+    {
+        settings.Layout = layout;
+        SaveSettings();
+        ShowLayout();
+        Arrange();
+        current?.View.Focus();
+    }
+
+    void ShowLayout()
+    {
+        TabsItem.IsChecked = settings.Layout is not ("columns" or "rows");
+        ColumnsItem.IsChecked = settings.Layout == "columns";
+        RowsItem.IsChecked = settings.Layout == "rows";
+    }
+
+    /// <summary>Places the views: in the same cell, one shown at a time, or each in its own, with splitters between.</summary>
+    void Arrange()
+    {
+        var allAtOnce = AllAtOnce;
+        var columns = settings.Layout == "columns";
+        Views.Children.Clear();
+        Views.ColumnDefinitions.Clear();
+        Views.RowDefinitions.Clear();
+
+        void Place(Control control, GridLength size, double min)
+        {
+            if (columns)
+                Views.ColumnDefinitions.Add(new ColumnDefinition(size) { MinWidth = min });
+            else
+                Views.RowDefinitions.Add(new RowDefinition(size) { MinHeight = min });
+            Grid.SetColumn(control, columns ? Views.ColumnDefinitions.Count - 1 : 0);
+            Grid.SetRow(control, columns ? 0 : Views.RowDefinitions.Count - 1);
+            Views.Children.Add(control);
+        }
+
+        foreach (var tab in tabs)
+        {
+            tab.PaneHeader.IsVisible = allAtOnce;
+            if (!allAtOnce)
+            {
+                Grid.SetColumn(tab.Pane, 0);
+                Grid.SetRow(tab.Pane, 0);
+                Views.Children.Add(tab.Pane);
+                continue;
+            }
+            if (tab != tabs[0])
+            {
+                var splitter = new GridSplitter
+                {
+                    ResizeDirection = columns ? GridResizeDirection.Columns : GridResizeDirection.Rows,
+                };
+                splitter.Classes.Add("panes");
+                if (columns)
+                    splitter.Width = 5;
+                else
+                    splitter.Height = 5;
+                Place(splitter, GridLength.Auto, 0);
+            }
+            Place(tab.Pane, new GridLength(1, GridUnitType.Star), 60);
+        }
+        ShowViews();
+    }
+
+    void ShowViews()
+    {
+        var allAtOnce = AllAtOnce;
+        foreach (var tab in tabs)
+            tab.Shown = allAtOnce || tab == current;
     }
 
     /// <summary>Selects the tab of a DUT. For tests.</summary>

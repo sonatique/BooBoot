@@ -21,6 +21,8 @@ public sealed class Settings
     public string Fonts { get; set; } = TerminalView.DefaultFonts;
     /// <summary>The addresses that each server reported, for when its name is not found.</summary>
     public Dictionary<string, List<string>> Addresses { get; set; } = new();
+    /// <summary>How several DUTs show: "tabs", one at a time, or all at once "columns" (side by side) or "rows".</summary>
+    public string Layout { get; set; } = "tabs";
     /// <summary>The DUTs not shown, for each board with several.</summary>
     public Dictionary<string, List<string>> HiddenDuts { get; set; } = new();
 

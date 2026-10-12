@@ -114,12 +114,13 @@ static void CheckSettings()
         var path = Path.Combine(dir.FullName, "settings.json");
         new Settings
         {
-            Url = "http://test:8081", LogPrefix = "lab", NewLogAtPowerOn = true, TextSize = 15.5,
+            Url = "http://test:8081", LogPrefix = "lab", NewLogAtPowerOn = true, TextSize = 15.5, Layout = "rows",
             HiddenDuts = { ["http://test:8080"] = new() { "dut2" } },
         }.Save(path);
         var s = Settings.Load(path);
         Check(s.Url == "http://test:8081" && s.LogPrefix == "lab" && s.NewLogAtPowerOn && s.TextSize == 15.5
-            && s.ScrollbackLines == 200_000 && s.HiddenDuts["http://test:8080"].SequenceEqual(new[] { "dut2" }),
+            && s.Layout == "rows" && s.ScrollbackLines == 200_000
+            && s.HiddenDuts["http://test:8080"].SequenceEqual(new[] { "dut2" }),
             "settings saved and loaded");
         Check(File.ReadAllText(path).Contains("\n  \"LogPrefix\": \"lab\","), "settings file indented");
         Check(Settings.Load(Path.Combine(dir.FullName, "none.json")).Url == new Settings().Url, "default settings");
@@ -140,7 +141,7 @@ static async Task CheckAll(string url, string? screenshot)
     {
         await CheckWindow(dut, tmp.FullName, url, screenshot, windows.Add);
         if ((await dut.StatusAsync()).TryGetProperty("duts", out var duts) && duts.GetArrayLength() > 1)
-            await CheckDuts(url, tmp.FullName, windows.Add);
+            await CheckDuts(url, tmp.FullName, screenshot, windows.Add);
     }
     finally
     {
@@ -329,8 +330,8 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
         "session released with the window");
 }
 
-// A board with several DUTs: a tab for each.
-static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
+// A board with several DUTs: a tab for each, or all at once.
+static async Task CheckDuts(string url, string tmp, string? screenshot, Action<MainWindow> created)
 {
     var settings = new Settings { LogFolder = tmp, LogPrefix = "lab", LogOnConnect = true };
     var window = new MainWindow(settings, url, persist: false) { Width = 1180, Height = 540 };
@@ -384,6 +385,32 @@ static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
     Check(window.CurrentDut == first && window.Status.Contains("dut1    power off"), "Ctrl+Shift+Tab, the previous");
     window.SelectDut(second);
 
+    // All the DUTs at once, side by side or top and bottom. The one clicked or typed into is the current one.
+    window.SetLayout("columns");
+    await WaitFor(() => window.Duts.All(d => d.Shown && d.PaneHeader.IsVisible) && first.Pane.Bounds.Width > 0
+        && second.Pane.Bounds.X > first.Pane.Bounds.Right && second.Pane.Bounds.Y == first.Pane.Bounds.Y,
+        "side by side");
+    Check(second.PaneHeader.Classes.Contains("current") && !first.PaneHeader.Classes.Contains("current")
+        && second.PaneHeader.Background != null, "the current DUT stands out");
+    first.View.Focus();
+    Check(window.CurrentDut == first && window.Title == "dut1 - BooBoot Console"
+        && first.PaneHeader.Classes.Contains("current"), "the DUT clicked becomes the current one");
+    await dut2.RunAsync("echo shown-at-once", timeout: 5);
+    await WaitFor(() => second.Buffer.GetAllText().Contains("\nshown-at-once"), "output of a DUT shown");
+    Check(!second.NewOutput, "no new output mark for a DUT shown");
+    var screen = window.CaptureRenderedFrame()!;
+    if (screenshot != null)
+        screen.Save(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(screenshot))!, "console-split.png"),
+            new PngBitmapEncoderOptions());
+    window.SetLayout("rows");
+    await WaitFor(() => second.Pane.Bounds.Y > first.Pane.Bounds.Bottom && second.Pane.Bounds.X == first.Pane.Bounds.X,
+        "top and bottom");
+    Check(new Settings().Layout == "tabs" && settings.Layout == "rows", "layout kept in the settings");
+    second.View.Focus();
+    window.SetLayout("tabs");
+    await WaitFor(() => window.CurrentDut == second && second.Shown && window.Duts.Count(d => d.Shown) == 1
+        && !second.PaneHeader.IsVisible, "tabs again, the current DUT shown");
+
     // A label set by another client shows in the tab.
     await dut2.SetLabelAsync("bench 3");
     await WaitFor(() => second.DisplayName == "bench 3 (dut2)", "label of another client", () => second.Status);
@@ -424,13 +451,17 @@ static async Task CheckDuts(string url, string tmp, Action<MainWindow> created)
         "DUTs shown again");
     Check(!settings.HiddenDuts.ContainsKey(url), "nothing hidden");
 
-    // The address of one DUT shows that DUT only.
-    var single = new MainWindow(new Settings { LogFolder = tmp }, BooBootClient.DutUrl(url, "dut2"), persist: false);
+    // The address of one DUT shows that DUT only, also with the layout of several at once. Given at start, like on
+    // the command line of another instance, it is not kept as the address of the next start.
+    var singleSettings = new Settings { LogFolder = tmp, Url = url, Layout = "columns" };
+    var single = new MainWindow(singleSettings, BooBootClient.DutUrl(url, "dut2"), persist: false);
     created(single);
     single.Show();
     await WaitFor(() => single.Status.Contains("Connected"), "window of one DUT");
-    Check(single.Duts.Count == 1 && single.CurrentDut!.Name == "dut2" && !single.TabsShown,
+    Check(single.Duts.Count == 1 && single.CurrentDut!.Name == "dut2" && !single.TabsShown
+        && single.CurrentDut.Shown && !single.CurrentDut.PaneHeader.IsVisible,
         "the address of one DUT shows that DUT only, without tabs");
+    Check(singleSettings.Url == url, "address given at start not kept");
     single.Close();
 
     await dut2.OpenSessionAsync("console-check", force: true);

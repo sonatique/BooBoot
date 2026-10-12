@@ -154,15 +154,17 @@ jobs:
         run: |
           command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
           export XDG_CONFIG_HOME=$(mktemp -d)
-          settings=$XDG_CONFIG_HOME/BooBootConsole/settings.json
+          logs=$(mktemp -d)
+          mkdir -p "$XDG_CONFIG_HOME/BooBootConsole"
+          echo "{\"LogFolder\": \"$logs\", \"LogOnConnect\": true}" > "$XDG_CONFIG_HOME/BooBootConsole/settings.json"
           xvfb-run -a publish/linux-x64/BooBootConsole http://127.0.0.1:8080 &
           for i in $(seq 60); do
-            grep -qs '"Url": "http://127.0.0.1:8080"' "$settings" && break
+            ls "$logs"/*.log > /dev/null 2>&1 && break
             sleep 0.5
           done
           sleep 2
           pgrep -x BooBootConsole
-          grep '"Url": "http://127.0.0.1:8080"' "$settings"
+          ls "$logs"/*.log
           pkill -x BooBootConsole
       - uses: actions/upload-artifact@v7
         with:

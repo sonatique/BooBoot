@@ -232,7 +232,7 @@ API directly.
 
 [BooBoot Console](console.md) (`client/csharp/BooBootConsole`) is a desktop
 program that shows the serial console live, with scrollback, copy, save and
-log files, a tab for each DUT of the board. It is written in C# with Avalonia
+log files, and the DUTs of the board in tabs or side by side. It is written in C# with Avalonia
 (.NET 10), for Windows, Linux and macOS. It reads the console stream and
 needs no session to watch; taking control opens the session, to type into
 the console.

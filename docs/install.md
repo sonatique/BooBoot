@@ -253,7 +253,7 @@ and `dut2.ini`. A DUT that uses the hardware of another one does not start:
 
 Clients use `http://booboot.local:8080/duts/dut2` for the second DUT, or
 `booboot --dut dut2`. The web page `http://booboot.local:8080/` lists the
-DUTs, and BooBoot Console shows a tab for each.
+DUTs, and BooBoot Console shows a tab for each, or all of them at once.
 
 **A DUT with some parts only.** A DUT can go without a relay, a USB-SD-Mux or
 a serial console, in any combination: in its file, set `backend = none` in
