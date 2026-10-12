@@ -170,7 +170,7 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     created(window);
     window.Show();
     Check(window.Icon != null, "window icon");
-    await WaitFor(() => window.Status.Contains("Connected") && window.Status.Contains("session used by console-check"),
+    await WaitFor(() => window.Status.Contains("Connected") && window.Status.Contains("used by console-check"),
         "connected", () => window.Status);
     // The window is at 127.0.0.1: it shows another address of the server, and keeps none for an address.
     var addresses = (await dut.StatusAsync()).GetProperty("network").GetProperty("addresses");
@@ -239,7 +239,7 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     await WaitFor(() => window.Status.Contains("read only"), "keys refused while read only");
     await dut.CloseSessionAsync();
     await window.TakeControl();
-    await WaitFor(() => window.Status.Contains("session yours") && window.Status.Contains("in control"), "control taken");
+    await WaitFor(() => window.Status.Contains("in control") && window.CurrentDut!.InControl, "control taken");
     Check((await dut.StatusAsync()).GetProperty("session").GetProperty("client").GetString()!
         .StartsWith("BooBoot Console "), "session in the name of the program");
     var alive = false;
@@ -339,7 +339,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     window.Show();
     using var board = new BooBootClient(url);
     var names = (await board.StatusAsync()).GetProperty("duts").EnumerateArray().Select(d => d.GetString()!).ToList();
-    await WaitFor(() => window.Duts.Count == names.Count && window.Duts.All(d => d.Status.Contains("Connected")),
+    await WaitFor(() => window.Duts.Count == names.Count && window.Duts.All(d => d.Live),
         "a tab for each DUT", () => window.Status);
     var (first, second) = (window.Duts[0], window.Duts[1]);
     Check(first.Name == "dut1" && second.Name == "dut2" && window.CurrentDut == first && window.TabsShown
@@ -387,15 +387,16 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
 
     // All the DUTs at once, side by side or top and bottom. The one clicked or typed into is the current one.
     window.SetLayout("columns");
-    await WaitFor(() => window.Duts.All(d => d.Shown && d.PaneHeader.IsVisible) && first.Pane.Bounds.Width > 0
+    await WaitFor(() => window.Duts.All(d => d.Shown) && first.Pane.Bounds.Width > 0
         && second.Pane.Bounds.X > first.Pane.Bounds.Right && second.Pane.Bounds.Y == first.Pane.Bounds.Y,
         "side by side");
-    Check(second.PaneHeader.Classes.Contains("current") && !first.PaneHeader.Classes.Contains("current")
-        && second.PaneHeader.Background != null, "the current DUT stands out");
+    Check(second.Bar.Classes.Contains("current") && !first.Bar.Classes.Contains("current")
+        && second.Bar.BorderBrush is Avalonia.Media.ISolidColorBrush { Color.A: > 0 }
+        && first.Bar.BorderBrush is Avalonia.Media.ISolidColorBrush { Color.A: 0 }, "the current DUT stands out");
     Check(!window.TabStripShown && window.TabsShown, "titles in place of the tabs, the DUTs and Layout buttons kept");
     first.View.Focus();
     Check(window.CurrentDut == first && window.Title == "dut1 - BooBoot Console"
-        && first.PaneHeader.Classes.Contains("current"), "the DUT clicked becomes the current one");
+        && first.Bar.Classes.Contains("current"), "the DUT clicked becomes the current one");
     await dut2.RunAsync("echo shown-at-once", timeout: 5);
     await WaitFor(() => second.Buffer.GetAllText().Contains("\nshown-at-once"), "output of a DUT shown");
     Check(!second.NewOutput, "no new output mark for a DUT shown");
@@ -410,7 +411,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     second.View.Focus();
     window.SetLayout("tabs");
     await WaitFor(() => window.CurrentDut == second && second.Shown && window.Duts.Count(d => d.Shown) == 1
-        && !second.PaneHeader.IsVisible && window.TabStripShown, "tabs again, the current DUT shown");
+        && window.TabStripShown, "tabs again, the current DUT shown");
 
     // A label set by another client shows in the tab.
     await dut2.SetLabelAsync("bench 3");
@@ -448,7 +449,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     again.Close();
     foreach (var name in names.Skip(1))
         window.ShowDut(name, true);
-    await WaitFor(() => window.Duts.Count == names.Count && window.Duts.All(d => d.Status.Contains("Connected")),
+    await WaitFor(() => window.Duts.Count == names.Count && window.Duts.All(d => d.Live),
         "DUTs shown again");
     Check(!settings.HiddenDuts.ContainsKey(url), "nothing hidden");
 
@@ -460,7 +461,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     single.Show();
     await WaitFor(() => single.Status.Contains("Connected"), "window of one DUT");
     Check(single.Duts.Count == 1 && single.CurrentDut!.Name == "dut2" && !single.TabsShown
-        && single.CurrentDut.Shown && !single.CurrentDut.PaneHeader.IsVisible,
+        && single.CurrentDut.Shown && single.CurrentDut.Bar.IsVisible,
         "the address of one DUT shows that DUT only, without tabs");
     Check(singleSettings.Url == url, "address given at start not kept");
     single.Close();

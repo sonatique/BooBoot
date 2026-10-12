@@ -56,11 +56,6 @@ public partial class MainWindow : Window
         this.settings = settings;
         this.persist = persist;
         given = url == null ? null : Address(url);
-        FollowButton.IsCheckedChanged += (_, _) =>
-        {
-            if (current != null)
-                current.View.Follow = FollowButton.IsChecked == true;
-        };
         UrlBox.Text = url ?? settings.Url;
         UrlBox.KeyDown += (_, e) =>
         {
@@ -93,12 +88,6 @@ public partial class MainWindow : Window
         ColumnsItem.Click += (_, _) => SetLayout("columns");
         RowsItem.Click += (_, _) => SetLayout("rows");
         ShowLayout();
-        ClearButton.Click += OnClear;
-        CopyButton.Click += OnCopy;
-        SaveButton.Click += OnSave;
-        StartLogItem.Click += (_, _) => current?.StartLog();
-        StopLogItem.Click += (_, _) => current?.StopLog();
-        OpenLogFolderItem.Click += OnOpenFolder;
         SetLabelButton.Click += async (_, _) => await SetLabelFromPanel();
         LabelBox.KeyDown += async (_, e) =>
         {
@@ -107,22 +96,6 @@ public partial class MainWindow : Window
         };
         BrowseButton.Click += OnBrowse;
         OpenFolderButton.Click += OnOpenFolder;
-        ControlButton.Click += async (_, _) =>
-        {
-            if (current?.InControl == true)
-                await current.ReleaseControl();
-            else
-                await TakeControl();
-        };
-        PowerButton.Click += async (_, _) =>
-        {
-            if (current == null)
-                return;
-            if (current.PowerState == "on")
-                AskPowerOff(current);
-            else
-                await current.SwitchPower(true);
-        };
         ShowSettings();
         Refresh();
         Opened += (_, _) => Connect();
@@ -149,13 +122,14 @@ public partial class MainWindow : Window
 
     public TerminalView Terminal => current?.View ?? throw new InvalidOperationException("no DUT shown");
 
-    /// <summary>The power button, for tests.</summary>
-    public Button Power => PowerButton;
+    /// <summary>The power button of the current DUT, for tests.</summary>
+    public Button Power => current?.PowerButton ?? throw new InvalidOperationException("no DUT shown");
 
     /// <summary>The current log file, for tests.</summary>
     public string? LogPath => current?.LogPath;
 
-    public string Status => StatusText.Text ?? "";
+    /// <summary>The state of the board, then the name and state of the current DUT. For tests.</summary>
+    public string Status => BoardText.Text + (current != null ? "    " + current.Status : "");
 
     /// <summary>The DUTs shown, in the order of the tabs. For tests.</summary>
     public IReadOnlyList<DutTab> Duts => tabs;
@@ -310,12 +284,34 @@ public partial class MainWindow : Window
             if (tab != current && tabs.Contains(tab))
                 Select(tab, focus: true);
         };
-        tab.PaneHeader.PointerPressed += (_, _) => Select(tab, focus: true);
-        tab.PaneHeader.ContextMenu = DutMenu(() =>
+        tab.Bar.PointerPressed += (_, _) => Select(tab, focus: true);
+        tab.Bar.ContextMenu = DutMenu(() =>
         {
             Select(tab, focus: true);
             OpenDutPanel();
         });
+        tab.ControlButton.Click += async (_, _) =>
+        {
+            Select(tab, focus: false);
+            if (tab.InControl)
+                await tab.ReleaseControl();
+            else
+                await TakeControl(tab, false, false);
+        };
+        tab.PowerButton.Click += async (_, _) =>
+        {
+            Select(tab, focus: false);
+            if (tab.PowerState == "on")
+                AskPowerOff(tab);
+            else
+                await tab.SwitchPower(true);
+        };
+        tab.PropertiesButton.Click += (_, _) =>
+        {
+            Select(tab, focus: false);
+            OpenDutPanel();
+        };
+        tab.LogFolderItem.Click += OnOpenFolder;
         return tab;
     }
 
@@ -378,9 +374,9 @@ public partial class MainWindow : Window
 
         // The panes have titles in place of the tabs.
         Tabs.IsVisible = DutsButton.IsVisible && !allAtOnce;
+        Views.Classes.Set("split", allAtOnce);
         foreach (var tab in tabs)
         {
-            tab.PaneHeader.IsVisible = allAtOnce;
             if (!allAtOnce)
             {
                 Grid.SetColumn(tab.Pane, 0);
@@ -426,27 +422,16 @@ public partial class MainWindow : Window
         Refresh();
     }
 
-    /// <summary>Shows the status and the buttons of the current DUT.</summary>
+    /// <summary>Shows the state of the board, as the current DUT reaches it, and the name of that DUT in the title.</summary>
     void Refresh()
     {
         var tab = current;
         var connected = tab?.Connected == true;
-        StatusText.Text = connected ? tab!.Status : connection;
+        BoardText.Text = connected ? tab!.BoardState : connection;
         Title = connected && tab!.Name != "" ? $"{tab.DisplayName} - BooBoot Console" : "BooBoot Console";
         ConnectButton.Content = opening != null ? "Disconnect" : "Connect";
-        ControlButton.IsEnabled = connected;
-        ControlButton.Content = tab?.InControl == true ? "Release control" : "Take control";
-        ControlButton.Classes.Set("accent", tab?.InControl == true);
-        // The power button follows the power state, and works only in control.
-        PowerButton.IsVisible = tab?.HasRelay != false;
-        PowerButton.Content = tab?.PowerState == "on" ? "Power off" : "Power on";
-        PowerButton.IsEnabled = tab?.InControl == true && !tab.Switching;
-        foreach (var button in new Control[] { DutButton, ClearButton, CopyButton, SaveButton, FollowButton, LogButton })
-            button.IsEnabled = tab != null;
-        FollowButton.IsChecked = tab?.View.Follow ?? true;
-        StopLogItem.IsEnabled = tab?.LogPath != null;
-        LogText.Text = tab?.LogText ?? "No log";
-        ToolTip.SetTip(LogText, tab?.LogPath);
+        ToolTip.SetTip(ConnectButton, opening != null ? "Stop watching the DUTs of this board, in this window"
+            : "Watch the DUTs of the board at this address");
         ShowDutPanel(false);
     }
 
@@ -497,12 +482,17 @@ public partial class MainWindow : Window
         LabelNote.Text = !ok ? tab.Note : tab.Label != "" ? "Label set" : "Label removed";
     }
 
-    public void OpenDutPanel() => DutButton.Flyout?.ShowAt(DutButton);
+    /// <summary>Opens the DUT panel of the current DUT, at its Properties button.</summary>
+    public void OpenDutPanel()
+    {
+        if (current != null)
+            FlyoutBase.GetAttachedFlyout(Views)?.ShowAt(current.PropertiesButton);
+    }
 
-    public void CloseDutPanel() => DutButton.Flyout?.Hide();
+    public void CloseDutPanel() => FlyoutBase.GetAttachedFlyout(Views)?.Hide();
 
     /// <summary>True while the DUT panel shows. For tests.</summary>
-    public bool DutPanelOpen => DutButton.Flyout?.IsOpen == true;
+    public bool DutPanelOpen => FlyoutBase.GetAttachedFlyout(Views)?.IsOpen == true;
 
     /// <summary>The texts of the DUT panel, one per line. For tests.</summary>
     public string DutPanelText => string.Join("\n", DutNameBox.Text, DutAddressBox.Text, LabelBox.Text, LabelNote.Text,
@@ -511,8 +501,9 @@ public partial class MainWindow : Window
     /// <summary>True when the panel can set the label: in control. For tests.</summary>
     public bool CanSetLabel => SetLabelButton.IsEnabled;
 
-    /// <summary>The items of the Log menu: start, stop, open folder. For tests.</summary>
-    public IReadOnlyList<MenuItem> LogMenuItems => new[] { StartLogItem, StopLogItem, OpenLogFolderItem };
+    /// <summary>The items of the Log file menu of the current DUT: start, stop, open folder. For tests.</summary>
+    public IReadOnlyList<MenuItem> LogMenuItems => current is DutTab tab
+        ? new[] { tab.StartLogItem, tab.StopLogItem, tab.LogFolderItem } : Array.Empty<MenuItem>();
 
     // DUTs of the board
 
@@ -604,7 +595,7 @@ public partial class MainWindow : Window
             await TakeControl(tab, force: !gone, ifGone: gone);
         };
         cancel.Click += (_, _) => flyout.Hide();
-        flyout.ShowAt(ControlButton);
+        flyout.ShowAt(tab.ControlButton);
     }
 
     /// <summary>Switches the power of the current DUT, in control.</summary>
@@ -633,7 +624,7 @@ public partial class MainWindow : Window
         };
         no.Click += (_, _) => flyout.Hide();
         powerOffQuestion = (flyout, yes, no);
-        flyout.ShowAt(PowerButton);
+        flyout.ShowAt(tab.PowerButton);
     }
 
     /// <summary>True while the question before a power off shows. For tests.</summary>
@@ -680,7 +671,7 @@ public partial class MainWindow : Window
 
     static MenuItem DutItem(Action open)
     {
-        var item = new MenuItem { Header = "DUT...", };
+        var item = new MenuItem { Header = "Properties..." };
         item.Click += (_, _) => open();
         return item;
     }
@@ -791,10 +782,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            if (current != null)
-                current.ShowLogProblem("Cannot open the folder: " + ex.Message);
-            else
-                LogText.Text = "Cannot open the folder: " + ex.Message;
+            current?.ShowLogProblem("Cannot open the folder: " + ex.Message);
         }
     }
 

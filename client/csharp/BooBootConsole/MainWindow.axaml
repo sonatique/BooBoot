@@ -5,11 +5,11 @@
         Width="1180" Height="700" MinWidth="400" MinHeight="200">
   <Window.Styles>
     <!-- Compact bars, to leave the room to the consoles. -->
-    <Style Selector="WrapPanel.toolbar Button, WrapPanel.toolbar ToggleButton">
+    <Style Selector="DockPanel.toolbar Button, DockPanel.toolbar ToggleButton, Border.dut-bar Button, Border.dut-bar ToggleButton">
       <Setter Property="Padding" Value="8,2" />
       <Setter Property="MinHeight" Value="26" />
     </Style>
-    <Style Selector="WrapPanel.toolbar TextBox">
+    <Style Selector="DockPanel.toolbar TextBox">
       <Setter Property="Padding" Value="6,2" />
       <Setter Property="MinHeight" Value="26" />
     </Style>
@@ -18,130 +18,110 @@
       <Setter Property="MinHeight" Value="26" />
       <Setter Property="Padding" Value="10,0" />
     </Style>
-    <!-- The title above each view, with several DUTs at once: the current one stands out. -->
-    <Style Selector="Border.pane-header">
-      <Setter Property="Padding" Value="8,3" />
-      <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+    <!-- The bar of a DUT, above its view. With several DUTs at once, the one that takes the keys is marked. -->
+    <Style Selector="Border.dut-bar">
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="Background" Value="#14808080" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
-    <Style Selector="Border.pane-header.current">
-      <Setter Property="Background" Value="{DynamicResource AccentButtonBackground}" />
-    </Style>
-    <Style Selector="Border.pane-header.current TextBlock">
-      <Setter Property="Foreground" Value="{DynamicResource AccentButtonForeground}" />
+    <Style Selector="Grid.split Border.dut-bar.current">
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentButtonBackground}" />
     </Style>
     <Style Selector="GridSplitter.panes">
       <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
     </Style>
   </Window.Styles>
   <DockPanel>
-    <WrapPanel Classes="toolbar" DockPanel.Dock="Top" Margin="4,3" ItemSpacing="4" LineSpacing="3">
-      <TextBox Name="UrlBox" Width="240" PlaceholderText="http://booboot.local:8080" VerticalAlignment="Center" />
-      <Button Name="ConnectButton" Content="Connect" />
-      <Button Name="ControlButton" Content="Take control" IsEnabled="False"
-              ToolTip.Tip="Open the session, to type into the console" />
-      <Button Name="PowerButton" Content="Power on" IsEnabled="False"
-              ToolTip.Tip="Switch the DUT power on or off, while in control" />
-      <Button Name="DutButton" Content="DUT" IsEnabled="False"
-              ToolTip.Tip="The DUT on the board, the same for everyone: its label, address and details">
-        <Button.Flyout>
-          <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnDutPanelOpening" Opened="OnDutPanelOpened">
-            <Grid ColumnDefinitions="Auto,340" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                  RowSpacing="8" ColumnSpacing="8">
-              <TextBlock Text="Name" VerticalAlignment="Center" />
-              <TextBox Name="DutNameBox" Grid.Column="1" IsReadOnly="True" />
-              <TextBlock Grid.Row="1" Text="Address" VerticalAlignment="Center" />
-              <TextBox Name="DutAddressBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" />
-              <TextBlock Grid.Row="2" Text="Label" VerticalAlignment="Center" />
-              <TextBox Name="LabelBox" Grid.Row="2" Grid.Column="1" PlaceholderText="like ZCU102 rev B, bench 3" />
-              <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                <Button Name="SetLabelButton" Content="Set label" IsEnabled="False"
-                        ToolTip.Tip="Shown with the name, to everyone. Empty: no label" />
-                <TextBlock Name="LabelNote" VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap" MaxWidth="240" />
-              </StackPanel>
-              <TextBlock Grid.Row="4" Text="Console" />
-              <TextBlock Name="DutConsoleText" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" />
-              <TextBlock Grid.Row="5" Text="Power" />
-              <TextBlock Name="DutPowerText" Grid.Row="5" Grid.Column="1" TextWrapping="Wrap" />
-              <TextBlock Grid.Row="6" Text="SD card" />
-              <TextBlock Name="DutSdText" Grid.Row="6" Grid.Column="1" TextWrapping="Wrap" />
-              <TextBlock Grid.Row="7" Text="Server" />
-              <TextBlock Name="DutServerText" Grid.Row="7" Grid.Column="1" TextWrapping="Wrap" />
-            </Grid>
-          </Flyout>
-        </Button.Flyout>
-      </Button>
-      <Border Width="8" />
-      <Button Name="ClearButton" Content="Clear" ToolTip.Tip="Clear the view (Ctrl+L, in control Ctrl+Shift+L)" />
-      <Button Name="CopyButton" Content="Copy" ToolTip.Tip="Copy the selection (Ctrl+C)" />
-      <Button Name="SaveButton" Content="Save..." ToolTip.Tip="Save all the text to a file (Ctrl+S, in control Ctrl+Shift+S)" />
-      <ToggleButton Name="FollowButton" Content="Follow" IsChecked="True"
-                    ToolTip.Tip="Show new output as it comes (End)" />
-      <Border Width="8" />
-      <Button Name="LogButton" Content="Log" ToolTip.Tip="Log files of the console, on this computer">
-        <Button.Flyout>
-          <MenuFlyout Placement="BottomEdgeAlignedLeft">
-            <MenuItem Name="StartLogItem" Header="Start new log" ToolTip.Tip="Log to a new file from now on" />
-            <MenuItem Name="StopLogItem" Header="Stop log" IsEnabled="False" />
-            <MenuItem Name="OpenLogFolderItem" Header="Open log folder" />
-          </MenuFlyout>
-        </Button.Flyout>
-      </Button>
-      <Button Name="DutsButton" Content="DUTs" IsVisible="False"
-              ToolTip.Tip="Show or hide DUTs of the board">
-        <Button.Flyout>
-          <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnDutsOpening">
-            <StackPanel Name="DutsList" Spacing="4" />
-          </Flyout>
-        </Button.Flyout>
-      </Button>
-      <Button Name="LayoutButton" Content="Layout" IsVisible="False"
-              ToolTip.Tip="One DUT at a time in tabs, or all the DUTs shown at once">
-        <Button.Flyout>
-          <MenuFlyout Placement="BottomEdgeAlignedLeft">
-            <MenuItem Name="TabsItem" Header="Tabs" ToggleType="Radio" GroupName="layout" />
-            <MenuItem Name="ColumnsItem" Header="Side by side" ToggleType="Radio" GroupName="layout" />
-            <MenuItem Name="RowsItem" Header="Top and bottom" ToggleType="Radio" GroupName="layout" />
-          </MenuFlyout>
-        </Button.Flyout>
-      </Button>
-      <Button Content="Settings">
-        <Button.Flyout>
-          <Flyout Placement="BottomEdgeAlignedRight" Closed="OnSettingsClosed">
-            <Grid ColumnDefinitions="Auto,260" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                  RowSpacing="8" ColumnSpacing="8">
-              <TextBlock Text="Log folder" VerticalAlignment="Center" />
-              <TextBox Name="LogFolderBox" Grid.Column="1" />
-              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <Button Name="BrowseButton" Content="Browse..." />
-                <Button Name="OpenFolderButton" Content="Open folder" />
-              </StackPanel>
-              <TextBlock Grid.Row="2" Text="File name prefix" VerticalAlignment="Center" />
-              <TextBox Name="PrefixBox" Grid.Row="2" Grid.Column="1" PlaceholderText="DUT name"
-                       ToolTip.Tip="With several DUTs, the DUT name is added to it" />
-              <CheckBox Name="LogOnConnectBox" Grid.Row="3" Grid.Column="1"
-                        Content="Start a log when connected" />
-              <CheckBox Name="NewLogBox" Grid.Row="4" Grid.Column="1"
-                        Content="New log file at each power on" />
-              <TextBlock Grid.Row="5" Text="Scrollback lines" VerticalAlignment="Center" />
-              <NumericUpDown Name="ScrollbackBox" Grid.Row="5" Grid.Column="1" Minimum="1000" Maximum="10000000"
-                             Increment="50000" FormatString="0" />
-              <TextBlock Grid.Row="6" Text="Text size" VerticalAlignment="Center" />
-              <NumericUpDown Name="TextSizeBox" Grid.Row="6" Grid.Column="1" Minimum="6" Maximum="48"
-                             Increment="1" FormatString="0" />
-              <TextBlock Grid.Row="7" Text="Fonts" VerticalAlignment="Center" />
-              <TextBox Name="FontsBox" Grid.Row="7" Grid.Column="1" />
-            </Grid>
-          </Flyout>
-        </Button.Flyout>
-      </Button>
-    </WrapPanel>
-    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="6,3">
-      <TextBlock Name="StatusText" Text="Not connected" TextTrimming="CharacterEllipsis" />
-      <TextBlock Name="LogText" Grid.Column="1" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
-    </Grid>
+    <!-- The BooBoot board at the address, and this window. Each DUT has its own bar, above its view. -->
+    <DockPanel Classes="toolbar" DockPanel.Dock="Top" Margin="4,3">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0">
+        <Button Name="DutsButton" Content="DUTs" IsVisible="False"
+                ToolTip.Tip="Show or hide DUTs of the board">
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight" Opening="OnDutsOpening">
+              <StackPanel Name="DutsList" Spacing="4" />
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+        <Button Name="LayoutButton" Content="Layout" IsVisible="False"
+                ToolTip.Tip="One DUT at a time in tabs, or all the DUTs shown at once">
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight">
+              <MenuItem Name="TabsItem" Header="Tabs" ToggleType="Radio" GroupName="layout" />
+              <MenuItem Name="ColumnsItem" Header="Side by side" ToggleType="Radio" GroupName="layout" />
+              <MenuItem Name="RowsItem" Header="Top and bottom" ToggleType="Radio" GroupName="layout" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+        <Button Content="Settings">
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight" Closed="OnSettingsClosed">
+              <Grid ColumnDefinitions="Auto,260" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                    RowSpacing="8" ColumnSpacing="8">
+                <TextBlock Text="Log folder" VerticalAlignment="Center" />
+                <TextBox Name="LogFolderBox" Grid.Column="1" />
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                  <Button Name="BrowseButton" Content="Browse..." />
+                  <Button Name="OpenFolderButton" Content="Open folder" />
+                </StackPanel>
+                <TextBlock Grid.Row="2" Text="File name prefix" VerticalAlignment="Center" />
+                <TextBox Name="PrefixBox" Grid.Row="2" Grid.Column="1" PlaceholderText="DUT name"
+                         ToolTip.Tip="With several DUTs, the DUT name is added to it" />
+                <CheckBox Name="LogOnConnectBox" Grid.Row="3" Grid.Column="1"
+                          Content="Start a log when connected" />
+                <CheckBox Name="NewLogBox" Grid.Row="4" Grid.Column="1"
+                          Content="New log file at each power on" />
+                <TextBlock Grid.Row="5" Text="Scrollback lines" VerticalAlignment="Center" />
+                <NumericUpDown Name="ScrollbackBox" Grid.Row="5" Grid.Column="1" Minimum="1000" Maximum="10000000"
+                               Increment="50000" FormatString="0" />
+                <TextBlock Grid.Row="6" Text="Text size" VerticalAlignment="Center" />
+                <NumericUpDown Name="TextSizeBox" Grid.Row="6" Grid.Column="1" Minimum="6" Maximum="48"
+                               Increment="1" FormatString="0" />
+                <TextBlock Grid.Row="7" Text="Fonts" VerticalAlignment="Center" />
+                <TextBox Name="FontsBox" Grid.Row="7" Grid.Column="1" />
+              </Grid>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+      </StackPanel>
+      <TextBox Name="UrlBox" DockPanel.Dock="Left" Width="240" PlaceholderText="http://booboot.local:8080"
+               VerticalAlignment="Center" ToolTip.Tip="Address of the BooBoot board, or of one of its DUTs" />
+      <Button Name="ConnectButton" DockPanel.Dock="Left" Content="Connect" Margin="4,0,0,0"
+              ToolTip.Tip="Watch the DUTs of the board at this address" />
+      <TextBlock Name="BoardText" Margin="8,0,0,0" VerticalAlignment="Center" Opacity="0.75"
+                 TextTrimming="CharacterEllipsis" />
+    </DockPanel>
     <!-- With several DUTs on the board, shown one at a time: a tab for each DUT shown. -->
     <TabStrip Name="Tabs" DockPanel.Dock="Top" IsVisible="False" Margin="4,0" />
-    <!-- The console views of the DUTs: the one of the current DUT, or all of them. -->
-    <Grid Name="Views" />
+    <!-- The views of the DUTs, each with its bar: the one of the current DUT, or all of them. -->
+    <Grid Name="Views">
+      <FlyoutBase.AttachedFlyout>
+        <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnDutPanelOpening" Opened="OnDutPanelOpened">
+          <Grid ColumnDefinitions="Auto,340" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                RowSpacing="8" ColumnSpacing="8">
+            <TextBlock Text="Name" VerticalAlignment="Center" />
+            <TextBox Name="DutNameBox" Grid.Column="1" IsReadOnly="True" />
+            <TextBlock Grid.Row="1" Text="Address" VerticalAlignment="Center" />
+            <TextBox Name="DutAddressBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" />
+            <TextBlock Grid.Row="2" Text="Label" VerticalAlignment="Center" />
+            <TextBox Name="LabelBox" Grid.Row="2" Grid.Column="1" PlaceholderText="like ZCU102 rev B, bench 3" />
+            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+              <Button Name="SetLabelButton" Content="Set label" IsEnabled="False"
+                      ToolTip.Tip="Shown with the name, to everyone. Empty: no label" />
+              <TextBlock Name="LabelNote" VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap" MaxWidth="240" />
+            </StackPanel>
+            <TextBlock Grid.Row="4" Text="Console" />
+            <TextBlock Name="DutConsoleText" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="5" Text="Power" />
+            <TextBlock Name="DutPowerText" Grid.Row="5" Grid.Column="1" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="6" Text="SD card" />
+            <TextBlock Name="DutSdText" Grid.Row="6" Grid.Column="1" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="7" Text="Server" />
+            <TextBlock Name="DutServerText" Grid.Row="7" Grid.Column="1" TextWrapping="Wrap" />
+          </Grid>
+        </Flyout>
+      </FlyoutBase.AttachedFlyout>
+    </Grid>
   </DockPanel>
 </Window>

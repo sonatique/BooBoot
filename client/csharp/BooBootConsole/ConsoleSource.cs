@@ -48,7 +48,7 @@ public sealed class ConsoleSource : IDisposable
     public sealed record Label(string Text) : Item;
 
     /// <summary>Details of the DUT and its server, from the status, when they change. Relay: the DUT has one.</summary>
-    public sealed record Details(string Console, string Power, string Sd, string Server, bool Relay) : Item;
+    public sealed record Details(string Console, string Power, string Sd, string Server, bool Relay, string Version) : Item;
 
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
@@ -195,7 +195,8 @@ public sealed class ConsoleSource : IDisposable
             + (addresses != "" ? $" ({addresses})" : "");
         return new Details(Has("console") ? consoleText : "no serial console",
             Has("power") ? WithError($"{Text(power, "backend")} relay", power) : "no relay",
-            Has("sd") ? WithError($"on the {Text(sd, "mode")} side", sd) : "no USB-SD-Mux", server, Has("power"));
+            Has("sd") ? WithError($"on the {Text(sd, "mode")} side", sd) : "no USB-SD-Mux", server, Has("power"),
+            Text(status, "version"));
     }
 
     async Task PollAsync(CancellationToken token)

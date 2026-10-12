@@ -17,8 +17,7 @@ using BooBoot;
 namespace BooBootConsole;
 
 /// <summary>
-/// One DUT in the window, with its tab: its console view, typing, power and log.
-/// The window shows the status and the buttons of the current one.
+/// One DUT in the window, with its tab, and its bar above its console view: its state, and the buttons that act on it.
 /// </summary>
 public sealed class DutTab
 {
@@ -47,14 +46,25 @@ public sealed class DutTab
         Text = "•", FontWeight = FontWeight.Bold, Margin = new Thickness(4, 0, 0, 0), IsVisible = false,
         VerticalAlignment = VerticalAlignment.Center,
     };
-    readonly TextBlock paneTitle = new() { TextTrimming = TextTrimming.CharacterEllipsis };
+    readonly TextBlock barTitle = new()
+    {
+        FontWeight = FontWeight.SemiBold, MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    readonly TextBlock barState = new()
+    {
+        Margin = new Thickness(10, 0, 0, 0), Opacity = 0.75, TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     ConsoleSource? source;
     ConsoleInput? input;
     // Key of the addresses of the board in the settings.
     string board = "";
     string connection = "Not connected", power = "", session = "", note = "", logText = "";
-    // Another address of the server, for where its name does not work.
-    string alsoAt = "";
+    // Another address of the server, for where its name does not work, and the note when it was used.
+    string alsoAt = "", addressNote = "";
+    // The console stream is connected.
+    bool live;
     // True while a power switch of the power button runs.
     bool switching;
     // True while output from before the connection is added: it is not logged.
@@ -73,7 +83,12 @@ public sealed class DutTab
                 log.WriteLine(line.Text);
         };
         View = new TerminalView { Buffer = Buffer, TextSize = settings.TextSize, Fonts = settings.Fonts };
-        View.FollowChanged += (_, _) => Changed?.Invoke();
+        View.FollowChanged += (_, _) =>
+        {
+            FollowButton.IsChecked = View.Follow;
+            Changed?.Invoke();
+        };
+        FollowButton.IsCheckedChanged += (_, _) => View.Follow = FollowButton.IsChecked == true;
         View.Input += text => input?.Send(text);
         View.ReadOnlyKey += (_, _) =>
         {
@@ -87,10 +102,29 @@ public sealed class DutTab
         {
             Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { dot, title, state, mark } },
         };
-        PaneHeader = new Border { Child = paneTitle, IsVisible = false };
-        PaneHeader.Classes.Add("pane-header");
-        DockPanel.SetDock(PaneHeader, Dock.Top);
-        Pane = new DockPanel { IsVisible = false, Children = { PaneHeader, View } };
+        StartLogItem.Click += (_, _) => StartLog();
+        StopLogItem.Click += (_, _) => StopLog();
+        LogButton.Flyout = new MenuFlyout { Items = { StartLogItem, StopLogItem, LogFolderItem } };
+        var buttons = new WrapPanel
+        {
+            ItemSpacing = 4, LineSpacing = 3,
+            Children = { ControlButton, PowerButton, PropertiesButton, new Border { Width = 4 }, LogButton, FollowButton },
+        };
+        DockPanel.SetDock(barTitle, Dock.Left);
+        Bar = new Border { Child = new DockPanel { Children = { buttons, barTitle, barState } }, ClipToBounds = true };
+        Bar.Classes.Add("dut-bar");
+        // The buttons go under the name and state when the view is too narrow for both on one line.
+        Bar.SizeChanged += (_, e) =>
+        {
+            buttons.Measure(Size.Infinity);
+            var under = e.NewSize.Width < buttons.DesiredSize.Width + 200;
+            DockPanel.SetDock(buttons, under ? Dock.Bottom : Dock.Right);
+            buttons.Margin = under ? new Thickness(0, 3, 0, 0) : new Thickness(8, 0, 0, 0);
+        };
+        DockPanel.SetDock(buttons, Dock.Right);
+        buttons.Margin = new Thickness(8, 0, 0, 0);
+        DockPanel.SetDock(Bar, Dock.Top);
+        Pane = new DockPanel { IsVisible = false, Children = { Bar, View } };
         UpdateLogText();
         Update();
     }
@@ -119,11 +153,40 @@ public sealed class DutTab
     /// <summary>The tab, in the tab strip of the window.</summary>
     public TabStripItem Header { get; }
 
-    /// <summary>The view, with a title above it when the window shows several DUTs at once.</summary>
+    /// <summary>The view, with the bar of the DUT above it.</summary>
     public DockPanel Pane { get; }
 
-    /// <summary>The title above the view.</summary>
-    public Border PaneHeader { get; }
+    /// <summary>The bar above the view: the name and state of the DUT, and the buttons that act on it.</summary>
+    public Border Bar { get; }
+
+    public Button ControlButton { get; } = new() { Content = "Take control" };
+
+    public Button PowerButton { get; } = new()
+    {
+        Content = "Power on", IsEnabled = false, [ToolTip.TipProperty] = "Switch the power of this DUT, while in control",
+    };
+
+    public Button PropertiesButton { get; } = new()
+    {
+        Content = "Properties", [ToolTip.TipProperty] = "This DUT on the board, the same for everyone: its label, address and details",
+    };
+
+    public Button LogButton { get; } = new()
+    {
+        Content = "Log file", [ToolTip.TipProperty] = "Write the console of this DUT to a file on this computer",
+    };
+
+    public ToggleButton FollowButton { get; } = new()
+    {
+        Content = "Follow", IsChecked = true, [ToolTip.TipProperty] = "Show new output as it comes (End)",
+    };
+
+    /// <summary>The items of the Log file menu: start, stop, open folder.</summary>
+    public MenuItem StartLogItem { get; } = new() { Header = "Start new log", [ToolTip.TipProperty] = "Log to a new file from now on" };
+
+    public MenuItem StopLogItem { get; } = new() { Header = "Stop log", IsEnabled = false };
+
+    public MenuItem LogFolderItem { get; } = new() { Header = "Open log folder" };
 
     /// <summary>Raised when what the window shows of this DUT changes.</summary>
     public event Action? Changed;
@@ -176,19 +239,31 @@ public sealed class DutTab
         }
     }
 
-    public string Status => string.Join("    ", new[]
+    /// <summary>The console stream is connected.</summary>
+    public bool Live => live;
+
+    /// <summary>The state of the DUT, shown in its bar: connection problem, power, control, lines, log file, note.</summary>
+    public string State => string.Join(", ", new[]
     {
-        connection,
-        alsoAt != "" ? "also at " + alsoAt : "",
-        DisplayName,
+        source != null && !live ? connection : "",
         PowerText,
-        session != "" ? "session " + session : "",
+        InControl ? "in control" : session,
         $"{Buffer.Count:N0} lines",
-        InControl ? (note != "" ? "in control, " + note : "in control") : note,
+        logText,
+        note,
     }.Where(p => p != ""));
 
-    /// <summary>The log file, or why there is none.</summary>
-    public string LogText => logText;
+    /// <summary>The name and the state, as the bar shows them.</summary>
+    public string Status => DisplayName + "    " + State;
+
+    /// <summary>The board, as this DUT reaches it: connection, its other address, server version, address note.</summary>
+    public string BoardState => string.Join(", ", new[]
+    {
+        live ? "Connected" : connection,
+        alsoAt != "" ? "also at " + alsoAt : "",
+        Details?.Version is string v && v != "" ? "BooBoot " + v : "",
+        addressNote,
+    }.Where(p => p != ""));
 
     /// <summary>The current log file.</summary>
     public string? LogPath => log.Active ? log.Path : null;
@@ -231,7 +306,7 @@ public sealed class DutTab
             input = null;
             SetControl(false, "");
         }
-        (connection, power, session, alsoAt) = ("Not connected", "", "", "");
+        (connection, power, session, alsoAt, addressNote, live) = ("Not connected", "", "", "", "", false);
         Update();
     }
 
@@ -272,12 +347,14 @@ public sealed class DutTab
                     Buffer.AddMarker(Marker("server restarted", DateTime.Now));
                 (Name, power) = (c.Name, c.Power);
                 connection = "Connected to " + source!.Url;
+                live = true;
                 if (!connectedOnce && settings.LogOnConnect && !log.Active)
                     StartLog();
                 connectedOnce = true;
                 break;
             case ConsoleSource.Disconnected d:
                 connection = "No connection, trying again: " + d.Message;
+                live = false;
                 break;
             case ConsoleSource.Output o:
                 history = o.History;
@@ -316,7 +393,7 @@ public sealed class DutTab
                 }
                 break;
             case ConsoleSource.AddressUsed a:
-                note = a.Note;
+                addressNote = a.Note;
                 break;
             case ConsoleSource.Board b:
                 BoardChanged?.Invoke(b.Duts);
@@ -351,8 +428,20 @@ public sealed class DutTab
         mark.IsVisible = NewOutput;
         ToolTip.SetTip(Header, string.Join(", ", new[] { DisplayName, PowerText, state.Text,
             NewOutput ? "new output" : "" }.Where(p => p != "")));
-        paneTitle.Text = string.Join(", ", new[] { DisplayName, PowerText, state.Text }.Where(p => p != ""));
-        PaneHeader.Classes.Set("current", current);
+        barTitle.Text = DisplayName;
+        barState.Text = State;
+        ToolTip.SetTip(barState, State);
+        Bar.Classes.Set("current", current);
+        ControlButton.IsEnabled = source != null;
+        ControlButton.Content = InControl ? "Release control" : "Take control";
+        ControlButton.Classes.Set("accent", InControl);
+        ToolTip.SetTip(ControlButton, InControl ? "Close the session of this DUT: others can use it"
+            : "Open the session of this DUT, to type into its console");
+        // The power button follows the power state, and works only in control.
+        PowerButton.IsVisible = HasRelay;
+        PowerButton.Content = power == "on" ? "Power off" : "Power on";
+        PowerButton.IsEnabled = InControl && !switching;
+        StopLogItem.IsEnabled = log.Active;
         Changed?.Invoke();
     }
 
@@ -503,11 +592,11 @@ public sealed class DutTab
 
     void UpdateLogText()
     {
-        logText = log.Active ? "Log: " + System.IO.Path.GetFileName(log.Path) : "No log";
+        logText = log.Active ? "logging to " + System.IO.Path.GetFileName(log.Path) : "";
         Update();
     }
 
-    /// <summary>Shows a problem with a file where the log file is shown.</summary>
+    /// <summary>Shows a problem with a file, in the state of the DUT.</summary>
     public void ShowLogProblem(string text)
     {
         logText = text;

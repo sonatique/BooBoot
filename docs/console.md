@@ -12,6 +12,20 @@ side by side or top and bottom: see [Several DUTs](#several-duts).
 To watch with nothing to install, the BooBoot server also has a
 [console web page](web.md).
 
+## The window
+
+- **The top bar** is for the BooBoot board and this window: the address of
+  the board, Connect or Disconnect (which only stops watching, in this
+  window), the state of the connection, the other address of the board and
+  the version of its server. On the right: DUTs and Layout, with several
+  DUTs (see [Several DUTs](#several-duts)), and Settings.
+- **The bar of a DUT**, above its console, is for that DUT: its label and
+  name, its state (power, who has its session, lines kept, log file), and
+  the buttons that act on it: Take control, Power, Properties, Log file and
+  Follow. When the view is narrow, the buttons go under the name.
+- **The console** of the DUT. Its right-click menu has Copy, Paste, Copy all,
+  Select all, Clear, Save and Properties.
+
 ## Features
 
 - **Live output.** The server sends each read from the serial port at once.
@@ -22,11 +36,12 @@ To watch with nothing to install, the BooBoot server also has a
 - **Power switches.** A line shows each power on and power off, with its time.
 - **Scrollback.** 200,000 lines by default. Long lines wrap.
 - **Follow.** The view follows new output. Scrolling up stops it, so that the
-  text stays in place. End or the Follow button starts it again.
+  text stays in place. End or the Follow button of the DUT starts it again.
 - **Copy and save.** Select with the mouse (double-click: word, triple-click:
   line), copy with Ctrl+C, select all with Ctrl+A. Save writes all the text
-  to a file (Ctrl+S). Clear (Ctrl+L) empties the view.
-- **Logs.** In the Log menu, "Start new log" writes all output from now on to
+  to a file (Ctrl+S). Clear (Ctrl+L) empties the view. All are also in the
+  right-click menu of the console.
+- **Logs.** In the Log file menu of a DUT, "Start new log" writes all output from now on to
   a new file `PREFIX-YYYYMMDD-HHMMSS.log` in the log folder; "Stop log" stops
   it, and "Open log folder" opens the folder. The prefix is the DUT name
   unless set; with several DUTs, a prefix set is followed by the DUT name.
@@ -37,18 +52,17 @@ To watch with nothing to install, the BooBoot server also has a
   in between (a line then says how many bytes were lost). A line also says
   when the server was restarted.
 
-The status bar shows the connection, the DUT name, the power state, and which
-client has the session. When the server address is a name, it also shows the
-address of the board (`also at 10.1.2.3:8080`), for where the name does not
-work, like over a VPN. The program keeps the addresses of the board, and uses
+When the server address is a name, the top bar also shows the address of the
+board (`also at 10.1.2.3:8080`), for where the name does not work, like over
+a VPN. The program keeps the addresses of the board, and uses
 them by itself when the name is not found: see [remote.md](remote.md).
 
 ## Several DUTs
 
 With the address of a board that has several DUTs, like
-`http://booboot.local:8080`, the window shows a tab for each DUT. The buttons
-and the status bar are those of the DUT of the current tab. Each DUT has its
-own view, scrollback, log files and session. A tab shows:
+`http://booboot.local:8080`, the window shows a tab for each DUT, with the bar
+of the DUT of the current tab under the tabs. Each DUT has its own view,
+scrollback, log files and session. A tab shows:
 
 - a dot: green when the DUT is on, gray when it is off,
 - "in control" when this program has the session of the DUT, or "used by"
@@ -62,12 +76,11 @@ it for that board. With the address of one DUT, like
 one DUT on the board, there are no tabs.
 
 The Layout button, next to the DUTs button, shows the DUTs one at a time in
-tabs, or all the DUTs shown at once: "Side by side" or "Top and bottom". Each
-then has a title above its view in place of the tabs (a right-click on it
-opens the DUT panel), and a bar between two views changes their sizes. The current DUT, the one that the buttons and the status bar are for,
-has its title highlighted: a click in a view, its tab, or Ctrl+Tab makes
-another one current, and what is typed goes to the current one. The program
-remembers the layout.
+tabs, or all the DUTs shown at once: "Side by side" or "Top and bottom", each
+view with the bar of its DUT, in place of the tabs. A divider between two
+views changes their sizes. What is typed goes to the view clicked last,
+whose bar has a blue line under it; Ctrl+Tab goes to the next one. The
+program remembers the layout.
 
 Several windows work too, like one for each DUT on another screen: start the
 program again with the address of the DUT, like
@@ -76,15 +89,15 @@ given this way is not kept: the next start without one uses the last address
 typed. With a log started on connect, hide that DUT in the window of the
 board, or its output goes to two log files.
 
-## DUT panel
+## Properties
 
-The DUT button, next to "Power", shows the DUT on the board, the same for
-everyone (Settings are those of this program, on this computer):
+The Properties button of a DUT, in its bar, shows the DUT on the board, the
+same for everyone (Settings are those of this program, on this computer):
 
 - its name and its address, like `http://booboot.local:8080/duts/dut1`, to
   copy for `booboot --dut dut1`, an agent or a colleague,
-- its label: free text shown with its name in the tab, the title and the
-  status bar, here and in the other viewers, like `ZCU102 rev B, bench 3`.
+- its label: free text shown with its name in its bar, its tab and the title,
+  here and in the other viewers, like `ZCU102 rev B, bench 3`.
   In control, "Set label" (or Enter) changes it for everyone; empty removes
   it,
 - its serial adapter and baud rate, its relay and power state, the side of
@@ -92,8 +105,8 @@ everyone (Settings are those of this program, on this computer):
   part that the DUT goes without, it says "no relay", "no USB-SD-Mux" or
   "no serial console".
 
-With several DUTs, it shows the DUT of the current tab. A right-click on a
-tab, then "DUT...", opens it for that DUT.
+A right-click on the bar or the tab of a DUT, then "Properties...", also
+opens it.
 
 ## Typing
 
@@ -120,14 +133,14 @@ cursor, and follows the output at each key.
   power state of the DUT, switches it. It works only in control. "Power off"
   asks first. Power on also gives the SD card back to the DUT. A DUT without
   relay has no power button.
-- **Label.** The DUT panel sets the label of the DUT, in control: see
-  [DUT panel](#dut-panel).
+- **Label.** Properties sets the label of the DUT, in control: see
+  [Properties](#properties).
 - **Release.** "Release control" closes the session. Closing the window also
   does. When no key is sent for the session timeout (300 s by default), the
-  session ends and the status bar says so.
+  session ends and the bar of the DUT says so.
 - **Busy.** If another client has the session, the program shows who and its
   idle time, and asks before taking it over. If another client takes it
-  over, typing stops and the status bar says who.
+  over, typing stops and the bar of the DUT says who.
 
 ## Run
 
