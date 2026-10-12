@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BooBoot</title>
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column;
+    background: #1e1e1e; color: #cccccc;
+    font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    padding: 4px 8px; background: #2d2d2d; border-bottom: 1px solid #3c3c3c;
+  }
+  #title { font-weight: 600; color: #ffffff; text-decoration: none; }
+  #info { color: #a0a0a0; }
+  button {
+    font: inherit; color: #dddddd; background: #3a3d41;
+    border: 1px solid #555555; border-radius: 4px; padding: 2px 10px; cursor: pointer;
+  }
+  button:hover { background: #45494e; }
+  button.on { background: #0e639c; border-color: #1177bb; color: #ffffff; }
+  label { white-space: nowrap; }
+  #panes { flex: 1; display: flex; min-height: 0; }
+  #panes.rows { flex-direction: column; }
+  .pane { flex: 1 1 0; min-width: 80px; min-height: 80px; display: flex; border: 2px solid transparent; }
+  .pane.current { border-color: #0e639c; }
+  .pane iframe { flex: 1; width: 100%; height: 100%; border: 0; }
+  .bar { flex: 0 0 5px; background: #3c3c3c; cursor: col-resize; touch-action: none; }
+  #panes.rows .bar { cursor: row-resize; }
+  .bar:hover { background: #0e639c; }
+  /* While a bar moves, the pages of the panes do not take the mouse. */
+  body.moving iframe { pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <a id="title" href="./" title="The DUTs of the board">BooBoot</a>
+  <button id="columns" title="The DUTs side by side">Side by side</button>
+  <button id="rows" title="The DUTs one above the other">Top and bottom</button>
+  <span id="choice"></span>
+  <span id="info">Connecting...</span>
+</header>
+<div id="panes"></div>
+<script>
+// Several DUTs of the board at once: the console page of each in a pane, side by side or top and bottom.
+// ?layout=columns or rows. ?duts=NAME,NAME: the DUTs shown (default: all that run).
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const panes = $("panes");
+  const params = new URLSearchParams(location.search);
+  let layout = params.get("layout") === "rows" ? "rows" : "columns";
+  let shown = params.get("duts") ? params.get("duts").split(",") : null;
+  // The DUTs of the board that run: [name, label].
+  let duts = [];
+
+  function keepInAddress() {
+    const p = new URLSearchParams({ layout: layout });
+    if (shown)
+      p.set("duts", shown.join(","));
+    history.replaceState(null, "", "?" + p);
+  }
+
+  function pane(name) {
+    return [...panes.children].find(p => p.dataset.name === name);
+  }
+
+  // Panes are added and removed, never moved: a frame that moves loads its page again, which ends its control.
+  function arrange() {
+    $("columns").classList.toggle("on", layout === "columns");
+    $("rows").classList.toggle("on", layout === "rows");
+    panes.className = layout;
+    const names = duts.map(d => d[0]).filter(n => !shown || shown.includes(n));
+    for (const p of [...panes.querySelectorAll(".pane")])
+      if (!names.includes(p.dataset.name))
+        p.remove();
+    let before = null;
+    for (const name of names) {
+      let p = pane(name);
+      if (!p) {
+        p = document.createElement("div");
+        p.className = "pane";
+        p.dataset.name = name;
+        const frame = document.createElement("iframe");
+        frame.title = name;
+        frame.src = "duts/" + encodeURIComponent(name) + "/?embed";
+        // The first page shown takes the keys.
+        frame.addEventListener("load", () => {
+          if (!panes.querySelector(".pane.current") && p === panes.querySelector(".pane"))
+            frame.focus();
+        });
+        p.append(frame);
+        if (before)
+          before.after(p);
+        else
+          panes.prepend(p);
+      }
+      before = p;
+    }
+    panes.querySelectorAll(".bar").forEach(b => b.remove());
+    const list = [...panes.querySelectorAll(".pane")];
+    list.forEach(p => { p.style.flexGrow = ""; });
+    list.slice(1).forEach(p => p.before(bar()));
+    showChoice();
+    $("info").textContent = list.length < 2 ? "" : "Click in a console to type into it";
+  }
+
+  // A bar between two panes changes their sizes.
+  function bar() {
+    const b = document.createElement("div");
+    b.className = "bar";
+    b.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      const first = b.previousElementSibling, second = b.nextElementSibling;
+      const across = layout === "columns" ? "width" : "height";
+      const at = ev => (layout === "columns" ? ev.clientX : ev.clientY);
+      const sizes = [first.getBoundingClientRect()[across], second.getBoundingClientRect()[across]];
+      const grow = (Number(first.style.flexGrow) || 1) + (Number(second.style.flexGrow) || 1);
+      const start = at(e), total = sizes[0] + sizes[1];
+      document.body.classList.add("moving");
+      const move = ev => {
+        const size = Math.min(Math.max(sizes[0] + at(ev) - start, 80), total - 80);
+        first.style.flexGrow = String(grow * size / total);
+        second.style.flexGrow = String(grow * (total - size) / total);
+      };
+      const end = () => {
+        document.body.classList.remove("moving");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", end);
+    });
+    return b;
+  }
+
+  // A box for each DUT of the board: the DUTs shown. One at least stays shown.
+  function showChoice() {
+    const names = [...panes.querySelectorAll(".pane")].map(p => p.dataset.name);
+    $("choice").replaceChildren(...duts.map(([name, label]) => {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = names.includes(name);
+      box.disabled = box.checked && names.length === 1;
+      box.onchange = () => {
+        const all = duts.map(d => d[0]);
+        const now = all.filter(n => n === name ? box.checked : names.includes(n));
+        shown = now.length === all.length ? null : now;
+        keepInAddress();
+        arrange();
+      };
+      const text = document.createElement("label");
+      text.append(box, " " + (label ? label + " (" + name + ")" : name));
+      return text;
+    }));
+  }
+
+  // The page of a pane says when it takes the keys.
+  window.addEventListener("message", e => {
+    if (e.origin !== location.origin || e.data !== "booboot-focus")
+      return;
+    for (const p of panes.querySelectorAll(".pane"))
+      p.classList.toggle("current", p.firstChild.contentWindow === e.source);
+  });
+
+  $("columns").onclick = () => { layout = "columns"; keepInAddress(); arrange(); };
+  $("rows").onclick = () => { layout = "rows"; keepInAddress(); arrange(); };
+  $("title").textContent = "BooBoot " + location.hostname;
+  document.title = "BooBoot " + location.hostname;
+
+  (async function load() {
+    for (;;) {
+      try {
+        const r = await (await fetch("api/v1/duts", { cache: "no-store" })).json();
+        duts = r.duts.filter(d => !d.error).map(d => [d.name, d.label || ""]);
+        if (shown && !duts.some(d => shown.includes(d[0])))
+          shown = null;
+        arrange();
+        return;
+      } catch (err) {
+        $("info").textContent = "No connection, trying again: " + err.message;
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  })();
+})();
+</script>
+</body>
+</html>

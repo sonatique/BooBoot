@@ -388,7 +388,10 @@ class DutsWebTest(unittest.TestCase):
         b.call("Page.navigate", session=True, url=self.url + "/duts/dut2/")
         select = "document.getElementById('duts')"
         b.wait("!%s.hidden && %s.value.endsWith('/duts/dut2/')" % (select, select), "list on the page of dut2")
-        self.assertEqual(b.eval("[...%s.options].map(o => o.text)" % select), ["dut1", "bench 3 (dut2)"])
+        self.assertEqual(b.eval("[...%s.options].map(o => o.text)" % select),
+                         ["dut1", "bench 3 (dut2)", "Side by side", "Top and bottom"])
+        options = b.eval("[...%s.querySelectorAll('optgroup option')].map(o => o.value)" % select)
+        self.assertEqual(options, ["/split.html?layout=columns", "/split.html?layout=rows"])
         self.assertEqual(b.eval("document.getElementById('name').hidden"), True)
         # No relay: no power button, and the DUT panel says what is missing.
         b.wait("document.getElementById('info').textContent.includes('Connected')", "dut2 connected")
@@ -405,6 +408,61 @@ class DutsWebTest(unittest.TestCase):
         b.wait("document.getElementById('info').textContent.includes('Connected')", "dut1 connected")
         b.wait("document.getElementById('info').textContent.includes('power off')", "power state of dut1")
         self.assertEqual(b.eval("document.getElementById('power').hidden"), False)
+
+    def test_split(self):
+        chrome = find_chrome()
+        if not chrome or not shutil.which("bash"):
+            self.skipTest("Chrome or bash not found (set BOOBOOT_CHROME)")
+        b = Browser(chrome)
+        self.addCleanup(b.close)
+        b.call("Page.navigate", session=True, url=self.url + "/")
+        b.wait("document.querySelectorAll('#views a').length === 2", "links of the board page")
+        self.assertEqual(b.eval("[...document.querySelectorAll('#views a')].map(a => a.getAttribute('href'))"),
+                         ["split.html?layout=columns", "split.html?layout=rows"])
+
+        # The page of each DUT in a pane, side by side.
+        b.call("Page.navigate", session=True, url=self.url + "/split.html?layout=columns")
+        frames = "[...document.querySelectorAll('iframe')]"
+        info = "f.contentDocument && f.contentDocument.getElementById('info').textContent.includes('Connected')"
+        b.wait("%s.length === 2 && %s.every(f => %s)" % (frames, frames, info), "both DUTs connected")
+        self.assertEqual(b.eval("%s.map(f => f.title)" % frames), ["dut1", "dut2"])
+        box = "%s.map(f => f.getBoundingClientRect()).map(r => [r.left, r.top, r.right, r.bottom])" % frames
+        first, second = b.eval(box)
+        self.assertTrue(second[0] > first[2] and second[1] == first[1], (first, second))
+        # No list of the DUTs in a pane.
+        self.assertEqual(b.eval("%s.map(f => f.contentDocument.getElementById('duts').hidden)" % frames),
+                         [True, True])
+        current = "(document.querySelector('.pane.current iframe') || {}).title"
+        b.wait(current + " === 'dut1'", "the first pane takes the keys")
+        # Frames that keep their page keep this mark.
+        b.eval("%s.forEach(f => { f.contentWindow.kept = true; })" % frames)
+        b.eval("%s[1].contentWindow.focus()" % frames)
+        b.wait(current + " === 'dut2'", "the pane clicked takes the keys")
+
+        # A bar changes the sizes of the two panes next to it.
+        b.eval("""(() => {
+            const bar = document.querySelector('.bar'), r = bar.getBoundingClientRect();
+            const at = x => ({ clientX: x, clientY: r.top + 10, bubbles: true, pointerId: 1 });
+            bar.dispatchEvent(new PointerEvent('pointerdown', at(r.left)));
+            window.dispatchEvent(new PointerEvent('pointermove', at(r.left + 100)));
+            window.dispatchEvent(new PointerEvent('pointerup', at(r.left + 100)));
+        })()""")
+        moved = b.eval(box)
+        self.assertAlmostEqual(moved[0][2] - first[2], 100, delta=3)
+
+        # Top and bottom, then dut1 alone, then both again: the pages stay.
+        b.eval("document.getElementById('rows').click()")
+        b.wait("location.search === '?layout=rows'", "layout in the address")
+        first, second = b.eval(box)
+        self.assertTrue(second[1] > first[3] and second[0] == first[0], (first, second))
+        boxes = "[...document.querySelectorAll('#choice input')]"
+        b.eval("%s[1].click()" % boxes)
+        b.wait("%s.length === 1 && location.search === '?layout=rows&duts=dut1'" % frames, "dut1 alone")
+        self.assertEqual(b.eval("%s.map(i => [i.checked, i.disabled])" % boxes), [[True, True], [False, False]])
+        b.eval("%s[1].click()" % boxes)
+        b.wait("%s.length === 2 && %s.every(f => %s)" % (frames, frames, info), "both DUTs again")
+        self.assertEqual(b.eval("%s.map(f => f.contentWindow.kept === true)" % frames), [True, False])
+        self.assertEqual(b.eval("location.search"), "?layout=rows")
 
 
 if __name__ == "__main__":

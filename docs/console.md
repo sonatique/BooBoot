@@ -55,16 +55,16 @@ own view, scrollback, log files and session. A tab shows:
   and the client that has it,
 - a bullet when new output came while another tab was shown.
 
-Ctrl+Tab shows the next DUT, Ctrl+Shift+Tab the previous one. The DUTs button,
-next to the tabs, shows or hides DUTs: a hidden DUT is not watched, and the
-program remembers it for that board. With the address of one DUT, like
+Ctrl+Tab shows the next DUT, Ctrl+Shift+Tab the previous one. The DUTs button
+shows or hides DUTs: a hidden DUT is not watched, and the program remembers
+it for that board. With the address of one DUT, like
 `http://booboot.local:8080/duts/dut2`, the window shows that DUT only. With
 one DUT on the board, there are no tabs.
 
 The Layout button, next to the DUTs button, shows the DUTs one at a time in
 tabs, or all the DUTs shown at once: "Side by side" or "Top and bottom". Each
-then has a title above its view, and a bar between two views changes their
-sizes. The current DUT, the one that the buttons and the status bar are for,
+then has a title above its view in place of the tabs (a right-click on it
+opens the DUT panel), and a bar between two views changes their sizes. The current DUT, the one that the buttons and the status bar are for,
 has its title highlighted: a click in a view, its tab, or Ctrl+Tab makes
 another one current, and what is typed goes to the current one. The program
 remembers the layout.

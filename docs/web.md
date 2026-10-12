@@ -20,6 +20,15 @@ DUT, at `http://booboot.local:8080/duts/NAME/`. On a console page, a list
 next to the DUT name goes to another DUT of the board. Both show the label
 of each DUT, if it has one.
 
+To see several DUTs at once, the board page and the list of a console page
+lead to `http://booboot.local:8080/split.html`: the console page of each DUT
+in a pane, side by side or top and bottom (the buttons at the top). A bar
+between two panes changes their sizes, and a box for each DUT shows or hides
+it. The address keeps these choices, like
+`split.html?layout=rows&duts=dut1,dut2`, to bookmark. Each pane works as the
+console page of its DUT, with its own control; what is typed goes to the pane
+clicked last, which has a blue border.
+
 ## Features
 
 - **Live output**, and the output kept by the server from before (8 MB by

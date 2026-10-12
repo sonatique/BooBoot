@@ -1,13 +1,15 @@
 // The console web page of a DUT: reads api/v1/console/stream and shows it. Its paths are relative:
 // the page of a DUT of the board is at /duts/NAME/.
 // Watching needs no session. "Take control" opens the session, to type into the console.
-// ?lines=N sets the number of lines kept (default 50000).
+// ?lines=N sets the number of lines kept (default 50000). ?embed: in a pane of split.html, without the list of the
+// DUTs, and telling split.html when it takes the keys.
 
 (function () {
   "use strict";
 
   const T = window.BooBootTerminal;
   const params = new URLSearchParams(location.search);
+  const embedded = params.has("embed");
   const term = new T.Terminal(Number(params.get("lines")) || 50000);
   const $ = id => document.getElementById(id);
   const screen = $("screen"), panel = $("panel"), followButton = $("follow"), controlButton = $("control");
@@ -333,12 +335,16 @@
     }
   }
 
-  // With several DUTs on the board, a list in place of the name goes to the page of another one.
+  // With several DUTs on the board, a list in place of the name goes to the page of another one, or of all at once.
   function showDuts(duts) {
     const select = $("duts");
+    const all = document.createElement("optgroup");
+    all.label = "All at once";
+    all.append(new Option("Side by side", "/split.html?layout=columns"),
+      new Option("Top and bottom", "/split.html?layout=rows"));
     select.replaceChildren(...duts.map(d => new Option(d.label ? d.label + " (" + d.name + ")" : d.name,
-      "/duts/" + encodeURIComponent(d.name) + "/", false, d.name === name)));
-    select.hidden = duts.length < 2;
+      "/duts/" + encodeURIComponent(d.name) + "/", false, d.name === name)), all);
+    select.hidden = embedded || duts.length < 2;
     $("name").hidden = !select.hidden;
   }
 
@@ -703,7 +709,11 @@
   });
 
   setSize(size);
-  screen.focus();
+  if (embedded) {
+    document.body.classList.add("embed");
+    window.addEventListener("focus", () => parent.postMessage("booboot-focus", location.origin));
+  } else
+    screen.focus();
   showInfo();
   stream();
   poll();

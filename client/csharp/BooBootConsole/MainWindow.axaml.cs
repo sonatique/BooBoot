@@ -163,8 +163,11 @@ public partial class MainWindow : Window
     /// <summary>The DUT shown. For tests.</summary>
     public DutTab? CurrentDut => current;
 
-    /// <summary>True when the tabs and the DUTs button show, for a board with several DUTs. For tests.</summary>
-    public bool TabsShown => TabRow.IsVisible;
+    /// <summary>True when the DUTs and Layout buttons show, for a board with several DUTs. For tests.</summary>
+    public bool TabsShown => DutsButton.IsVisible;
+
+    /// <summary>True when the tab strip shows: several DUTs, one at a time. For tests.</summary>
+    public bool TabStripShown => Tabs.IsVisible;
 
     // Connection
 
@@ -270,7 +273,7 @@ public partial class MainWindow : Window
                 tab.Connect(wholeBoard ? BooBootClient.DutUrl(board, tab.Name) : url, board);
         }
         changingTabs = false;
-        TabRow.IsVisible = wholeBoard && names.Count > 1;
+        DutsButton.IsVisible = LayoutButton.IsVisible = wholeBoard && names.Count > 1;
         Arrange();
         var focused = FocusManager?.GetFocusedElement();
         Select(current != null && tabs.Contains(current) ? current : tabs.FirstOrDefault(t => t.Name == first) ?? tabs[0],
@@ -308,6 +311,11 @@ public partial class MainWindow : Window
                 Select(tab, focus: true);
         };
         tab.PaneHeader.PointerPressed += (_, _) => Select(tab, focus: true);
+        tab.PaneHeader.ContextMenu = DutMenu(() =>
+        {
+            Select(tab, focus: true);
+            OpenDutPanel();
+        });
         return tab;
     }
 
@@ -368,6 +376,8 @@ public partial class MainWindow : Window
             Views.Children.Add(control);
         }
 
+        // The panes have titles in place of the tabs.
+        Tabs.IsVisible = DutsButton.IsVisible && !allAtOnce;
         foreach (var tab in tabs)
         {
             tab.PaneHeader.IsVisible = allAtOnce;

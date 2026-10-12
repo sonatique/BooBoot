@@ -59,6 +59,9 @@
     padding: 3px 5px; font: inherit; width: 100%; box-sizing: border-box;
   }
   #panel input[readonly] { background: #2d2d2d; }
+  /* In a pane of split.html: less room. */
+  body.embed header { padding: 3px 6px; gap: 4px; }
+  body.embed button { padding: 1px 7px; }
   /* Narrow screens: the state on its own line, under the buttons. */
   @media (max-width: 700px) { #info { order: 1; flex-basis: 100%; } }
 </style>

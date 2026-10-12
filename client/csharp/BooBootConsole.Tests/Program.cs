@@ -392,6 +392,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
         "side by side");
     Check(second.PaneHeader.Classes.Contains("current") && !first.PaneHeader.Classes.Contains("current")
         && second.PaneHeader.Background != null, "the current DUT stands out");
+    Check(!window.TabStripShown && window.TabsShown, "titles in place of the tabs, the DUTs and Layout buttons kept");
     first.View.Focus();
     Check(window.CurrentDut == first && window.Title == "dut1 - BooBoot Console"
         && first.PaneHeader.Classes.Contains("current"), "the DUT clicked becomes the current one");
@@ -409,7 +410,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     second.View.Focus();
     window.SetLayout("tabs");
     await WaitFor(() => window.CurrentDut == second && second.Shown && window.Duts.Count(d => d.Shown) == 1
-        && !second.PaneHeader.IsVisible, "tabs again, the current DUT shown");
+        && !second.PaneHeader.IsVisible && window.TabStripShown, "tabs again, the current DUT shown");
 
     // A label set by another client shows in the tab.
     await dut2.SetLabelAsync("bench 3");

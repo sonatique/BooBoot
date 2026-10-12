@@ -4,9 +4,18 @@
         Title="BooBoot Console" Icon="/Assets/booboot.ico"
         Width="1180" Height="700" MinWidth="400" MinHeight="200">
   <Window.Styles>
+    <!-- Compact bars, to leave the room to the consoles. -->
+    <Style Selector="WrapPanel.toolbar Button, WrapPanel.toolbar ToggleButton">
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
+    <Style Selector="WrapPanel.toolbar TextBox">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
     <Style Selector="TabStripItem">
       <Setter Property="FontSize" Value="13" />
-      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="MinHeight" Value="26" />
       <Setter Property="Padding" Value="10,0" />
     </Style>
     <!-- The title above each view, with several DUTs at once: the current one stands out. -->
@@ -25,7 +34,7 @@
     </Style>
   </Window.Styles>
   <DockPanel>
-    <WrapPanel DockPanel.Dock="Top" Margin="6" ItemSpacing="6" LineSpacing="6">
+    <WrapPanel Classes="toolbar" DockPanel.Dock="Top" Margin="4,3" ItemSpacing="4" LineSpacing="3">
       <TextBox Name="UrlBox" Width="240" PlaceholderText="http://booboot.local:8080" VerticalAlignment="Center" />
       <Button Name="ConnectButton" Content="Connect" />
       <Button Name="ControlButton" Content="Take control" IsEnabled="False"
@@ -61,19 +70,37 @@
           </Flyout>
         </Button.Flyout>
       </Button>
-      <Border Width="12" />
+      <Border Width="8" />
       <Button Name="ClearButton" Content="Clear" ToolTip.Tip="Clear the view (Ctrl+L, in control Ctrl+Shift+L)" />
       <Button Name="CopyButton" Content="Copy" ToolTip.Tip="Copy the selection (Ctrl+C)" />
       <Button Name="SaveButton" Content="Save..." ToolTip.Tip="Save all the text to a file (Ctrl+S, in control Ctrl+Shift+S)" />
       <ToggleButton Name="FollowButton" Content="Follow" IsChecked="True"
                     ToolTip.Tip="Show new output as it comes (End)" />
-      <Border Width="12" />
+      <Border Width="8" />
       <Button Name="LogButton" Content="Log" ToolTip.Tip="Log files of the console, on this computer">
         <Button.Flyout>
           <MenuFlyout Placement="BottomEdgeAlignedLeft">
             <MenuItem Name="StartLogItem" Header="Start new log" ToolTip.Tip="Log to a new file from now on" />
             <MenuItem Name="StopLogItem" Header="Stop log" IsEnabled="False" />
             <MenuItem Name="OpenLogFolderItem" Header="Open log folder" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+      <Button Name="DutsButton" Content="DUTs" IsVisible="False"
+              ToolTip.Tip="Show or hide DUTs of the board">
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnDutsOpening">
+            <StackPanel Name="DutsList" Spacing="4" />
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+      <Button Name="LayoutButton" Content="Layout" IsVisible="False"
+              ToolTip.Tip="One DUT at a time in tabs, or all the DUTs shown at once">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Name="TabsItem" Header="Tabs" ToggleType="Radio" GroupName="layout" />
+            <MenuItem Name="ColumnsItem" Header="Side by side" ToggleType="Radio" GroupName="layout" />
+            <MenuItem Name="RowsItem" Header="Top and bottom" ToggleType="Radio" GroupName="layout" />
           </MenuFlyout>
         </Button.Flyout>
       </Button>
@@ -112,28 +139,8 @@
       <TextBlock Name="StatusText" Text="Not connected" TextTrimming="CharacterEllipsis" />
       <TextBlock Name="LogText" Grid.Column="1" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
     </Grid>
-    <!-- With several DUTs on the board: a tab for each DUT shown. -->
-    <DockPanel Name="TabRow" DockPanel.Dock="Top" IsVisible="False" Margin="6,0">
-      <Button Name="DutsButton" DockPanel.Dock="Left" Content="DUTs" VerticalAlignment="Center"
-              ToolTip.Tip="Show or hide DUTs of the board">
-        <Button.Flyout>
-          <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnDutsOpening">
-            <StackPanel Name="DutsList" Spacing="4" />
-          </Flyout>
-        </Button.Flyout>
-      </Button>
-      <Button Name="LayoutButton" DockPanel.Dock="Left" Content="Layout" Margin="6,0,0,0" VerticalAlignment="Center"
-              ToolTip.Tip="One DUT at a time in tabs, or all the DUTs shown at once">
-        <Button.Flyout>
-          <MenuFlyout Placement="BottomEdgeAlignedLeft">
-            <MenuItem Name="TabsItem" Header="Tabs" ToggleType="Radio" GroupName="layout" />
-            <MenuItem Name="ColumnsItem" Header="Side by side" ToggleType="Radio" GroupName="layout" />
-            <MenuItem Name="RowsItem" Header="Top and bottom" ToggleType="Radio" GroupName="layout" />
-          </MenuFlyout>
-        </Button.Flyout>
-      </Button>
-      <TabStrip Name="Tabs" Margin="6,0,0,0" />
-    </DockPanel>
+    <!-- With several DUTs on the board, shown one at a time: a tab for each DUT shown. -->
+    <TabStrip Name="Tabs" DockPanel.Dock="Top" IsVisible="False" Margin="4,0" />
     <!-- The console views of the DUTs: the one of the current DUT, or all of them. -->
     <Grid Name="Views" />
   </DockPanel>
