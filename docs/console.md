@@ -17,8 +17,9 @@ To watch with nothing to install, the BooBoot server also has a
 - **The top bar** is for the BooBoot board and this window: the address of
   the board, Connect or Disconnect (which only stops watching, in this
   window), the state of the connection, the other address of the board and
-  the version of its server. On the right: DUTs and Layout, with several
-  DUTs (see [Several DUTs](#several-duts)), and Settings.
+  the version of its server. On the right: the load of the board (see
+  [BooBoot log and load](#booboot-log-and-load)), DUTs and Layout (see
+  [Several DUTs](#several-duts)), and Settings.
 - **The bar of a DUT**, above its console, is for that DUT: its label and
   name, its state (power, who has its session, lines kept, log file), and
   the buttons that act on it: Take control, Power, Properties, Log file and
@@ -70,8 +71,8 @@ scrollback, log files and session. A tab shows:
 - a bullet when new output came while another tab was shown.
 
 Ctrl+Tab shows the next DUT, Ctrl+Shift+Tab the previous one. The DUTs button
-shows or hides DUTs: a hidden DUT is not watched, and the program remembers
-it for that board. With the address of one DUT, like
+shows or hides DUTs, and the BooBoot log: a hidden DUT is not watched, and the
+program remembers it for that board. With the address of one DUT, like
 `http://booboot.local:8080/duts/dut2`, the window shows that DUT only. With
 one DUT on the board, there are no tabs.
 
@@ -88,6 +89,21 @@ program again with the address of the DUT, like
 given this way is not kept: the next start without one uses the last address
 typed. With a log started on connect, hide that DUT in the window of the
 board, or its output goes to two log files.
+
+## BooBoot log and load
+
+"BooBoot log", in the menu of the DUTs button, shows the messages of the
+BooBoot server as one more view, read only: what it does (sessions, power
+switches, SD card, console commands of clients, scripts) and its problems,
+like a serial adapter or a USB-SD-Mux not found, or a DUT that did not start.
+These are the messages that `journalctl -u booboot` shows on the board. The
+program remembers it for the board.
+
+The top bar shows the load of the board, measured every second. The up
+arrow lights when the board receives network traffic (more than 4 KB/s, from
+any client), the down arrow when it sends; brighter with more traffic. The
+CPU gauge goes from green to red with the CPU use. Its tooltip gives the
+numbers, and the temperature of the board.
 
 ## Properties
 

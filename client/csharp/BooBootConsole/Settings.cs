@@ -23,6 +23,8 @@ public sealed class Settings
     public Dictionary<string, List<string>> Addresses { get; set; } = new();
     /// <summary>How several DUTs show: "tabs", one at a time, or all at once "columns" (side by side) or "rows".</summary>
     public string Layout { get; set; } = "tabs";
+    /// <summary>The boards whose BooBoot log, the messages of their server, is shown.</summary>
+    public List<string> BoardLogs { get; set; } = new();
     /// <summary>The DUTs not shown, for each board with several.</summary>
     public Dictionary<string, List<string>> HiddenDuts { get; set; } = new();
 

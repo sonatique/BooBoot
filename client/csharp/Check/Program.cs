@@ -38,6 +38,22 @@ using (var local = new BooBootClient($"http://booboot-none.local:{server.Port}")
     Check((await Fails(() => local.StatusAsync())).Message.Contains(".local names work only on the local network"),
         "hint when a .local name is not found");
 
+// The board: the messages of its server, and its load.
+var activity = await dut.ActivityAsync();
+Check(activity.TryGetProperty("cpu", out _) && activity.GetProperty("traffic").TryGetProperty("out", out _),
+    "board activity");
+using (var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+{
+    var log = dut.StreamBoardLogAsync("start", stop.Token).GetAsyncEnumerator(stop.Token);
+    Check(await log.MoveNextAsync() && log.Current.Type == "hello"
+        && log.Current.Data.GetProperty("name").GetString() == "BooBoot log", "board log stream");
+    var messages = "";
+    while (!messages.Contains(" INFO booboot: BooBoot ") && await log.MoveNextAsync())
+        messages += log.Current.Text;
+    Check(messages.Contains(" INFO booboot: BooBoot "), "messages of the server in the board log");
+    await log.DisposeAsync();
+}
+
 // The DUTs of the board, each also at URL/duts/NAME.
 var duts = (await dut.DutsAsync()).GetProperty("duts").EnumerateArray().ToList();
 Check(duts[0].GetProperty("name").GetString() == "dut1" && duts[0].GetProperty("url").GetString() == "/duts/dut1",

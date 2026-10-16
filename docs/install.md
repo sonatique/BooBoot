@@ -131,7 +131,7 @@ sudo systemctl restart booboot
 ```
 
 A restart switches the DUTs off. Service messages: `journalctl -u booboot -f`
-(Ctrl+C to stop).
+(Ctrl+C to stop), or the BooBoot log in BooBoot Console and on the web page.
 
 ### 6. Clock
 

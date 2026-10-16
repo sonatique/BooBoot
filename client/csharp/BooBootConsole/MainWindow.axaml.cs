@@ -13,6 +13,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Threading;
 using BooBoot;
 
 namespace BooBootConsole;
@@ -20,6 +22,10 @@ namespace BooBootConsole;
 public partial class MainWindow : Window
 {
     static readonly Regex DutPath = new("/duts/[^/]+$");
+    static readonly IBrush IdleBrush = new SolidColorBrush(Color.Parse("#808080"), 0.35);
+    static readonly Color ActiveColor = Color.Parse("#2EA043");
+    // Bytes per second of network traffic from which an arrow lights.
+    const double Busy = 4096;
 
     readonly Settings settings;
     readonly bool persist;
@@ -132,7 +138,10 @@ public partial class MainWindow : Window
     public string Status => BoardText.Text + (current != null ? "    " + current.Status : "");
 
     /// <summary>The DUTs shown, in the order of the tabs. For tests.</summary>
-    public IReadOnlyList<DutTab> Duts => tabs;
+    public IReadOnlyList<DutTab> Duts => tabs.Where(t => !t.IsBoardLog).ToList();
+
+    /// <summary>The BooBoot log, when shown. For tests.</summary>
+    public DutTab? BoardLog => tabs.FirstOrDefault(t => t.IsBoardLog);
 
     /// <summary>The DUT shown. For tests.</summary>
     public DutTab? CurrentDut => current;
@@ -177,6 +186,7 @@ public partial class MainWindow : Window
         connection = "Connecting to " + url;
         opening = new CancellationTokenSource();
         _ = Open(opening.Token);
+        _ = WatchActivity(opening.Token);
         Refresh();
     }
 
@@ -229,12 +239,15 @@ public partial class MainWindow : Window
         var shown = names.Where(n => !hidden.Contains(n)).ToList();
         if (shown.Count == 0)
             shown = names.ToList();
-        foreach (var tab in tabs.Where(t => !shown.Contains(t.Name)).ToList())
+        var log = wholeBoard && settings.BoardLogs.Contains(board);
+        foreach (var tab in tabs.Where(t => t.IsBoardLog ? !log : !shown.Contains(t.Name)).ToList())
         {
             tab.Close();
             tabs.Remove(tab);
         }
-        var ordered = shown.Select(n => tabs.FirstOrDefault(t => t.Name == n) ?? Add(n)).ToList();
+        var ordered = shown.Select(n => tabs.FirstOrDefault(t => !t.IsBoardLog && t.Name == n) ?? Add(n)).ToList();
+        if (log)
+            ordered.Add(tabs.FirstOrDefault(t => t.IsBoardLog) ?? Add(DutTab.BoardLogName, boardLog: true));
         changingTabs = true;
         tabs.Clear();
         tabs.AddRange(ordered);
@@ -244,25 +257,27 @@ public partial class MainWindow : Window
             Tabs.Items.Add(tab.Header);
             tab.Several = wholeBoard && names.Count > 1;
             if (!tab.Connected)
-                tab.Connect(wholeBoard ? BooBootClient.DutUrl(board, tab.Name) : url, board);
+                tab.Connect(tab.IsBoardLog ? board : wholeBoard ? BooBootClient.DutUrl(board, tab.Name) : url, board);
         }
         changingTabs = false;
-        DutsButton.IsVisible = LayoutButton.IsVisible = wholeBoard && names.Count > 1;
+        DutsButton.IsVisible = wholeBoard;
+        LayoutButton.IsVisible = tabs.Count > 1;
         Arrange();
         var focused = FocusManager?.GetFocusedElement();
         Select(current != null && tabs.Contains(current) ? current : tabs.FirstOrDefault(t => t.Name == first) ?? tabs[0],
             focus: focused is null or TerminalView);
     }
 
-    DutTab Add(string name)
+    DutTab Add(string name, bool boardLog = false)
     {
-        var tab = new DutTab(name, settings, SaveSettings);
-        tab.View.ContextMenu = ViewMenu();
-        tab.Header.ContextMenu = DutMenu(() =>
-        {
-            Select(tab, focus: true);
-            OpenDutPanel();
-        });
+        var tab = new DutTab(name, settings, SaveSettings, boardLog);
+        tab.View.ContextMenu = ViewMenu(!boardLog);
+        if (!boardLog)
+            tab.Header.ContextMenu = DutMenu(() =>
+            {
+                Select(tab, focus: true);
+                OpenDutPanel();
+            });
         tab.Changed += () =>
         {
             if (tab == current)
@@ -285,11 +300,12 @@ public partial class MainWindow : Window
                 Select(tab, focus: true);
         };
         tab.Bar.PointerPressed += (_, _) => Select(tab, focus: true);
-        tab.Bar.ContextMenu = DutMenu(() =>
-        {
-            Select(tab, focus: true);
-            OpenDutPanel();
-        });
+        if (!boardLog)
+            tab.Bar.ContextMenu = DutMenu(() =>
+            {
+                Select(tab, focus: true);
+                OpenDutPanel();
+            });
         tab.ControlButton.Click += async (_, _) =>
         {
             Select(tab, focus: false);
@@ -372,8 +388,8 @@ public partial class MainWindow : Window
             Views.Children.Add(control);
         }
 
-        // The panes have titles in place of the tabs.
-        Tabs.IsVisible = DutsButton.IsVisible && !allAtOnce;
+        // The panes have their bars in place of the tabs.
+        Tabs.IsVisible = tabs.Count > 1 && !allAtOnce;
         Views.Classes.Set("split", allAtOnce);
         foreach (var tab in tabs)
         {
@@ -512,15 +528,16 @@ public partial class MainWindow : Window
     void FillDutsList()
     {
         DutsList.Children.Clear();
+        var duts = Duts;
         foreach (var name in boardDuts)
         {
-            var shown = tabs.Any(t => t.Name == name);
+            var shown = duts.Any(t => t.Name == name);
             var box = new CheckBox
             {
                 Content = name,
                 IsChecked = shown,
                 // One DUT at least stays shown.
-                IsEnabled = !shown || tabs.Count > 1,
+                IsEnabled = !shown || duts.Count > 1,
             };
             box.IsCheckedChanged += (_, _) =>
             {
@@ -529,6 +546,31 @@ public partial class MainWindow : Window
             };
             DutsList.Children.Add(box);
         }
+        var log = new CheckBox
+        {
+            Content = DutTab.BoardLogName,
+            IsChecked = BoardLog != null,
+            [ToolTip.TipProperty] = "The messages of the BooBoot server: what it does, and its problems",
+        };
+        log.IsCheckedChanged += (_, _) =>
+        {
+            ShowBoardLog(log.IsChecked == true);
+            FillDutsList();
+        };
+        DutsList.Children.Add(new Separator());
+        DutsList.Children.Add(log);
+    }
+
+    /// <summary>Shows or hides the BooBoot log, the messages of the server of the board, and remembers it for the board.</summary>
+    public void ShowBoardLog(bool shown)
+    {
+        if (!wholeBoard)
+            return;
+        settings.BoardLogs.Remove(board);
+        if (shown)
+            settings.BoardLogs.Add(board);
+        SaveSettings();
+        ShowDuts(boardDuts);
     }
 
     /// <summary>Shows or hides the tab of a DUT of the board, and remembers it for the board.</summary>
@@ -549,6 +591,99 @@ public partial class MainWindow : Window
         SaveSettings();
         ShowDuts(boardDuts);
     }
+
+    // Activity of the board
+
+    /// <summary>Shows the load of the board every second: network traffic to and from it, and its CPU use.</summary>
+    async Task WatchActivity(CancellationToken stop)
+    {
+        var known = settings.Addresses.TryGetValue(board, out var list) ? list : new List<string>();
+        using var client = new BooBootClient(board, TimeSpan.FromSeconds(5)) { Addresses = known.ToList() };
+        while (!stop.IsCancellationRequested)
+        {
+            try
+            {
+                var activity = await client.ActivityAsync();
+                if (!stop.IsCancellationRequested)
+                    ShowActivity(activity);
+            }
+            catch (BooBootException e)
+            {
+                // A server older than this measure does not have it.
+                if (e.Status == 404)
+                    break;
+                if (!stop.IsCancellationRequested)
+                    ShowActivity(null);
+            }
+            try
+            {
+                await Task.Delay(1000, stop);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+        if (!stop.IsCancellationRequested)
+            ActivityPanel.IsVisible = false;
+    }
+
+    void ShowActivity(JsonElement? activity)
+    {
+        static double? Number(JsonElement e, string name) => e.ValueKind == JsonValueKind.Object
+            && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+        var a = activity ?? default;
+        var traffic = a.ValueKind == JsonValueKind.Object && a.TryGetProperty("traffic", out var t) ? t : default;
+        var (cpu, received, sent) = (Number(a, "cpu"), Number(traffic, "in"), Number(traffic, "out"));
+        var temperature = Number(a, "temperature");
+        ActivityPanel.IsVisible = true;
+        CpuBar.Width = 40 * Math.Clamp((cpu ?? 0) / 100, 0, 1);
+        CpuBar.Background = new SolidColorBrush(LoadColor(cpu ?? 0));
+        Blink(UpArrow, received);
+        Blink(DownArrow, sent);
+        ToolTip.SetTip(ActivityPanel, activity == null ? "No answer from the board" : string.Join("\n",
+            "BooBoot board",
+            "CPU " + (cpu is double c ? $"{c:0}%" : "unknown") + (temperature is double d ? $", {d:0.0} \u00b0C" : ""),
+            "To the board: " + Rate(received),
+            "From the board: " + Rate(sent)));
+    }
+
+    /// <summary>Lights an arrow for a moment when the traffic is busy: brighter with more traffic.</summary>
+    static void Blink(Avalonia.Controls.Shapes.Path arrow, double? rate)
+    {
+        if (rate is not double r || r < Busy)
+        {
+            arrow.Fill = IdleBrush;
+            return;
+        }
+        var level = Math.Clamp(Math.Log10(r / Busy) / Math.Log10(256), 0, 1);
+        arrow.Fill = new SolidColorBrush(ActiveColor, 0.5 + 0.5 * level);
+        DispatcherTimer.RunOnce(() => arrow.Fill = IdleBrush, TimeSpan.FromMilliseconds(350));
+    }
+
+    /// <summary>Green when idle, yellow at half load, red when full.</summary>
+    static Color LoadColor(double cpu)
+    {
+        Color Mix(Color a, Color b, double f) => Color.FromRgb((byte)(a.R + (b.R - a.R) * f),
+            (byte)(a.G + (b.G - a.G) * f), (byte)(a.B + (b.B - a.B) * f));
+        var (green, yellow, red) = (Color.Parse("#2EA043"), Color.Parse("#D29922"), Color.Parse("#F85149"));
+        var f = Math.Clamp(cpu / 100, 0, 1);
+        return f < 0.5 ? Mix(green, yellow, f * 2) : Mix(yellow, red, (f - 0.5) * 2);
+    }
+
+    static string Rate(double? bytes) => bytes switch
+    {
+        null => "unknown",
+        < 1024 => $"{bytes:0} B/s",
+        < 1 << 20 => $"{bytes / 1024:0.0} KB/s",
+        _ => $"{bytes / (1 << 20):0.0} MB/s",
+    };
+
+    /// <summary>True when the load of the board shows. For tests.</summary>
+    public bool ActivityShown => ActivityPanel.IsVisible;
+
+    /// <summary>The details of the load of the board, as its tooltip shows them. For tests.</summary>
+    public string ActivityText => ToolTip.GetTip(ActivityPanel) as string ?? "";
 
     // Control
 
@@ -639,7 +774,7 @@ public partial class MainWindow : Window
 
     // Commands
 
-    ContextMenu ViewMenu()
+    ContextMenu ViewMenu(bool dut)
     {
         var menu = new ContextMenu();
         foreach (var (header, gesture, click) in new (string, string?, EventHandler<RoutedEventArgs>?)[]
@@ -662,8 +797,11 @@ public partial class MainWindow : Window
             item.Click += click;
             menu.Items.Add(item);
         }
-        menu.Items.Add(new Separator());
-        menu.Items.Add(DutItem(OpenDutPanel));
+        if (dut)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(DutItem(OpenDutPanel));
+        }
         return menu;
     }
 

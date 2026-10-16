@@ -72,6 +72,37 @@ same at the base URL of each DUT.
 `GET /status`. `error`: the DUT could not start. Its calls then answer 503
 `dut_unavailable`, saying why, and the other DUTs work.
 
+## The board
+
+No session needed. The same at the base URL of each DUT.
+
+### GET /board/log
+
+The BooBoot log: the messages of the server, one per line with its time, as
+`journalctl -u booboot` shows them, the last 1 MB kept in memory. They are
+the changes (sessions, power, SD card, console commands of clients, scripts)
+and the problems (a serial adapter or USB-SD-Mux not found, a DUT that did not
+start). Successful reads are not in it. Parameters and answer as for
+`GET /console`; `since` defaults to the start.
+
+### GET /board/log/stream
+
+The BooBoot log as it grows, as `GET /console/stream` sends a console: a
+`hello` with the name `BooBoot log`, then `output` and `ping`.
+
+### GET /board/activity
+
+The load of the board, measured every second:
+
+```json
+{"cpu": 12.5, "traffic": {"in": 1234, "out": 56789}, "temperature": 48.2, "interval": 1.0}
+```
+
+`cpu`: percent of the time of all cores busy. `traffic`: bytes per second
+received (`in`) and sent (`out`) on the network interfaces of the board, for
+all clients. `temperature`: degrees Celsius of the processor, `null` when the
+board does not give it. All are `null` for the first second.
+
 ## Status and session
 
 ### GET /status

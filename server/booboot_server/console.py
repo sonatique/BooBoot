@@ -310,6 +310,10 @@ class Console:
             if data:
                 self._append(data)
 
+    def add(self, data):
+        """Add output that does not come from the port, like the messages of the server."""
+        self._append(data)
+
     def _append(self, data):
         now = time.monotonic()
         with self._cond:

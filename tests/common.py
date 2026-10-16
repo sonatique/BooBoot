@@ -20,11 +20,13 @@ CLIENT = os.path.join(ROOT, "client", "booboot.py")
 logging.basicConfig(level=logging.CRITICAL)
 
 
-def start_fake_server(directory, session_timeout=300, duts=None, settings=None, **scripts):
+def start_fake_server(directory, session_timeout=300, duts=None, settings=None, board_log=None, activity=None,
+                      **scripts):
     """Start a server with fake hardware. Return (server, dut, url), dut being the first DUT.
 
     duts: names of several DUTs, each in its own directory. settings: more settings of some DUTs, like
-    {"dut2": {"power": {"backend": "none"}}}. scripts: [scripts] settings.
+    {"dut2": {"power": {"backend": "none"}}}. board_log, activity: those of the board, if any.
+    scripts: [scripts] settings.
     """
     def cfg_of(name):
         cfg = config.load(None)
@@ -39,7 +41,7 @@ def start_fake_server(directory, session_timeout=300, duts=None, settings=None, 
         units = build_units([(name, cfg_of(name), None, "") for name in duts], directory)
     else:
         units = [build(cfg_of("dut1"), directory)]
-    server = Server(("127.0.0.1", 0), units)
+    server = Server(("127.0.0.1", 0), units, board_log=board_log, activity=activity)
     for u in units:
         u.dut.start()
     threading.Thread(target=server.serve_forever, daemon=True).start()

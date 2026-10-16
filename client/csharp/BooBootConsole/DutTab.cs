@@ -18,6 +18,7 @@ namespace BooBootConsole;
 
 /// <summary>
 /// One DUT in the window, with its tab, and its bar above its console view: its state, and the buttons that act on it.
+/// Or the BooBoot log: the messages of the server of the board, read only.
 /// </summary>
 public sealed class DutTab
 {
@@ -71,9 +72,13 @@ public sealed class DutTab
     bool history;
     bool connectedOnce, current;
 
-    public DutTab(string name, Settings settings, Action saveSettings)
+    /// <summary>The name of the view of the messages of the server of the board.</summary>
+    public const string BoardLogName = "BooBoot log";
+
+    public DutTab(string name, Settings settings, Action saveSettings, bool boardLog = false)
     {
         Name = name;
+        IsBoardLog = boardLog;
         this.settings = settings;
         this.saveSettings = saveSettings;
         Buffer = new TerminalBuffer(settings.ScrollbackLines);
@@ -94,7 +99,7 @@ public sealed class DutTab
         {
             if (source != null && input?.Token == null)
             {
-                note = "read only: Take control to type";
+                note = IsBoardLog ? "read only" : "read only: Take control to type";
                 Update();
             }
         };
@@ -130,6 +135,9 @@ public sealed class DutTab
     }
 
     public string Name { get; private set; }
+
+    /// <summary>The view shows the BooBoot log, not a DUT.</summary>
+    public bool IsBoardLog { get; }
 
     /// <summary>Free text shown with the name, set on the server. Empty: none.</summary>
     public string Label { get; private set; } = "";
@@ -280,8 +288,15 @@ public sealed class DutTab
         View.Refresh();
         connectedOnce = false;
         var known = settings.Addresses.TryGetValue(board, out var list) ? list : new List<string>();
-        source = new ConsoleSource(url, known);
+        source = new ConsoleSource(url, known, IsBoardLog);
         source.Available += () => Dispatcher.UIThread.Post(Drain, DispatcherPriority.Background);
+        connection = "Connecting to " + source.Url;
+        if (IsBoardLog)
+        {
+            Update();
+            source.Start();
+            return;
+        }
         input = new ConsoleInput(url, known);
         input.Lost += reason => SetControl(false, reason);
         input.Failed += text =>
@@ -289,7 +304,6 @@ public sealed class DutTab
             note = text;
             Update();
         };
-        connection = "Connecting to " + source.Url;
         Update();
         source.Start();
     }
@@ -437,8 +451,9 @@ public sealed class DutTab
         ControlButton.Classes.Set("accent", InControl);
         ToolTip.SetTip(ControlButton, InControl ? "Close the session of this DUT: others can use it"
             : "Open the session of this DUT, to type into its console");
+        ControlButton.IsVisible = PropertiesButton.IsVisible = !IsBoardLog;
         // The power button follows the power state, and works only in control.
-        PowerButton.IsVisible = HasRelay;
+        PowerButton.IsVisible = HasRelay && !IsBoardLog;
         PowerButton.Content = power == "on" ? "Power off" : "Power on";
         PowerButton.IsEnabled = InControl && !switching;
         StopLogItem.IsEnabled = log.Active;

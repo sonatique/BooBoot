@@ -50,7 +50,7 @@
 <div id="panes"></div>
 <script>
 // Several DUTs of the board at once: the console page of each in a pane, side by side or top and bottom.
-// ?layout=columns or rows. ?duts=NAME,NAME: the DUTs shown (default: all that run).
+// ?layout=columns or rows. ?duts=NAME,NAME: the DUTs shown (default: all that run). ?log=1: the BooBoot log too.
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
@@ -58,13 +58,18 @@
   const params = new URLSearchParams(location.search);
   let layout = params.get("layout") === "rows" ? "rows" : "columns";
   let shown = params.get("duts") ? params.get("duts").split(",") : null;
-  // The DUTs of the board that run: [name, label].
-  let duts = [];
+  let log = params.get("log") === "1";
+  // The DUTs of the board that run: [name, label]. The server keeps a log of its messages.
+  let duts = [], hasLog = false;
+  // The name of the pane of the BooBoot log, which no DUT has.
+  const LOG = " log";
 
   function keepInAddress() {
     const p = new URLSearchParams({ layout: layout });
     if (shown)
       p.set("duts", shown.join(","));
+    if (log)
+      p.set("log", "1");
     history.replaceState(null, "", "?" + p);
   }
 
@@ -77,7 +82,7 @@
     $("columns").classList.toggle("on", layout === "columns");
     $("rows").classList.toggle("on", layout === "rows");
     panes.className = layout;
-    const names = duts.map(d => d[0]).filter(n => !shown || shown.includes(n));
+    const names = duts.map(d => d[0]).filter(n => !shown || shown.includes(n)).concat(log && hasLog ? [LOG] : []);
     for (const p of [...panes.querySelectorAll(".pane")])
       if (!names.includes(p.dataset.name))
         p.remove();
@@ -89,8 +94,8 @@
         p.className = "pane";
         p.dataset.name = name;
         const frame = document.createElement("iframe");
-        frame.title = name;
-        frame.src = "duts/" + encodeURIComponent(name) + "/?embed";
+        frame.title = name === LOG ? "BooBoot log" : name;
+        frame.src = name === LOG ? "index.html?log&embed" : "duts/" + encodeURIComponent(name) + "/?embed";
         // The first page shown takes the keys.
         frame.addEventListener("load", () => {
           if (!panes.querySelector(".pane.current") && p === panes.querySelector(".pane"))
@@ -143,8 +148,8 @@
 
   // A box for each DUT of the board: the DUTs shown. One at least stays shown.
   function showChoice() {
-    const names = [...panes.querySelectorAll(".pane")].map(p => p.dataset.name);
-    $("choice").replaceChildren(...duts.map(([name, label]) => {
+    const names = [...panes.querySelectorAll(".pane")].map(p => p.dataset.name).filter(n => n !== LOG);
+    const boxes = duts.map(([name, label]) => {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.checked = names.includes(name);
@@ -159,7 +164,22 @@
       const text = document.createElement("label");
       text.append(box, " " + (label ? label + " (" + name + ")" : name));
       return text;
-    }));
+    });
+    if (hasLog) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = log;
+      box.onchange = () => {
+        log = box.checked;
+        keepInAddress();
+        arrange();
+      };
+      const text = document.createElement("label");
+      text.title = "The messages of the BooBoot server";
+      text.append(box, " BooBoot log");
+      boxes.push(text);
+    }
+    $("choice").replaceChildren(...boxes);
   }
 
   // The page of a pane says when it takes the keys.
@@ -180,6 +200,7 @@
       try {
         const r = await (await fetch("api/v1/duts", { cache: "no-store" })).json();
         duts = r.duts.filter(d => !d.error).map(d => [d.name, d.label || ""]);
+        hasLog = (await fetch("api/v1/board/log?since=now", { cache: "no-store" })).ok;
         if (shown && !duts.some(d => shown.includes(d[0])))
           shown = null;
         arrange();

@@ -14,6 +14,7 @@ import threading
 from . import __version__, config, gpio
 from .api import Server
 from .board import Label, Unit, claims
+from .board_state import Activity, BoardLog
 from .console import Console, NoPort, SerialPort, find_serial_ports
 from .dut import Dut
 from .power import CommandPower, GpioPower, NoPower, SdmuxGpioPower
@@ -148,6 +149,8 @@ def main(argv=None):
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    board_log = BoardLog()
+    logging.getLogger().addHandler(board_log)
 
     if args.probe:
         probe()
@@ -180,12 +183,14 @@ def main(argv=None):
         s = board["server"]
         host = args.host or s.get("host")
         port = s.getint("port") if args.port is None else args.port
-        servers = [Server((host, port), units, web=s.getboolean("web"))]
+        activity = Activity()
+        servers = [Server((host, port), units, web=s.getboolean("web"), board_log=board_log, activity=activity)]
         # A DUT that names its own port also answers there, at the root, as when each DUT had its server.
         for u in units:
             if u.port and u.port not in [x.server_address[1] for x in servers]:
                 try:
-                    servers.append(Server((host, u.port), units, default=u, web=s.getboolean("web"), board=False))
+                    servers.append(Server((host, u.port), units, default=u, web=s.getboolean("web"), board=False,
+                                          board_log=board_log, activity=activity))
                 except OSError as e:
                     log.error("%s: port %d: %s", u.name, u.port, e)
     except (OSError, ValueError, configparser.Error) as e:
@@ -199,6 +204,7 @@ def main(argv=None):
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    activity.start()
     for u in running:
         u.dut.start()
     host, port = servers[0].server_address[:2]
@@ -217,6 +223,7 @@ def main(argv=None):
     try:
         servers[0].serve_forever()
     finally:
+        activity.stop()
         for server in servers:
             server.server_close()
         for u in running:

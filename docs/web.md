@@ -29,6 +29,11 @@ it. The address keeps these choices, like
 console page of its DUT, with its own control; what is typed goes to the pane
 clicked last, which has a blue border.
 
+The board page and the list of a console page also lead to the BooBoot log,
+`http://booboot.local:8080/index.html?log`: the messages of the BooBoot
+server, read only, as `journalctl -u booboot` shows them on the board. The
+page of several DUTs at once has a box to show it in a pane too.
+
 ## Features
 
 - **Live output**, and the output kept by the server from before (8 MB by

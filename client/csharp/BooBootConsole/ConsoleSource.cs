@@ -53,10 +53,13 @@ public sealed class ConsoleSource : IDisposable
     readonly BooBootClient client;
     readonly CancellationTokenSource cts = new();
     readonly ConcurrentQueue<Item> queue = new();
+    // The messages of the server of the board, in place of the console of a DUT: no status to follow.
+    readonly bool boardLog;
     int signaled;
 
-    public ConsoleSource(string url, IEnumerable<string> addresses)
+    public ConsoleSource(string url, IEnumerable<string> addresses, bool boardLog = false)
     {
+        this.boardLog = boardLog;
         client = new BooBootClient(url, TimeSpan.FromSeconds(10)) { Addresses = addresses.ToList() };
         client.AddressUsed += note => Post(new AddressUsed(note));
         Url = client.Url;
@@ -73,7 +76,8 @@ public sealed class ConsoleSource : IDisposable
     public void Start()
     {
         _ = Task.Run(() => StreamAsync(cts.Token));
-        _ = Task.Run(() => PollAsync(cts.Token));
+        if (!boardLog)
+            _ = Task.Run(() => PollAsync(cts.Token));
     }
 
     /// <summary>Takes the next item. Call until false, then Available is raised again.</summary>
@@ -110,7 +114,8 @@ public sealed class ConsoleSource : IDisposable
         {
             try
             {
-                await foreach (var e in client.StreamConsoleAsync(since, token))
+                var events = boardLog ? client.StreamBoardLogAsync(since, token) : client.StreamConsoleAsync(since, token);
+                await foreach (var e in events)
                 {
                     if (e.Type == "hello")
                     {

@@ -2,7 +2,8 @@
 // the page of a DUT of the board is at /duts/NAME/.
 // Watching needs no session. "Take control" opens the session, to type into the console.
 // ?lines=N sets the number of lines kept (default 50000). ?embed: in a pane of split.html, without the list of the
-// DUTs, and telling split.html when it takes the keys.
+// DUTs, and telling split.html when it takes the keys. ?log, at the board: the BooBoot log, the messages of the
+// server of the board, read only.
 
 (function () {
   "use strict";
@@ -10,6 +11,7 @@
   const T = window.BooBootTerminal;
   const params = new URLSearchParams(location.search);
   const embedded = params.has("embed");
+  const boardLog = params.has("log");
   const term = new T.Terminal(Number(params.get("lines")) || 50000);
   const $ = id => document.getElementById(id);
   const screen = $("screen"), panel = $("panel"), followButton = $("follow"), controlButton = $("control");
@@ -241,7 +243,8 @@
       let restart = false;
       try {
         watch();
-        const resp = await fetch("api/v1/console/stream?since=" + encodeURIComponent(since),
+        const resp = await fetch((boardLog ? "api/v1/board/log/stream" : "api/v1/console/stream") + "?since="
+          + encodeURIComponent(since),
           { signal: abort.signal, cache: "no-store" });
         if (!resp.ok)
           throw new Error("HTTP " + resp.status);
@@ -339,9 +342,9 @@
   function showDuts(duts) {
     const select = $("duts");
     const all = document.createElement("optgroup");
-    all.label = "All at once";
-    all.append(new Option("Side by side", "/split.html?layout=columns"),
-      new Option("Top and bottom", "/split.html?layout=rows"));
+    all.label = "The board";
+    all.append(new Option("All side by side", "/split.html?layout=columns"),
+      new Option("All top and bottom", "/split.html?layout=rows"), new Option("BooBoot log", "/index.html?log"));
     select.replaceChildren(...duts.map(d => new Option(d.label ? d.label + " (" + d.name + ")" : d.name,
       "/duts/" + encodeURIComponent(d.name) + "/", false, d.name === name)), all);
     select.hidden = embedded || duts.length < 2;
@@ -709,6 +712,12 @@
   });
 
   setSize(size);
+  if (boardLog) {
+    // Read only, and not a DUT: no control, power, DUT panel or console logs.
+    hardware = [];
+    for (const id of ["control", "dut", "logs"])
+      $(id).hidden = true;
+  }
   if (embedded) {
     document.body.classList.add("embed");
     window.addEventListener("focus", () => parent.postMessage("booboot-focus", location.origin));
@@ -716,7 +725,8 @@
     screen.focus();
   showInfo();
   stream();
-  poll();
+  if (!boardLog)
+    poll();
   setInterval(() => {
     if (token)
       heartbeat();

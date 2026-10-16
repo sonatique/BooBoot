@@ -11,7 +11,7 @@
   header { padding: 8px; background: #2d2d2d; border-bottom: 1px solid #3c3c3c; }
   #title { font-weight: 600; color: #ffffff; margin-right: 12px; }
   #info { color: #a0a0a0; }
-  #views { margin-left: 12px; color: #a0a0a0; }
+  #views, #views-log { margin-left: 12px; color: #a0a0a0; }
   main { padding: 8px; overflow-x: auto; }
   table { border-collapse: collapse; }
   th { text-align: left; font-weight: normal; color: #a0a0a0; }
@@ -24,7 +24,8 @@
 <body>
 <header><span id="title">BooBoot</span><span id="info">Connecting...</span>
 <span id="views">All at once: <a href="split.html?layout=columns">side by side</a>,
-<a href="split.html?layout=rows">top and bottom</a></span></header>
+<a href="split.html?layout=rows">top and bottom</a></span>
+<span id="views-log"><a href="index.html?log" title="The messages of the BooBoot server">BooBoot log</a></span></header>
 <main>
 <table>
   <thead><tr><th>DUT</th><th>Label</th><th>Power</th><th>Session</th><th>Script</th></tr></thead>

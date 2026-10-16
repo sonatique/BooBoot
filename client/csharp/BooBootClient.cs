@@ -257,14 +257,27 @@ public sealed class BooBootClient : IDisposable
     /// "ping" comes after 10 s without other events. Throws BooBootException when the
     /// connection is lost, or after 30 s without any event.
     /// </summary>
-    public async IAsyncEnumerable<ConsoleEvent> StreamConsoleAsync(string since = "boot",
-        [EnumeratorCancellation] CancellationToken token = default)
+    public IAsyncEnumerable<ConsoleEvent> StreamConsoleAsync(string since = "boot", CancellationToken token = default) =>
+        StreamAsync("/console/stream", since, token);
+
+    /// <summary>
+    /// The messages of the server of the board, like StreamConsoleAsync: "hello", then "output" and "ping".
+    /// since: a cursor, or "start" for all the messages kept.
+    /// </summary>
+    public IAsyncEnumerable<ConsoleEvent> StreamBoardLogAsync(string since = "start", CancellationToken token = default) =>
+        StreamAsync("/board/log/stream", since, token);
+
+    /// <summary>The load of the board: {"cpu": percent, "traffic": {"in", "out"} in bytes/s, "temperature": C}.</summary>
+    public Task<JsonElement> ActivityAsync() => SendJsonAsync(HttpMethod.Get, "/board/activity");
+
+    async IAsyncEnumerable<ConsoleEvent> StreamAsync(string path, string since,
+        [EnumeratorCancellation] CancellationToken token)
     {
         HttpResponseMessage resp;
         using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
         {
             cts.CancelAfter(Timeout);
-            var request = new HttpRequestMessage(HttpMethod.Get, Api("/console/stream" + Query(("since", since))));
+            var request = new HttpRequestMessage(HttpMethod.Get, Api(path + Query(("since", since))));
             try
             {
                 resp = await SendAsync(request, cts.Token);

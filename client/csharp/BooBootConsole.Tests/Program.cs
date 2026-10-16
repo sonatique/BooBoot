@@ -453,6 +453,20 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
         "DUTs shown again");
     Check(!settings.HiddenDuts.ContainsKey(url), "nothing hidden");
 
+    // The load of the board, and the BooBoot log: the messages of its server, shown from the DUTs button.
+    await WaitFor(() => window.ActivityShown && window.ActivityText.Contains("CPU ")
+        && window.ActivityText.Contains("To the board: "), "load of the board", () => window.ActivityText);
+    window.ShowBoardLog(true);
+    await WaitFor(() => window.BoardLog is DutTab shownLog && shownLog.Live
+        && shownLog.Buffer.GetAllText().Contains(" INFO booboot: BooBoot "), "BooBoot log shown");
+    var boardLog = window.BoardLog!;
+    Check(window.Duts.Count == names.Count && settings.BoardLogs.SequenceEqual(new[] { url })
+        && !boardLog.ControlButton.IsVisible && !boardLog.PowerButton.IsVisible && !boardLog.PropertiesButton.IsVisible
+        && boardLog.LogButton.IsVisible && boardLog.Status.StartsWith("BooBoot log    "),
+        "BooBoot log: read only, not a DUT, remembered for the board");
+    window.ShowBoardLog(false);
+    Check(window.BoardLog == null && settings.BoardLogs.Count == 0, "BooBoot log hidden");
+
     // The address of one DUT shows that DUT only, also with the layout of several at once. Given at start, like on
     // the command line of another instance, it is not kept as the address of the next start.
     var singleSettings = new Settings { LogFolder = tmp, Url = url, Layout = "columns" };

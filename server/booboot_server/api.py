@@ -132,11 +132,10 @@ class Handler(BaseHTTPRequestHandler):
         self._handle()
 
     def log_request(self, code="-", size="-"):
-        # Reads, the writes of typed keys and heartbeats would fill the log.
+        # The log has the changes and the errors: reads, the writes of typed keys and heartbeats would fill it.
         path = self._local or self.path
-        quiet = str(code).startswith("2") and (
-            (self.command == "GET" and path.startswith((PREFIX + "/console", PREFIX + "/status",
-                                                        PREFIX + "/scripts", PREFIX + "/duts")))
+        quiet = str(code).startswith(("2", "3")) and (
+            self.command == "GET"
             or (self.command == "POST" and path.startswith((PREFIX + "/console/write",
                                                             PREFIX + "/session/heartbeat"))))
         if not quiet:
@@ -341,7 +340,7 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, units, default=None, web=True, board=True):
+    def __init__(self, address, units, default=None, web=True, board=True, board_log=None, activity=None):
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
         super().__init__(address, Handler)
@@ -349,6 +348,8 @@ class Server(ThreadingHTTPServer):
         self.default = default or units[0]
         self.web = web
         self.board = board
+        self.board_log = board_log
+        self.activity = activity
         if board:
             # Scripts reach their DUT through this server, on the board itself.
             host, port = self.server_address[:2]
@@ -531,7 +532,10 @@ def _time(c, cursor):
 
 @route("GET", "/console", session="optional")
 def get_console(r, m):
-    c = r.dut.console
+    return _read(r, r.dut.console)
+
+
+def _read(r, c):
     since = _since(r, "boot")
     wait = r.param_float("wait", 0.0, high=MAX_WAIT)
     start, data = c.read(since, int(r.param_float("max", CHUNK, low=1)), wait)
@@ -549,7 +553,10 @@ def get_console(r, m):
 # Not tied to the session: a stream lasts as long as its client wants.
 @route("GET", "/console/stream", session=False)
 def console_stream(r, m):
-    c = r.dut.console
+    return _stream(r, r.dut.console, r.dut.name, r.dut.power_state)
+
+
+def _stream(r, c, name, power):
     raw = r.param("format") == "raw"
     start = max(min(_since(r, "boot"), c.resolve("now")), c.resolve("start"))
     items = c.follow(start)
@@ -560,8 +567,8 @@ def console_stream(r, m):
         r.wfile.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + b"\n")
 
     if not raw:
-        send({"type": "hello", "name": r.dut.name, "version": __version__, "started": round(c.started, 3),
-              "time": round(time.time(), 3), "power": r.dut.power_state, "cursor": start, "end": c.resolve("now")})
+        send({"type": "hello", "name": name, "version": __version__, "started": round(c.started, 3),
+              "time": round(time.time(), 3), "power": power, "cursor": start, "end": c.resolve("now")})
     pinged = time.monotonic()
     for item in items:
         if item is None:
@@ -582,6 +589,31 @@ def console_stream(r, m):
                   "time": round(item[3], 3)})
             pinged = time.monotonic()
     return None
+
+
+# The board itself: the messages of the server, and its load. The same at the base URL of each DUT.
+
+def _board_log(r):
+    if r.server.board_log is None:
+        raise NotFound("this server keeps no log of its messages")
+    return r.server.board_log.console
+
+
+@route("GET", "/board/log", session=False, board=True)
+def get_board_log(r, m):
+    return _read(r, _board_log(r))
+
+
+@route("GET", "/board/log/stream", session=False, board=True)
+def board_log_stream(r, m):
+    return _stream(r, _board_log(r), "BooBoot log", "")
+
+
+@route("GET", "/board/activity", session=False, board=True)
+def board_activity(r, m):
+    if r.server.activity is None:
+        raise NotFound("this server does not measure its activity")
+    return r.server.activity.get()
 
 
 def _gone(sock):

@@ -2,6 +2,7 @@
 
 import http.client
 import json
+import logging
 import os
 import select
 import shutil
@@ -14,6 +15,7 @@ from unittest import mock
 import common
 import booboot
 from booboot_server import netinfo, session
+from booboot_server.board_state import BoardLog
 
 
 def find_chrome():
@@ -361,13 +363,23 @@ class DutsWebTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
+        # The messages of the server go to the BooBoot log only, not to the test output.
+        cls.log = BoardLog()
+        cls.logger = logging.getLogger("booboot_server")
+        cls.saved = (cls.logger.level, cls.logger.propagate)
+        cls.logger.setLevel(logging.INFO)
+        cls.logger.propagate = False
+        cls.logger.addHandler(cls.log)
         settings = {"dut2": {"power": {"backend": "none"}, "sdmux": {"serial": "none"}}}
         cls.server, cls.dut, cls.url = common.start_fake_server(os.path.join(cls.tmp, "fake"), duts=["dut1", "dut2"],
-                                                                settings=settings)
+                                                                settings=settings, board_log=cls.log)
 
     @classmethod
     def tearDownClass(cls):
         common.stop_server(cls.server)
+        cls.logger.removeHandler(cls.log)
+        cls.logger.setLevel(cls.saved[0])
+        cls.logger.propagate = cls.saved[1]
         shutil.rmtree(cls.tmp)
 
     def test_browser(self):
@@ -389,13 +401,14 @@ class DutsWebTest(unittest.TestCase):
         select = "document.getElementById('duts')"
         b.wait("!%s.hidden && %s.value.endsWith('/duts/dut2/')" % (select, select), "list on the page of dut2")
         self.assertEqual(b.eval("[...%s.options].map(o => o.text)" % select),
-                         ["dut1", "bench 3 (dut2)", "Side by side", "Top and bottom"])
+                         ["dut1", "bench 3 (dut2)", "All side by side", "All top and bottom", "BooBoot log"])
         options = b.eval("[...%s.querySelectorAll('optgroup option')].map(o => o.value)" % select)
-        self.assertEqual(options, ["/split.html?layout=columns", "/split.html?layout=rows"])
+        self.assertEqual(options, ["/split.html?layout=columns", "/split.html?layout=rows", "/index.html?log"])
         self.assertEqual(b.eval("document.getElementById('name').hidden"), True)
         # No relay: no power button, and the DUT panel says what is missing.
         b.wait("document.getElementById('info').textContent.includes('Connected')", "dut2 connected")
-        self.assertEqual(b.eval("document.getElementById('power').hidden"), True)
+        # The parts of the DUT come with its first status, which can follow the console.
+        b.wait("document.getElementById('power').hidden", "no power button")
         self.assertNotIn("power", b.eval("document.getElementById('info').textContent"))
         field = "document.getElementById('dut-%s').textContent"
         b.eval("document.getElementById('dut').click()")
@@ -458,11 +471,39 @@ class DutsWebTest(unittest.TestCase):
         boxes = "[...document.querySelectorAll('#choice input')]"
         b.eval("%s[1].click()" % boxes)
         b.wait("%s.length === 1 && location.search === '?layout=rows&duts=dut1'" % frames, "dut1 alone")
-        self.assertEqual(b.eval("%s.map(i => [i.checked, i.disabled])" % boxes), [[True, True], [False, False]])
+        self.assertEqual(b.eval("%s.map(i => [i.checked, i.disabled])" % boxes),
+                         [[True, True], [False, False], [False, False]])
         b.eval("%s[1].click()" % boxes)
         b.wait("%s.length === 2 && %s.every(f => %s)" % (frames, frames, info), "both DUTs again")
         self.assertEqual(b.eval("%s.map(f => f.contentWindow.kept === true)" % frames), [True, False])
         self.assertEqual(b.eval("location.search"), "?layout=rows")
+
+        # The BooBoot log in a pane of its own.
+        b.eval("%s[2].click()" % boxes)
+        b.wait("%s.length === 3 && location.search === '?layout=rows&log=1'" % frames, "BooBoot log pane")
+        self.assertEqual(b.eval("%s[2].title" % frames), "BooBoot log")
+        self.assertIn("index.html?log", b.eval("%s[2].getAttribute('src')" % frames))
+
+    def test_board_log(self):
+        chrome = find_chrome()
+        if not chrome or not shutil.which("bash"):
+            self.skipTest("Chrome or bash not found (set BOOBOOT_CHROME)")
+        b = Browser(chrome)
+        self.addCleanup(b.close)
+        b.call("Page.navigate", session=True, url=self.url + "/")
+        b.wait("document.querySelector('#views-log a') !== null", "link of the board page")
+        self.assertEqual(b.eval("document.querySelector('#views-log a').getAttribute('href')"), "index.html?log")
+        b.call("Page.navigate", session=True, url=self.url + "/index.html?log")
+        b.wait("document.getElementById('info').textContent.includes('Connected')", "BooBoot log connected")
+        c = booboot.Client(self.url + "/duts/dut1")
+        c.open_session("log-test")
+        self.addCleanup(c.close_session)
+        c.power_off()
+        b.wait("document.getElementById('screen').textContent.includes('booboot_server.dut: dut1: power off')",
+               "message of the server")
+        self.assertEqual(b.eval("document.getElementById('name').textContent"), "BooBoot log")
+        self.assertEqual(b.eval("['control', 'power', 'dut', 'logs'].map(id => document.getElementById(id).hidden)"),
+                         [True, True, True, True])
 
 
 if __name__ == "__main__":
