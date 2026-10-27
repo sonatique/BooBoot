@@ -38,7 +38,9 @@ public sealed class ConsoleSource : IDisposable
     /// <summary>The addresses of the server, from its status, when they change.</summary>
     public sealed record Network(IReadOnlyList<string> Addresses) : Item;
 
-    /// <summary>The name of the server was not found: the client goes on with another address.</summary>
+    /// <summary>
+    /// The name of the server was not found: the client goes on with another address. Empty: back to the name.
+    /// </summary>
     public sealed record AddressUsed(string Note) : Item;
 
     /// <summary>The names of the DUTs of the board, from the status, when they change.</summary>

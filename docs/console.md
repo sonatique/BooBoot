@@ -48,10 +48,10 @@ To watch with nothing to install, the BooBoot server also has a
   unless set; with several DUTs, a prefix set is followed by the DUT name.
   Options: start a log when connected, and a new log file at each power on.
   Logs have the text without escape codes, one line per line.
-- **Connection.** When the connection is lost, the program connects again and
-  continues where it was: no output is lost unless it left the server memory
-  in between (a line then says how many bytes were lost). A line also says
-  when the server was restarted.
+- **Connection.** When the connection is lost, like while the computer
+  sleeps, the program connects again and continues where it was: no output is
+  lost unless it left the server memory in between (a line then says how many
+  bytes were lost). A line also says when the server was restarted.
 
 When the server address is a name, the top bar also shows the address of the
 board (`also at 10.1.2.3:8080`), for where the name does not work, like over

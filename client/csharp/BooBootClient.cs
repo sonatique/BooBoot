@@ -67,6 +67,8 @@ public sealed record ConsoleEvent(string Type, long Cursor, long Next, string Te
 public sealed class BooBootClient : IDisposable
 {
     readonly HttpClient http;
+    // Tick count of the next check of the name, while the client uses another address.
+    long nameCheck;
 
     public BooBootClient(string url = "http://booboot.local:8080", TimeSpan? timeout = null)
     {
@@ -74,10 +76,32 @@ public sealed class BooBootClient : IDisposable
         Base = Url;
         Timeout = timeout ?? TimeSpan.FromSeconds(30);
         // No proxy: the server is on the local network.
-        http = new HttpClient(new HttpClientHandler { UseProxy = false })
+        http = new HttpClient(new SocketsHttpHandler
+        {
+            UseProxy = false,
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            ConnectCallback = ConnectAsync,
+        })
         {
             Timeout = System.Threading.Timeout.InfiniteTimeSpan,
         };
+    }
+
+    // The default connection, but it gives up with the token even when the name lookup hangs, like after the
+    // computer slept: new requests wait for the connections being made.
+    static async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, CancellationToken token)
+    {
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(context.DnsEndPoint, token).AsTask().WaitAsync(token);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
     }
 
     public string Url { get; }
@@ -91,7 +115,10 @@ public sealed class BooBootClient : IDisposable
     /// </summary>
     public IList<string> Addresses { get; set; } = new List<string>();
 
-    /// <summary>Raised with a note when the client goes on with another address.</summary>
+    /// <summary>
+    /// Raised with a note when the client goes on with another address, and with "" when it is back to Url: the
+    /// client checks the name every minute.
+    /// </summary>
     public event Action<string>? AddressUsed;
 
     /// <summary>Time allowed for a request, on top of any wait asked from the server.</summary>
@@ -307,6 +334,7 @@ public sealed class BooBootClient : IDisposable
                 }
                 if (line == null)
                     throw new BooBootException($"connection to {Url} closed");
+                CheckName();
                 using var doc = JsonDocument.Parse(line);
                 yield return Event(doc.RootElement.Clone());
             }
@@ -501,6 +529,7 @@ public sealed class BooBootClient : IDisposable
     {
         if (Session != null)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Session);
+        CheckName();
         HttpResponseMessage resp;
         try
         {
@@ -577,10 +606,36 @@ public sealed class BooBootClient : IDisposable
                 continue;
             }
             Base = candidate;
+            nameCheck = Environment.TickCount64 + 60_000;
             AddressUsed?.Invoke($"{url.Host} not found, using {other}");
             return true;
         }
         return false;
+    }
+
+    void CheckName()
+    {
+        if (Base == Url || Environment.TickCount64 < nameCheck)
+            return;
+        nameCheck = Environment.TickCount64 + 60_000;
+        _ = UseNameAgainAsync();
+    }
+
+    async Task UseNameAgainAsync()
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            using var resp = await http.GetAsync(Url + "/api/v1/status", cts.Token);
+            if (!resp.IsSuccessStatusCode || Base == Url)
+                return;
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+        Base = Url;
+        AddressUsed?.Invoke("");
     }
 
     static async Task<BooBootException> ErrorAsync(HttpResponseMessage resp)

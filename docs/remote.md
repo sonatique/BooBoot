@@ -22,6 +22,8 @@ The clients do this by themselves. When the name of the URL is not found,
 `booboot.py`, the MCP server and BooBoot Console try the name without
 `.local`, then the addresses that the board reported last time they reached
 it, and go on with the first one that answers. They say which one they use.
+BooBoot Console tries the name again every minute, and goes back to it once
+it answers, like after the computer slept.
 So the default `http://booboot.local:8080` keeps working away from the
 office, once used there.
 
