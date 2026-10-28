@@ -170,6 +170,8 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     created(window);
     window.Show();
     Check(window.Icon != null, "window icon");
+    Check(Regex.IsMatch(MainWindow.ProgramName, @"^BooBoot Console \d+\.\d+\.\d+")
+        && window.Title == MainWindow.ProgramName, "version of the program in the title");
     await WaitFor(() => window.Status.Contains("Connected") && window.Status.Contains("used by console-check"),
         "connected", () => window.Status);
     // The window is at 127.0.0.1: it shows another address of the server, and keeps none for an address.
@@ -302,12 +304,12 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     Check(panel[0] == "dut1" && panel[1].EndsWith("/duts/dut1") && panel[4].Contains(" baud")
         && panel[5].EndsWith("relay, on") && window.CanSetLabel, "DUT panel content");
     await window.SetLabelFromPanel("ZCU102 rev B");
-    await WaitFor(() => tab.Label == "ZCU102 rev B" && window.Title == "ZCU102 rev B (dut1) - BooBoot Console"
+    await WaitFor(() => tab.Label == "ZCU102 rev B" && window.Title == "ZCU102 rev B (dut1) - " + MainWindow.ProgramName
         && window.Status.Contains("ZCU102 rev B (dut1)") && window.DutPanelText.Contains("\nLabel set\n"),
         "label shown", () => window.Status);
     Check((await dut.StatusAsync()).GetProperty("label").GetString() == "ZCU102 rev B", "label on the server");
     await window.SetLabelFromPanel("");
-    await WaitFor(() => tab.Label == "" && window.Title == "dut1 - BooBoot Console", "label removed");
+    await WaitFor(() => tab.Label == "" && window.Title == "dut1 - " + MainWindow.ProgramName, "label removed");
 
     await window.ReleaseControl();
     Check(!powerButton.IsEnabled, "power button off without control");
@@ -343,7 +345,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
         "a tab for each DUT", () => window.Status);
     var (first, second) = (window.Duts[0], window.Duts[1]);
     Check(first.Name == "dut1" && second.Name == "dut2" && window.CurrentDut == first && window.TabsShown
-        && window.Title == "dut1 - BooBoot Console", "tabs, the first DUT shown");
+        && window.Title == "dut1 - " + MainWindow.ProgramName, "tabs, the first DUT shown");
     Check(Path.GetFileName(second.LogPath)!.StartsWith("lab-dut2-"), "log file with the prefix and the DUT name");
 
     // A DUT without relay, like dut3 of the fake board of the tests: no power button, no power state.
@@ -380,7 +382,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     // Ctrl+Tab and Ctrl+Shift+Tab go through the DUTs, the status and buttons follow.
     window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Control);
     Check(window.CurrentDut == second && !second.NewOutput && window.Status.Contains("dut2    power on")
-        && window.Title == "dut2 - BooBoot Console", "Ctrl+Tab shows the next DUT");
+        && window.Title == "dut2 - " + MainWindow.ProgramName, "Ctrl+Tab shows the next DUT");
     window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Control | RawInputModifiers.Shift);
     Check(window.CurrentDut == first && window.Status.Contains("dut1    power off"), "Ctrl+Shift+Tab, the previous");
     window.SelectDut(second);
@@ -395,7 +397,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
         && first.Bar.BorderBrush is Avalonia.Media.ISolidColorBrush { Color.A: 0 }, "the current DUT stands out");
     Check(!window.TabStripShown && window.TabsShown, "titles in place of the tabs, the DUTs and Layout buttons kept");
     first.View.Focus();
-    Check(window.CurrentDut == first && window.Title == "dut1 - BooBoot Console"
+    Check(window.CurrentDut == first && window.Title == "dut1 - " + MainWindow.ProgramName
         && first.Bar.Classes.Contains("current"), "the DUT clicked becomes the current one");
     await dut2.RunAsync("echo shown-at-once", timeout: 5);
     await WaitFor(() => second.Buffer.GetAllText().Contains("\nshown-at-once"), "output of a DUT shown");

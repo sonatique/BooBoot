@@ -14,6 +14,8 @@ To watch with nothing to install, the BooBoot server also has a
 
 ## The window
 
+The title shows the current DUT and the version of the program.
+
 - **The top bar** is for the BooBoot board and this window: the address of
   the board, Connect or Disconnect (which only stops watching, in this
   window), the state of the connection, the other address of the board and

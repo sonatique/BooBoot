@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -444,7 +445,7 @@ public partial class MainWindow : Window
         var tab = current;
         var connected = tab?.Connected == true;
         BoardText.Text = connected ? tab!.BoardState : connection;
-        Title = connected && tab!.Name != "" ? $"{tab.DisplayName} - BooBoot Console" : "BooBoot Console";
+        Title = connected && tab!.Name != "" ? $"{tab.DisplayName} - {ProgramName}" : ProgramName;
         ConnectButton.Content = opening != null ? "Disconnect" : "Connect";
         ToolTip.SetTip(ConnectButton, opening != null ? "Stop watching the DUTs of this board, in this window"
             : "Watch the DUTs of the board at this address");
@@ -692,6 +693,10 @@ public partial class MainWindow : Window
     };
 
     static string Size(double bytes) => bytes < 1 << 30 ? $"{bytes / (1 << 20):0} MB" : $"{bytes / (1 << 30):0.0} GB";
+
+    /// <summary>The name and the version of this program, like "BooBoot Console 1.2.3", as in the title.</summary>
+    public static string ProgramName { get; } = ("BooBoot Console " + typeof(MainWindow).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]).TrimEnd();
 
     /// <summary>True when the load of the board shows. For tests.</summary>
     public bool ActivityShown => ActivityPanel.IsVisible;
