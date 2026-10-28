@@ -594,7 +594,7 @@ public partial class MainWindow : Window
 
     // Activity of the board
 
-    /// <summary>Shows the load of the board every second: network traffic to and from it, CPU use, disk space.</summary>
+    /// <summary>Shows the load of the board every second: traffic to and from it, CPU use, disk space.</summary>
     async Task WatchActivity(CancellationToken stop)
     {
         var known = settings.Addresses.TryGetValue(board, out var list) ? list : new List<string>();
@@ -607,10 +607,10 @@ public partial class MainWindow : Window
                 if (!stop.IsCancellationRequested)
                     ShowActivity(activity);
             }
-            catch (BooBootException e)
+            catch (Exception e)
             {
                 // A server older than this measure does not have it.
-                if (e.Status == 404)
+                if (e is BooBootException { Status: 404 })
                     break;
                 if (!stop.IsCancellationRequested)
                     ShowActivity(null);

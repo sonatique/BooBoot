@@ -554,6 +554,11 @@ public sealed class BooBootClient : IDisposable
         {
             throw new BooBootException($"no answer from {Url} in time");
         }
+        catch (OperationCanceledException e)
+        {
+            // Not the token: the connection was not made within its own time.
+            throw new BooBootException($"cannot reach {Url}: {e.InnerException?.Message ?? e.Message}");
+        }
         if (!resp.IsSuccessStatusCode)
         {
             using (resp)

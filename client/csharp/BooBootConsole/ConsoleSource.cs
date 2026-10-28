@@ -156,8 +156,8 @@ public sealed class ConsoleSource : IDisposable
             {
                 return;
             }
-            catch (Exception e) when (e is BooBootException or JsonException or InvalidOperationException
-                                          or KeyNotFoundException)
+            // Any error: a loop that stopped would show its last state for good.
+            catch (Exception e)
             {
                 Post(new Disconnected(e.Message));
             }
@@ -254,12 +254,13 @@ public sealed class ConsoleSource : IDisposable
                 if (text != last || (mine != null && !yours))
                     Post(new Session(last = text, mine, yours));
             }
-            catch (BooBootException)
-            {
-            }
             catch (Exception) when (token.IsCancellationRequested)
             {
                 return;
+            }
+            catch (Exception)
+            {
+                // Polled again: the stream tells when the connection is lost.
             }
             try
             {

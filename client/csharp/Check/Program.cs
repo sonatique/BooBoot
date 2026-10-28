@@ -4,6 +4,8 @@
 
 using System.Globalization;
 using System.IO.Compression;
+using System.Net;
+using System.Net.Sockets;
 using BooBoot;
 
 var url = args.Length > 0 ? args[0] : "http://127.0.0.1:8080";
@@ -207,6 +209,18 @@ Check(true, "session released");
 
 using var nobody = new BooBootClient("http://127.0.0.1:9", TimeSpan.FromSeconds(5));
 Check((await Fails(() => nobody.StatusAsync())).Status == 0, "server not reachable");
+// A server that never accepts: once its queue is full, a connection waits, here longer than the client allows
+// for it, like after the computer slept.
+using (var silent = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+{
+    silent.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+    silent.Listen(0);
+    var address = (IPEndPoint)silent.LocalEndPoint!;
+    using var queued = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+    await queued.ConnectAsync(address);
+    using var waiting = new BooBootClient($"http://127.0.0.1:{address.Port}", TimeSpan.FromSeconds(30));
+    Check((await Fails(() => waiting.StatusAsync())).Status == 0, "connection not made in time");
+}
 
 Directory.Delete(tmp, true);
 Console.WriteLine("all checks passed");
