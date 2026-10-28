@@ -68,6 +68,7 @@ class BoardTest(unittest.TestCase):
         a = booboot.Client(self.url).request("GET", "/board/activity")
         self.assertTrue(0 <= a["cpu"] <= 100, a)
         self.assertTrue(a["traffic"]["in"] >= 0 and a["traffic"]["out"] >= 0, a)
+        self.assertTrue(0 <= a["disk"]["free"] <= a["disk"]["total"], a)
         self.assertEqual(a["interval"], 0.1)
 
     def test_none(self):

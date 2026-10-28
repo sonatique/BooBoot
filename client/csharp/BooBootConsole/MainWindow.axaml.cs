@@ -594,7 +594,7 @@ public partial class MainWindow : Window
 
     // Activity of the board
 
-    /// <summary>Shows the load of the board every second: network traffic to and from it, and its CPU use.</summary>
+    /// <summary>Shows the load of the board every second: network traffic to and from it, CPU use, disk space.</summary>
     async Task WatchActivity(CancellationToken stop)
     {
         var known = settings.Addresses.TryGetValue(board, out var list) ? list : new List<string>();
@@ -636,16 +636,28 @@ public partial class MainWindow : Window
         var traffic = a.ValueKind == JsonValueKind.Object && a.TryGetProperty("traffic", out var t) ? t : default;
         var (cpu, received, sent) = (Number(a, "cpu"), Number(traffic, "in"), Number(traffic, "out"));
         var temperature = Number(a, "temperature");
+        var disk = a.ValueKind == JsonValueKind.Object && a.TryGetProperty("disk", out var k) ? k : default;
+        var (total, free) = (Number(disk, "total") ?? 0, Number(disk, "free") ?? -1);
+        double? used = total > 0 && free >= 0 ? Math.Clamp(1 - free / total, 0, 1) : null;
         ActivityPanel.IsVisible = true;
+        // A server older than the disk measure does not have it.
+        if (activity != null)
+            DiskPanel.IsVisible = used != null;
         CpuBar.Width = 40 * Math.Clamp((cpu ?? 0) / 100, 0, 1);
         CpuBar.Background = new SolidColorBrush(LoadColor(cpu ?? 0));
+        // Green while half of the disk at least is free.
+        DiskBar.Width = 40 * (used ?? 0);
+        DiskBar.Background = new SolidColorBrush(LoadColor(200 * Math.Max((used ?? 0) - 0.5, 0)));
         Blink(UpArrow, received);
         Blink(DownArrow, sent);
-        ToolTip.SetTip(ActivityPanel, activity == null ? "No answer from the board" : string.Join("\n",
+        ToolTip.SetTip(ActivityPanel, activity == null ? "No answer from the board" : string.Join("\n", new[]
+        {
             "BooBoot board",
             "CPU " + (cpu is double c ? $"{c:0}%" : "unknown") + (temperature is double d ? $", {d:0.0} \u00b0C" : ""),
             "To the board: " + Rate(received),
-            "From the board: " + Rate(sent)));
+            "From the board: " + Rate(sent),
+            used is double u ? $"Disk: {Size(free)} free of {Size(total)}, {100 * u:0}% used" : "",
+        }.Where(line => line != "")));
     }
 
     /// <summary>Lights an arrow for a moment when the traffic is busy: brighter with more traffic.</summary>
@@ -662,12 +674,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Green when idle, yellow at half load, red when full.</summary>
-    static Color LoadColor(double cpu)
+    static Color LoadColor(double percent)
     {
         Color Mix(Color a, Color b, double f) => Color.FromRgb((byte)(a.R + (b.R - a.R) * f),
             (byte)(a.G + (b.G - a.G) * f), (byte)(a.B + (b.B - a.B) * f));
         var (green, yellow, red) = (Color.Parse("#2EA043"), Color.Parse("#D29922"), Color.Parse("#F85149"));
-        var f = Math.Clamp(cpu / 100, 0, 1);
+        var f = Math.Clamp(percent / 100, 0, 1);
         return f < 0.5 ? Mix(green, yellow, f * 2) : Mix(yellow, red, (f - 0.5) * 2);
     }
 
@@ -678,6 +690,8 @@ public partial class MainWindow : Window
         < 1 << 20 => $"{bytes / 1024:0.0} KB/s",
         _ => $"{bytes / (1 << 20):0.0} MB/s",
     };
+
+    static string Size(double bytes) => bytes < 1 << 30 ? $"{bytes / (1 << 20):0} MB" : $"{bytes / (1 << 30):0.0} GB";
 
     /// <summary>True when the load of the board shows. For tests.</summary>
     public bool ActivityShown => ActivityPanel.IsVisible;

@@ -36,7 +36,7 @@
     <!-- The BooBoot board at the address, and this window. Each DUT has its own bar, above its view. -->
     <DockPanel Classes="toolbar" DockPanel.Dock="Top" Margin="4,3">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0">
-        <!-- The load of the board: network traffic to it and from it, and its CPU use. -->
+        <!-- The load of the board: network traffic to it and from it, its CPU use, and the space used on its disk. -->
         <StackPanel Name="ActivityPanel" Orientation="Horizontal" Spacing="3" Margin="0,0,8,0" IsVisible="False"
                     Background="Transparent" VerticalAlignment="Center">
           <Path Name="UpArrow" Data="M 5,0 L 10,9 L 0,9 Z" Width="10" Height="9" VerticalAlignment="Center" />
@@ -46,6 +46,13 @@
                   VerticalAlignment="Center">
             <Border Name="CpuBar" HorizontalAlignment="Left" Width="0" CornerRadius="1" />
           </Border>
+          <StackPanel Name="DiskPanel" Orientation="Horizontal" Spacing="3" IsVisible="False">
+            <TextBlock Text="Disk" FontSize="11" Opacity="0.7" Margin="8,0,0,0" VerticalAlignment="Center" />
+            <Border Width="42" Height="10" BorderThickness="1" BorderBrush="#808080" CornerRadius="2"
+                    VerticalAlignment="Center">
+              <Border Name="DiskBar" HorizontalAlignment="Left" Width="0" CornerRadius="1" />
+            </Border>
+          </StackPanel>
         </StackPanel>
         <Button Name="DutsButton" Content="DUTs" IsVisible="False"
                 ToolTip.Tip="Show or hide DUTs of the board, and the BooBoot log">

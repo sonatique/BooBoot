@@ -102,8 +102,10 @@ program remembers it for the board.
 The top bar shows the load of the board, measured every second. The up
 arrow lights when the board receives network traffic (more than 4 KB/s, from
 any client), the down arrow when it sends; brighter with more traffic. The
-CPU gauge goes from green to red with the CPU use. Its tooltip gives the
-numbers, and the temperature of the board.
+CPU gauge goes from green to red with the CPU use. The disk gauge shows the
+space used on the disk of the board: green while half of it at least is
+free, red when full. Their tooltip gives the numbers, and the temperature of
+the board.
 
 ## Properties
 

@@ -40,8 +40,8 @@ using (var local = new BooBootClient($"http://booboot-none.local:{server.Port}")
 
 // The board: the messages of its server, and its load.
 var activity = await dut.ActivityAsync();
-Check(activity.TryGetProperty("cpu", out _) && activity.GetProperty("traffic").TryGetProperty("out", out _),
-    "board activity");
+Check(activity.TryGetProperty("cpu", out _) && activity.GetProperty("traffic").TryGetProperty("out", out _)
+    && activity.GetProperty("disk").GetProperty("free").GetInt64() > 0, "board activity");
 using (var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
 {
     var log = dut.StreamBoardLogAsync("start", stop.Token).GetAsyncEnumerator(stop.Token);

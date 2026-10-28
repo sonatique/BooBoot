@@ -455,7 +455,8 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
 
     // The load of the board, and the BooBoot log: the messages of its server, shown from the DUTs button.
     await WaitFor(() => window.ActivityShown && window.ActivityText.Contains("CPU ")
-        && window.ActivityText.Contains("To the board: "), "load of the board", () => window.ActivityText);
+        && window.ActivityText.Contains("To the board: ") && window.ActivityText.Contains(" used"), "load of the board",
+        () => window.ActivityText);
     window.ShowBoardLog(true);
     await WaitFor(() => window.BoardLog is DutTab shownLog && shownLog.Live
         && shownLog.Buffer.GetAllText().Contains(" INFO booboot: BooBoot "), "BooBoot log shown");

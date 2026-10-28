@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 import time
 
@@ -67,12 +68,22 @@ def _temperature():
         return None
 
 
+def _disk():
+    """Bytes total and free on the file system of the board, or None."""
+    try:
+        usage = shutil.disk_usage("/")
+    except OSError:
+        return None
+    return {"total": usage.total, "free": usage.free}
+
+
 class Activity:
-    """The load of the board, measured every interval seconds: CPU use, network traffic, temperature."""
+    """The load of the board, measured every interval seconds: CPU use, network traffic, temperature, disk."""
 
     def __init__(self, interval=1.0):
         self.interval = interval
-        self._now = {"cpu": None, "traffic": {"in": None, "out": None}, "temperature": _temperature()}
+        self._now = {"cpu": None, "traffic": {"in": None, "out": None}, "temperature": _temperature(),
+                     "disk": _disk()}
         self._stop = threading.Event()
         self._thread = None
 
@@ -97,5 +108,6 @@ class Activity:
             if now[2] and last[2] and seconds > 0:
                 traffic = {"in": round((now[2][0] - last[2][0]) / seconds),
                            "out": round((now[2][1] - last[2][1]) / seconds)}
-            self._now = {"cpu": cpu, "traffic": traffic or {"in": None, "out": None}, "temperature": _temperature()}
+            self._now = {"cpu": cpu, "traffic": traffic or {"in": None, "out": None}, "temperature": _temperature(),
+                         "disk": _disk()}
             last = now
