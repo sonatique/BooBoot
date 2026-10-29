@@ -182,7 +182,9 @@ CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
 tests on Windows and macOS, checks the C# client and BooBoot Console against a
 server with a simulated board, builds BooBoot Console for Windows and Linux,
 and runs `server/install.sh` on a machine with systemd, with the relays on a
-simulated GPIO chip, as an update of an install of 0.4.1 with two DUTs.
+simulated GPIO chip, as an update of an install of 0.4.1 with two DUTs. A
+runner without the modules of its kernel skips this last check, with a
+warning.
 
 ## Releases
 

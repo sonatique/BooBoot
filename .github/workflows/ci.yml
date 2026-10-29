@@ -54,16 +54,25 @@ jobs:
 
   install:
     # server/install.sh on a machine with systemd, the relays on a simulated GPIO chip. It updates
-    # an install of 0.4.1, the last release with one service per DUT, with two DUTs.
+    # an install of 0.4.1, the last release with one service per DUT, with two DUTs. Skipped, with a
+    # warning, on a runner whose kernel has no package of modules.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: Load a simulated GPIO chip
+        id: gpio
         run: |
           sudo apt-get update
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          package="linux-modules-extra-$(uname -r)"
+          if ! apt-cache show "$package" > /dev/null 2>&1; then
+            echo "::warning::no package $package for the kernel of this runner: the install is not checked"
+            exit 0
+          fi
+          sudo apt-get install -y "$package"
           sudo modprobe gpio-mockup gpio_mockup_ranges=-1,8 gpio_mockup_named_lines
+          echo "loaded=true" >> "$GITHUB_OUTPUT"
       - name: Install 0.4.1 with two DUTs, their relays on the simulated GPIO chip
+        if: steps.gpio.outputs.loaded == 'true'
         run: |
           git fetch --depth 1 origin tag v0.4.1
           mkdir ../old
@@ -76,8 +85,10 @@ jobs:
           sudo systemctl restart booboot@dut1 booboot@dut2
           sleep 2
           curl -sf http://127.0.0.1:8081/api/v1/status | grep -q '"name": "dut2"'
-      - run: sudo server/install.sh
-      - run: tests/check_install.sh gpio-mockup-A-3 gpio-mockup-A-4
+      - if: steps.gpio.outputs.loaded == 'true'
+        run: sudo server/install.sh
+      - if: steps.gpio.outputs.loaded == 'true'
+        run: tests/check_install.sh gpio-mockup-A-3 gpio-mockup-A-4
 
   client:
     name: client (${{ matrix.os }})
