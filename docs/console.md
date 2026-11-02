@@ -24,10 +24,10 @@ The title shows the current DUT and the version of the program.
   [Several DUTs](#several-duts)), and Settings.
 - **The bar of a DUT**, above its console, is for that DUT: its label and
   name, its state (power, who has its session, lines kept, log file), and
-  the buttons that act on it: Take control, Power, Properties, Log file and
-  Follow. When the view is narrow, the buttons go under the name.
+  the buttons that act on it: Take control, Power, Properties, Find, Log file
+  and Follow. When the view is narrow, the buttons go under the name.
 - **The console** of the DUT. Its right-click menu has Copy, Paste, Copy all,
-  Select all, Clear, Save and Properties.
+  Select all, Find, Clear, Save and Properties.
 
 ## Features
 
@@ -44,6 +44,12 @@ The title shows the current DUT and the version of the program.
   line), copy with Ctrl+C, select all with Ctrl+A. Save writes all the text
   to a file (Ctrl+S). Clear (Ctrl+L) empties the view. All are also in the
   right-click menu of the console.
+- **Find.** Ctrl+F, or the Find button of the DUT, shows a find bar under
+  its bar. All the matches in the lines kept are highlighted, the current one
+  framed, starting with the latest. Enter goes to the match above, Shift+Enter
+  to the one below (also F3 and Shift+F3 in the console). Aa matches the case,
+  .* takes a regular expression, like `error|fail`, and Filter shows only the
+  lines that match, new ones included. Escape closes the bar.
 - **Logs.** In the Log file menu of a DUT, "Start new log" writes all output from now on to
   a new file `PREFIX-YYYYMMDD-HHMMSS.log` in the log folder; "Stop log" stops
   it, and "Open log folder" opens the folder. The prefix is the DUT name
@@ -148,7 +154,8 @@ cursor, and follows the output at each key.
   it goes to the DUT. Ctrl+Shift+C always copies. Ctrl+V pastes the clipboard
   to the DUT, with each line break sent as Enter.
 - **View commands.** Page Up and Page Down still scroll. With Ctrl+Shift:
-  Ctrl+Shift+A selects all, Ctrl+Shift+L clears, Ctrl+Shift+S saves.
+  Ctrl+Shift+A selects all, Ctrl+Shift+L clears, Ctrl+Shift+S saves,
+  Ctrl+Shift+F finds.
 - **Power.** Next to "Take control", "Power on" or "Power off", after the
   power state of the DUT, switches it. It works only in control. "Power off"
   asks first. Power on also gives the SD card back to the DUT. A DUT without

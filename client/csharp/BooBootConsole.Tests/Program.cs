@@ -131,8 +131,46 @@ static void CheckSettings()
     }
 }
 
+// Search in a console: matches, the current one, case, regular expressions, and the filter.
+static void CheckSearch()
+{
+    var tab = new DutTab("search", new Settings(), () => { });
+    var view = tab.View;
+    tab.Buffer.Feed("boot: Error 1\r\nok\r\nerror 2 and ERROR 3\r\nnothing\r\n");
+    view.Refresh();
+    tab.ShowFind();
+    tab.FindBox.Text = "error";
+    Check(view.MatchCount == 3 && tab.FindStatus == "3 of 3", "search ignores case, the last match first");
+    view.NextMatch(previous: true);
+    Check(tab.FindStatus == "2 of 3", "previous match");
+    view.NextMatch(previous: false);
+    view.NextMatch(previous: false);
+    Check(tab.FindStatus == "1 of 3", "next match goes round");
+    tab.MatchCaseButton.IsChecked = true;
+    Check(view.MatchCount == 1, "match case");
+    tab.MatchCaseButton.IsChecked = false;
+    tab.FindBox.Text = "error [0-9]";
+    Check(view.MatchCount == 0 && tab.FindStatus == "No results", "plain text without regular expression");
+    tab.RegexButton.IsChecked = true;
+    Check(view.MatchCount == 3, "regular expression");
+    tab.FindBox.Text = "error (";
+    Check(view.MatchCount == 0 && tab.FindStatus == "not a valid expression", "invalid regular expression");
+    tab.FindBox.Text = "error";
+    tab.FilterButton.IsChecked = true;
+    Check(view.Shown.GetAllText() == "boot: Error 1\nerror 2 and ERROR 3\n" && view.MatchCount == 3,
+        "filter: only the lines that match");
+    tab.Buffer.Feed("new error\r\nother\r\n");
+    view.Refresh();
+    Check(view.Shown.GetAllText().EndsWith("ERROR 3\nnew error\n") && view.MatchCount == 4, "filter: new lines");
+    tab.FilterButton.IsChecked = false;
+    Check(view.Shown == tab.Buffer && view.MatchCount == 4, "filter off: all the lines");
+    tab.CloseFind();
+    Check(!tab.FindBar.IsVisible && view.Search == null && view.MatchCount == 0, "search closed");
+}
+
 static async Task CheckAll(string url, string? screenshot)
 {
+    CheckSearch();
     var tmp = Directory.CreateTempSubdirectory("booboot-console-");
     using var dut = new BooBootClient(url);
     await dut.OpenSessionAsync("console-check", force: true);
@@ -255,6 +293,16 @@ static async Task CheckWindow(BooBootClient dut, string tmp, string url, string?
     window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
     window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
     await WaitFor(() => Regex.IsMatch(window.Buffer.GetAllText(), @"echo typed *\ntyped\n"), "typed command");
+    // While typing, Ctrl+Shift+F finds: the keys go to the find bar, not to the DUT, until Escape.
+    window.KeyPressQwerty(PhysicalKey.F, RawInputModifiers.Control | RawInputModifiers.Shift);
+    var typingTab = window.CurrentDut!;
+    Check(typingTab.FindBar.IsVisible, "Ctrl+Shift+F shows the find bar while typing");
+    window.KeyTextInput("typed");
+    Check(typingTab.View.MatchCount >= 2 && typingTab.FindStatus.EndsWith($" of {typingTab.View.MatchCount}"),
+        "find bar takes the keys");
+    window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+    Check(!typingTab.FindBar.IsVisible && typingTab.View.MatchCount == 0 && window.Terminal.Typing,
+        "Escape closes the find bar");
     window.KeyPressQwerty(PhysicalKey.C, RawInputModifiers.Control);
     await WaitFor(() => window.Buffer.GetAllText().Contains("^C"), "Ctrl+C sent");
     var clipboard = window.Clipboard;

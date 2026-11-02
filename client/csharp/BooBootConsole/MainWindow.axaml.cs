@@ -802,6 +802,7 @@ public partial class MainWindow : Window
                      ("Paste", "Ctrl+V", OnPaste),
                      ("Copy all", null, OnCopyAll),
                      ("Select all", "Ctrl+A", OnSelectAll),
+                     ("Find...", "Ctrl+F", OnFind),
                      ("-", null, null),
                      ("Clear", "Ctrl+L", OnClear),
                      ("Save...", "Ctrl+S", OnSave),
@@ -847,6 +848,8 @@ public partial class MainWindow : Window
 
     void OnSelectAll(object? sender, RoutedEventArgs e) => current?.View.SelectAll();
 
+    void OnFind(object? sender, RoutedEventArgs e) => current?.ShowFind();
+
     async void OnSave(object? sender, RoutedEventArgs e)
     {
         if (current is not DutTab tab)
@@ -885,6 +888,8 @@ public partial class MainWindow : Window
             OnClear(this, e);
         else if (e.Key == Key.S)
             OnSave(this, e);
+        else if (e.Key == Key.F)
+            OnFind(this, e);
         else
             return;
         e.Handled = true;

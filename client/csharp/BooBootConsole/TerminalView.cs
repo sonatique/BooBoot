@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -17,7 +18,8 @@ namespace BooBootConsole;
 /// Shows a TerminalBuffer. Long lines wrap. Only the visible rows are drawn,
 /// so the buffer can be large. The view follows new output unless the user
 /// scrolls up. While Typing is on, keys are raised as Input, as a terminal
-/// would send them, and the cursor is shown.
+/// would send them, and the cursor is shown. Search highlights what matches,
+/// and can show only the lines that match.
 /// </summary>
 public sealed class TerminalView : Control
 {
@@ -33,6 +35,9 @@ public sealed class TerminalView : Control
     static readonly IBrush CursorBrush = new ImmutableSolidColorBrush(Color.Parse("#99CCCCCC"));
     static readonly IPen CursorPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.Parse("#CCCCCC")));
     static readonly IPen TypingPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.Parse("#0E639C")), 2);
+    static readonly IBrush MatchBrush = new ImmutableSolidColorBrush(Color.Parse("#623314"));
+    static readonly IBrush CurrentMatchBrush = new ImmutableSolidColorBrush(Color.Parse("#515C6A"));
+    static readonly IPen CurrentMatchPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.Parse("#F0A04B")));
     static readonly Color[] Basic = Array.ConvertAll(new[]
     {
         "#000000", "#CD3131", "#0DBC79", "#E5E510", "#2472C8", "#BC3FBC", "#11A8CD", "#E5E5E5",
@@ -42,7 +47,14 @@ public sealed class TerminalView : Control
     readonly ScrollBar bar = new() { Orientation = Orientation.Vertical, AllowAutoHide = false };
     readonly Dictionary<int, IBrush> brushes = new();
     Dictionary<(TermLine, int), RowText> rowCache = new();
-    TerminalBuffer buffer = new();
+    // The buffer given, and the one shown: the same, or the lines of the given one that match.
+    TerminalBuffer source = new(), buffer = new();
+    Regex? search;
+    bool filter, searchFailed;
+    readonly List<TextMatch> matches = new();
+    int current = -1;
+    // Shown lines searched: those before this one. The filtered buffer has the source lines before filtered.
+    long scanned, filtered;
     Typeface typeface;
     FontFamily fontFamily = new(DefaultFonts);
     double fontSize = 13;
@@ -57,6 +69,8 @@ public sealed class TerminalView : Control
 
     record RowText(int Version, int Columns, FormattedText Text);
 
+    readonly record struct TextMatch(long Line, int Start, int Length);
+
     public TerminalView()
     {
         Focusable = true;
@@ -70,17 +84,16 @@ public sealed class TerminalView : Control
 
     public TerminalBuffer Buffer
     {
-        get => buffer;
+        get => source;
         set
         {
-            buffer = value;
-            anchor = caret = null;
-            rowCache.Clear();
-            (topLine, topRow) = (buffer.First, 0);
-            Follow = true;
-            Refresh();
+            source = value;
+            Show(Filtering ? Filtered() : source);
         }
     }
+
+    /// <summary>The buffer shown: Buffer, or its lines that match while FilterMatches is on.</summary>
+    public TerminalBuffer Shown => buffer;
 
     public double TextSize
     {
@@ -142,6 +155,17 @@ public sealed class TerminalView : Control
     /// <summary>Call after the buffer changed.</summary>
     public void Refresh()
     {
+        if (buffer != source)
+        {
+            // All the lines filtered were dropped, like by a clear.
+            if (source.First > filtered)
+            {
+                Show(Filtered());
+                return;
+            }
+            AddFiltered(buffer);
+        }
+        UpdateMatches();
         if (topLine < buffer.First)
             (topLine, topRow) = (buffer.First, 0);
         topRow = Math.Min(topRow, Rows(topLine) - 1);
@@ -194,6 +218,183 @@ public sealed class TerminalView : Control
         Follow = true;
         Input?.Invoke(text);
     }
+
+    // Search
+
+    /// <summary>What to highlight, null for nothing. The last match, the latest output, becomes the current one.</summary>
+    public Regex? Search
+    {
+        get => search;
+        set
+        {
+            search = value;
+            searchFailed = false;
+            if (filter)
+                Show(Filtering ? Filtered() : source);
+            else
+                Rescan();
+            current = matches.Count - 1;
+            RevealCurrent();
+            MatchesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Shows only the lines that match Search, when it is set.</summary>
+    public bool FilterMatches
+    {
+        get => filter;
+        set
+        {
+            if (filter == value)
+                return;
+            var line = current >= 0 ? buffer[matches[current].Line] : null;
+            filter = value;
+            Show(Filtering ? Filtered() : source);
+            // The same match stays the current one.
+            current = line == null ? -1 : matches.FindIndex(m => buffer[m.Line] == line);
+            if (current < 0)
+                current = matches.Count - 1;
+            RevealCurrent();
+            MatchesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public int MatchCount => matches.Count;
+
+    /// <summary>Number of the current match, from 1, or 0 without match.</summary>
+    public int CurrentMatch => current + 1;
+
+    /// <summary>The search took too long, like with a regular expression that backtracks a lot: no match is shown.</summary>
+    public bool SearchFailed => searchFailed;
+
+    /// <summary>The matches or the current one changed.</summary>
+    public event EventHandler? MatchesChanged;
+
+    /// <summary>Goes to the next match, or the previous one, and shows it.</summary>
+    public void NextMatch(bool previous)
+    {
+        if (matches.Count == 0)
+            return;
+        current = (current + (previous ? matches.Count - 1 : 1)) % matches.Count;
+        RevealCurrent();
+        InvalidateVisual();
+        MatchesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    bool Filtering => filter && search != null;
+
+    void Show(TerminalBuffer shown)
+    {
+        buffer = shown;
+        anchor = caret = null;
+        rowCache.Clear();
+        matches.Clear();
+        scanned = buffer.First;
+        (topLine, topRow) = (buffer.First, 0);
+        Follow = true;
+        Refresh();
+    }
+
+    TerminalBuffer Filtered()
+    {
+        var shown = new TerminalBuffer(source.MaxLines);
+        filtered = source.First;
+        AddFiltered(shown);
+        return shown;
+    }
+
+    // The source lines that came since the last call, but the line being written, if they match.
+    void AddFiltered(TerminalBuffer shown)
+    {
+        for (var n = Math.Max(filtered, source.First); n < source.Last && !searchFailed; n++)
+        {
+            if (Find(source[n].Text).Any())
+                shown.AddLine(source[n]);
+        }
+        filtered = source.Last;
+    }
+
+    void Rescan()
+    {
+        matches.Clear();
+        scanned = buffer.First;
+        Refresh();
+    }
+
+    // Finds the matches of the lines that came since the last call, and again those of the line being written.
+    void UpdateMatches()
+    {
+        if (search == null || searchFailed)
+        {
+            matches.Clear();
+            current = -1;
+            return;
+        }
+        var count = matches.Count;
+        var dropped = matches.FindIndex(m => m.Line >= buffer.First);
+        dropped = dropped < 0 ? matches.Count : dropped;
+        matches.RemoveRange(0, dropped);
+        current -= dropped;
+        var from = Math.Max(scanned, buffer.First);
+        var kept = matches.FindIndex(m => m.Line >= from);
+        if (kept >= 0)
+            matches.RemoveRange(kept, matches.Count - kept);
+        for (var n = from; n <= buffer.Last && !searchFailed; n++)
+            matches.AddRange(Find(buffer[n].Text).Select(m => new TextMatch(n, m.Index, m.Length)));
+        scanned = buffer.Last;
+        if (searchFailed)
+            matches.Clear();
+        current = matches.Count == 0 ? -1 : Math.Clamp(current, 0, matches.Count - 1);
+        if (matches.Count != count || dropped > 0)
+            MatchesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // The matches of the search in a line, but the empty ones.
+    IEnumerable<Match> Find(string text)
+    {
+        try
+        {
+            return search?.Matches(text).Where(m => m.Length > 0).ToList() ?? Enumerable.Empty<Match>();
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            searchFailed = true;
+            return Enumerable.Empty<Match>();
+        }
+    }
+
+    // Scrolls to show the current match, a third down the view, unless it is shown already.
+    void RevealCurrent()
+    {
+        if (current < 0)
+            return;
+        var m = matches[current];
+        var (line, row) = (m.Line, Math.Min(m.Start / Columns, Rows(m.Line) - 1));
+        var (bottomLine, bottomRow) = (topLine, topRow);
+        Forward(ref bottomLine, ref bottomRow, VisibleRows - 1);
+        var shown = (line > topLine || (line == topLine && row >= topRow))
+                    && (line < bottomLine || (line == bottomLine && row <= bottomRow));
+        if (shown)
+            return;
+        Backward(ref line, ref row, VisibleRows / 3);
+        SetTop(line, row);
+    }
+
+    // Index of the first match on the line or after it.
+    int FirstMatch(long line)
+    {
+        int lo = 0, hi = matches.Count;
+        while (lo < hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (matches[mid].Line < line)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        return lo;
+    }
+
     // Layout
 
     int Columns => Math.Max(10, (int)((Bounds.Width - bar.Bounds.Width - 2 * Pad) / cellWidth));
@@ -336,6 +537,17 @@ public sealed class TerminalView : Control
                     context.FillRectangle(MarkerBackground, new Rect(0, y, Bounds.Width, rowHeight));
                 else
                     DrawBackgrounds(context, l, start, end, y);
+                for (var i = FirstMatch(line); i < matches.Count && matches[i].Line == line; i++)
+                {
+                    var from = Math.Max(matches[i].Start, start);
+                    var to = Math.Min(matches[i].Start + matches[i].Length, end);
+                    if (to <= from)
+                        continue;
+                    var cells = new Rect(Pad + (from - start) * cellWidth, y, (to - from) * cellWidth, rowHeight);
+                    context.FillRectangle(i == current ? CurrentMatchBrush : MatchBrush, cells);
+                    if (i == current)
+                        context.DrawRectangle(CurrentMatchPen, cells.Deflate(0.5));
+                }
                 if (HasSelection && line >= sa.Line && line <= sb.Line)
                 {
                     var from = Math.Max(line == sa.Line ? sa.Column : 0, start);
@@ -539,6 +751,8 @@ public sealed class TerminalView : Control
                 SelectAll();
             else if (e.Key is Key.PageUp or Key.PageDown)
                 ScrollRows(e.Key == Key.PageUp ? -(VisibleRows - 1) : VisibleRows - 1);
+            else if (e.Key == Key.F3)
+                NextMatch(!shift);
             else if (KeyText(e) is string text)
                 Send(text);
             else
@@ -555,6 +769,9 @@ public sealed class TerminalView : Control
                 break;
             case Key.V when ctrl:
                 Paste();
+                break;
+            case Key.F3:
+                NextMatch(!shift);
                 break;
             case Key.PageUp:
                 ScrollRows(-(VisibleRows - 1));

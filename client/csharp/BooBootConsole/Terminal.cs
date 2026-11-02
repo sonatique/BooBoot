@@ -134,6 +134,14 @@ public sealed class TerminalBuffer
         Version++;
     }
 
+    /// <summary>Adds a complete line, like one of another buffer, before the line being written.</summary>
+    public void AddLine(TermLine line)
+    {
+        lines.Insert(lines.Count - 1, line);
+        Trim();
+        Version++;
+    }
+
     /// <summary>Drops all lines, also the line being written.</summary>
     public void Clear()
     {

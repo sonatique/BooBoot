@@ -4,11 +4,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -57,6 +60,15 @@ public sealed class DutTab
         Margin = new Thickness(10, 0, 0, 0), Opacity = 0.75, TextTrimming = TextTrimming.CharacterEllipsis,
         VerticalAlignment = VerticalAlignment.Center,
     };
+    readonly TextBlock findCount = new()
+    {
+        Margin = new Thickness(6, 0), Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center,
+    };
+    readonly Button previousButton = IconButton("M 1,7 L 6,2 L 11,7", "Previous match, above (Enter)");
+    readonly Button nextButton = IconButton("M 1,3 L 6,8 L 11,3", "Next match, below (Shift+Enter)");
+    readonly Button closeFindButton = IconButton("M 2,1 L 10,9 M 10,1 L 2,9", "Close (Escape)");
+    // Why the text to find is not searched, like an invalid regular expression.
+    string findError = "";
     ConsoleSource? source;
     ConsoleInput? input;
     // Key of the addresses of the board in the settings.
@@ -95,6 +107,7 @@ public sealed class DutTab
         };
         FollowButton.IsCheckedChanged += (_, _) => View.Follow = FollowButton.IsChecked == true;
         View.Input += text => input?.Send(text);
+        View.MatchesChanged += (_, _) => ShowMatches();
         View.ReadOnlyKey += (_, _) =>
         {
             if (source != null && input?.Token == null)
@@ -113,7 +126,10 @@ public sealed class DutTab
         var buttons = new WrapPanel
         {
             ItemSpacing = 4, LineSpacing = 3,
-            Children = { ControlButton, PowerButton, PropertiesButton, new Border { Width = 4 }, LogButton, FollowButton },
+            Children =
+            {
+                ControlButton, PowerButton, PropertiesButton, new Border { Width = 4 }, FindButton, LogButton, FollowButton,
+            },
         };
         DockPanel.SetDock(barTitle, Dock.Left);
         Bar = new Border { Child = new DockPanel { Children = { buttons, barTitle, barState } }, ClipToBounds = true };
@@ -129,7 +145,9 @@ public sealed class DutTab
         DockPanel.SetDock(buttons, Dock.Right);
         buttons.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(Bar, Dock.Top);
-        Pane = new DockPanel { IsVisible = false, Children = { Bar, View } };
+        FindBar = BuildFindBar();
+        DockPanel.SetDock(FindBar, Dock.Top);
+        Pane = new DockPanel { IsVisible = false, Children = { Bar, FindBar, View } };
         UpdateLogText();
         Update();
     }
@@ -183,6 +201,35 @@ public sealed class DutTab
     {
         Content = "Log file", [ToolTip.TipProperty] = "Write the console of this DUT to a file on this computer",
     };
+
+    public ToggleButton FindButton { get; } = new()
+    {
+        Content = "Find", [ToolTip.TipProperty] = "Search the console of this DUT (Ctrl+F)",
+    };
+
+    /// <summary>Under the bar while searching: what to find, its options, and the matches.</summary>
+    public Border FindBar { get; }
+
+    public TextBox FindBox { get; } = new()
+    {
+        PlaceholderText = "Find", Width = 240, MinHeight = 26, Padding = new Thickness(6, 2),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    public ToggleButton MatchCaseButton { get; } = new() { Content = "Aa", [ToolTip.TipProperty] = "Match case" };
+
+    public ToggleButton RegexButton { get; } = new()
+    {
+        Content = ".*", [ToolTip.TipProperty] = "Regular expression, like error|fail",
+    };
+
+    public ToggleButton FilterButton { get; } = new()
+    {
+        Content = "Filter", [ToolTip.TipProperty] = "Show only the lines that match",
+    };
+
+    /// <summary>The matches, as the find bar shows them, like "3 of 17".</summary>
+    public string FindStatus => findCount.Text ?? "";
 
     public ToggleButton FollowButton { get; } = new()
     {
@@ -432,6 +479,139 @@ public sealed class DutTab
     }
 
     static string Marker(string what, DateTime time) => $"---- {what} {time:yyyy-MM-dd HH:mm:ss.fff} ----";
+
+    // Search
+
+    Border BuildFindBar()
+    {
+        FindButton.Click += (_, _) =>
+        {
+            if (FindBar.IsVisible)
+                CloseFind();
+            else
+                ShowFind();
+        };
+        FindBox.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBox.TextProperty)
+                UpdateSearch();
+        };
+        MatchCaseButton.IsCheckedChanged += (_, _) => UpdateSearch();
+        RegexButton.IsCheckedChanged += (_, _) => UpdateSearch();
+        FilterButton.IsCheckedChanged += (_, _) =>
+        {
+            if (FindBar.IsVisible)
+                View.FilterMatches = FilterButton.IsChecked == true;
+        };
+        previousButton.Click += (_, _) => View.NextMatch(previous: true);
+        nextButton.Click += (_, _) => View.NextMatch(previous: false);
+        closeFindButton.Click += (_, _) => CloseFind();
+        // Enter goes up, to older output, as the last match, the latest output, comes first.
+        FindBox.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+        {
+            if (e.Key is Key.Enter or Key.F3)
+                View.NextMatch(previous: !e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            else if (e.Key == Key.Escape)
+                CloseFind();
+            else
+                return;
+            e.Handled = true;
+        }, RoutingStrategies.Tunnel);
+        DockPanel.SetDock(closeFindButton, Dock.Right);
+        var bar = new Border
+        {
+            IsVisible = false,
+            Child = new DockPanel
+            {
+                Children =
+                {
+                    closeFindButton,
+                    new WrapPanel
+                    {
+                        ItemSpacing = 4, LineSpacing = 3,
+                        Children =
+                        {
+                            FindBox, MatchCaseButton, RegexButton, FilterButton, findCount, previousButton, nextButton,
+                        },
+                    },
+                },
+            },
+        };
+        bar.Classes.Add("dut-bar");
+        return bar;
+    }
+
+    // A button with a drawn icon.
+    static Button IconButton(string data, string tip)
+    {
+        var icon = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(data), Stroke = OffBrush, StrokeThickness = 1.5, Width = 12, Height = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var button = new Button { Content = icon, [ToolTip.TipProperty] = tip };
+        button.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == InputElement.IsEffectivelyEnabledProperty)
+                icon.Opacity = button.IsEffectivelyEnabled ? 1 : 0.4;
+        };
+        return button;
+    }
+
+    /// <summary>Shows the find bar, its text selected, to type what to find.</summary>
+    public void ShowFind()
+    {
+        FindBar.IsVisible = true;
+        FindButton.IsChecked = true;
+        UpdateSearch();
+        View.FilterMatches = FilterButton.IsChecked == true;
+        FindBox.Focus();
+        FindBox.SelectAll();
+    }
+
+    /// <summary>Hides the find bar, and shows the whole console again.</summary>
+    public void CloseFind()
+    {
+        FindBar.IsVisible = false;
+        FindButton.IsChecked = false;
+        View.FilterMatches = false;
+        View.Search = null;
+        View.Focus();
+    }
+
+    void UpdateSearch()
+    {
+        if (!FindBar.IsVisible)
+            return;
+        var text = FindBox.Text ?? "";
+        findError = "";
+        Regex? search = null;
+        if (text != "")
+        {
+            try
+            {
+                search = new Regex(RegexButton.IsChecked == true ? text : Regex.Escape(text),
+                    (MatchCaseButton.IsChecked == true ? RegexOptions.None : RegexOptions.IgnoreCase)
+                    | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+            }
+            catch (ArgumentException)
+            {
+                findError = "not a valid expression";
+            }
+        }
+        View.Search = search;
+        ShowMatches();
+    }
+
+    void ShowMatches()
+    {
+        findCount.Text = findError != "" ? findError
+            : View.SearchFailed ? "too slow: change the expression"
+            : View.Search == null ? ""
+            : View.MatchCount == 0 ? "No results"
+            : $"{View.CurrentMatch} of {View.MatchCount}";
+        previousButton.IsEnabled = nextButton.IsEnabled = View.MatchCount > 0;
+    }
 
     /// <summary>Updates the tab, and tells the window.</summary>
     void Update()
