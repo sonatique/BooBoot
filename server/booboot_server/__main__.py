@@ -183,7 +183,8 @@ def main(argv=None):
         s = board["server"]
         host = args.host or s.get("host")
         port = s.getint("port") if args.port is None else args.port
-        activity = Activity()
+        # A simulated board is a Raspberry Pi when its directory has a throttled state file, like the firmware has.
+        activity = Activity(pi_state=fake_dir and os.path.join(fake_dir, "get_throttled"))
         servers = [Server((host, port), units, web=s.getboolean("web"), board_log=board_log, activity=activity)]
         # A DUT that names its own port also answers there, at the root, as when each DUT had its server.
         for u in units:

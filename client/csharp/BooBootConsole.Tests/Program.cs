@@ -168,9 +168,27 @@ static void CheckSearch()
     Check(!tab.FindBar.IsVisible && view.Search == null && view.MatchCount == 0, "search closed");
 }
 
+// The conditions of a Raspberry Pi, from the load of the board.
+static void CheckPi()
+{
+    static (bool Current, List<string> Lines) Of(string json) =>
+        MainWindow.PiConditions(JsonDocument.Parse(json).RootElement);
+    Check(Of("""{"cpu": 1}""").Lines.Count == 0 && Of("""{"pi": null}""").Lines.Count == 0
+        && Of("""{"pi": {"now": [], "seen": {}}}""").Lines.Count == 0, "Raspberry Pi: nothing without condition");
+    var now = Of("""{"pi": {"now": ["under-voltage"], "seen": {"under-voltage": 1762937000.5, "throttled": null}}}""");
+    Check(now.Current && now.Lines.Count == 2 && now.Lines[0].StartsWith("Under-voltage now: the power supply")
+        && now.Lines[1] == "CPU throttled before the server started",
+        "Raspberry Pi: under-voltage now, throttled before");
+    var earlier = Of("{\"pi\": {\"now\": [], \"seen\": {\"under-voltage\": "
+        + DateTimeOffset.Now.ToUnixTimeSeconds() + "}}}");
+    Check(!earlier.Current && Regex.IsMatch(earlier.Lines.Single(), @"^Under-voltage at \d\d:\d\d:\d\d$"),
+        "Raspberry Pi: under-voltage earlier today");
+}
+
 static async Task CheckAll(string url, string? screenshot)
 {
     CheckSearch();
+    CheckPi();
     var tmp = Directory.CreateTempSubdirectory("booboot-console-");
     using var dut = new BooBootClient(url);
     await dut.OpenSessionAsync("console-check", force: true);
@@ -507,6 +525,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     await WaitFor(() => window.ActivityShown && window.ActivityText.Contains("CPU ")
         && window.ActivityText.Contains("To the board: ") && window.ActivityText.Contains(" used"), "load of the board",
         () => window.ActivityText);
+    Check(!window.PiWarningShown, "no warning sign for a board that is not a Raspberry Pi");
     window.ShowBoardLog(true);
     await WaitFor(() => window.BoardLog is DutTab shownLog && shownLog.Live
         && shownLog.Buffer.GetAllText().Contains(" INFO booboot: BooBoot "), "BooBoot log shown");

@@ -8,9 +8,11 @@ import shutil
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import common
 import booboot
+from booboot_server import board_state
 from booboot_server.board_state import Activity, BoardLog
 
 
@@ -70,6 +72,38 @@ class BoardTest(unittest.TestCase):
         self.assertTrue(a["traffic"]["in"] >= 0 and a["traffic"]["out"] >= 0, a)
         self.assertTrue(0 <= a["disk"]["free"] <= a["disk"]["total"], a)
         self.assertEqual(a["interval"], 0.1)
+
+    def test_raspberry_pi(self):
+        path = os.path.join(self.tmp, "get_throttled")
+        a = Activity(pi_state=path)
+        self.assertIsNone(a.get()["pi"], "not a Raspberry Pi without the file")
+
+        def check(value):
+            with open(path, "w") as f:
+                f.write(value + "\n")
+            return a._pi_check()
+
+        with self.assertLogs("booboot_server.board_state") as logs:
+            pi = check("50000")
+        self.assertEqual(pi, {"now": [], "seen": {"under-voltage": None, "throttled": None}})
+        self.assertEqual(logs.output, [
+            "WARNING:booboot_server.board_state:Raspberry Pi: under-voltage since the board started",
+            "WARNING:booboot_server.board_state:Raspberry Pi: throttled since the board started"])
+        with self.assertLogs("booboot_server.board_state") as logs:
+            pi = check("50005")
+        self.assertEqual(pi["now"], ["under-voltage", "throttled"])
+        self.assertGreater(pi["seen"]["under-voltage"], time.time() - 5)
+        self.assertEqual(logs.output, ["WARNING:booboot_server.board_state:Raspberry Pi: under-voltage",
+                                       "WARNING:booboot_server.board_state:Raspberry Pi: throttled"])
+        self.assertEqual(check("50000")["now"], ["under-voltage", "throttled"], "kept a while after it ends")
+        with mock.patch.object(board_state, "PI_HOLD", 0), self.assertLogs("booboot_server.board_state") as logs:
+            self.assertEqual(check("50000")["now"], [])
+            self.assertIn("INFO:booboot_server.board_state:Raspberry Pi: no more under-voltage", logs.output)
+            check("0")
+            # The kernel cleared the bits, then an under-voltage came and went between two readings.
+            self.assertEqual(check("10000")["now"], ["under-voltage"])
+        os.remove(path)
+        self.assertIsNone(a._pi_check())
 
     def test_none(self):
         server, _, url = common.start_fake_server(os.path.join(self.tmp, "none"))

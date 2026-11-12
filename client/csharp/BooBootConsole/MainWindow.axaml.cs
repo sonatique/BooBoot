@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -25,6 +26,8 @@ public partial class MainWindow : Window
     static readonly Regex DutPath = new("/duts/[^/]+$");
     static readonly IBrush IdleBrush = new SolidColorBrush(Color.Parse("#808080"), 0.35);
     static readonly Color ActiveColor = Color.Parse("#2EA043");
+    static readonly IBrush WarningNowBrush = new SolidColorBrush(Color.Parse("#F85149"));
+    static readonly IBrush WarningSeenBrush = new SolidColorBrush(Color.Parse("#D29922"));
     // Bytes per second of network traffic from which an arrow lights.
     const double Busy = 4096;
 
@@ -651,6 +654,9 @@ public partial class MainWindow : Window
         DiskBar.Background = new SolidColorBrush(LoadColor(200 * Math.Max((used ?? 0) - 0.5, 0)));
         Blink(UpArrow, received);
         Blink(DownArrow, sent);
+        var (current, pi) = PiConditions(a);
+        PiWarning.IsVisible = pi.Count > 0;
+        PiWarning.Fill = current ? WarningNowBrush : WarningSeenBrush;
         ToolTip.SetTip(ActivityPanel, activity == null ? "No answer from the board" : string.Join("\n", new[]
         {
             "BooBoot board",
@@ -658,7 +664,51 @@ public partial class MainWindow : Window
             "To the board: " + Rate(received),
             "From the board: " + Rate(sent),
             used is double u ? $"Disk: {Size(free)} free of {Size(total)}, {100 * u:0}% used" : "",
-        }.Where(line => line != "")));
+        }.Concat(pi).Where(line => line != "")));
+    }
+
+    /// <summary>
+    /// The conditions of a Raspberry Pi from the load of the board: whether one is current, and a line for each,
+    /// none when there was none, or the board is not a Raspberry Pi.
+    /// </summary>
+    public static (bool Current, List<string> Lines) PiConditions(JsonElement activity)
+    {
+        var lines = new List<string>();
+        if (activity.ValueKind != JsonValueKind.Object || !activity.TryGetProperty("pi", out var pi)
+            || pi.ValueKind != JsonValueKind.Object)
+            return (false, lines);
+        static string Name(string condition) => condition switch
+        {
+            "under-voltage" => "Under-voltage",
+            "frequency capped" => "CPU frequency capped",
+            "throttled" => "CPU throttled",
+            "soft temperature limit" => "Soft temperature limit",
+            _ => condition,
+        };
+        var now = pi.TryGetProperty("now", out var n) && n.ValueKind == JsonValueKind.Array
+            ? n.EnumerateArray().Select(c => c.GetString() ?? "").ToList() : new List<string>();
+        foreach (var condition in now)
+            lines.Add(Name(condition) + " now" + condition switch
+            {
+                "under-voltage" => ": the power supply of the board, or its cable, is too weak",
+                "soft temperature limit" => ": the board is too hot",
+                _ => "",
+            });
+        if (pi.TryGetProperty("seen", out var seen) && seen.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var p in seen.EnumerateObject().Where(p => !now.Contains(p.Name)))
+            {
+                if (p.Value.ValueKind != JsonValueKind.Number)
+                {
+                    lines.Add(Name(p.Name) + " before the server started");
+                    continue;
+                }
+                var t = DateTimeOffset.FromUnixTimeMilliseconds((long)(p.Value.GetDouble() * 1000)).LocalDateTime;
+                var format = t.Date == DateTime.Today ? "HH:mm:ss" : "yyyy-MM-dd HH:mm";
+                lines.Add(Name(p.Name) + " at " + t.ToString(format, CultureInfo.InvariantCulture));
+            }
+        }
+        return (now.Count > 0, lines);
     }
 
     /// <summary>Lights an arrow for a moment when the traffic is busy: brighter with more traffic.</summary>
@@ -697,6 +747,9 @@ public partial class MainWindow : Window
     /// <summary>The name and the version of this program, like "BooBoot Console 1.2.3", as in the title.</summary>
     public static string ProgramName { get; } = ("BooBoot Console " + typeof(MainWindow).Assembly
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]).TrimEnd();
+
+    /// <summary>True when the warning sign of a Raspberry Pi shows. For tests.</summary>
+    public bool PiWarningShown => PiWarning.IsVisible;
 
     /// <summary>True when the load of the board shows. For tests.</summary>
     public bool ActivityShown => ActivityPanel.IsVisible;

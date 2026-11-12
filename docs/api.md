@@ -96,7 +96,9 @@ The load of the board, measured every second:
 
 ```json
 {"cpu": 12.5, "traffic": {"in": 1234, "out": 56789}, "temperature": 48.2,
- "disk": {"total": 31254904832, "free": 22906503168}, "interval": 1.0}
+ "disk": {"total": 31254904832, "free": 22906503168},
+ "pi": {"now": ["under-voltage"], "seen": {"under-voltage": 1762937000.5, "throttled": null}},
+ "interval": 1.0}
 ```
 
 `cpu`: percent of the time of all cores busy. `traffic`: bytes per second
@@ -105,6 +107,13 @@ all clients. `temperature`: degrees Celsius of the processor, `null` when the
 board does not give it. `disk`: bytes in all (`total`) and still free for
 files (`free`) on the file system of the board, `/`. `cpu` and `traffic` are
 `null` for the first second.
+
+`pi`: on a Raspberry Pi, the conditions that its firmware reports:
+`under-voltage` (the power supply or its cable is too weak), `frequency
+capped`, `throttled` and `soft temperature limit`. `now` lists those seen in
+the last 10 s, `seen` gives when each was last seen, in Unix time, `null` for
+before the server started. `pi` is `null` on another board. The BooBoot log
+has a line when one comes and when it goes.
 
 ## Status and session
 

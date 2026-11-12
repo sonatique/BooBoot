@@ -115,6 +115,12 @@ space used on the disk of the board: green while half of it at least is
 free, red when full. Their tooltip gives the numbers, and the temperature of
 the board.
 
+On a Raspberry Pi, a warning sign follows when its firmware reports a
+problem: red while there is under-voltage (the power supply or its cable is
+too weak), CPU throttling, or the soft temperature limit, and amber once it
+ended, until the server restarts. The tooltip tells which, and when. The
+BooBoot log has a line when one comes and when it goes.
+
 ## Properties
 
 The Properties button of a DUT, in its bar, shows the DUT on the board, the
