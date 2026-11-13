@@ -183,6 +183,10 @@ static void CheckPi()
         + DateTimeOffset.Now.ToUnixTimeSeconds() + "}}}");
     Check(!earlier.Current && Regex.IsMatch(earlier.Lines.Single(), @"^Under-voltage at \d\d:\d\d:\d\d$"),
         "Raspberry Pi: under-voltage earlier today");
+    Check(MainWindow.IsOlder("0.9.2", "0.9.5") && MainWindow.IsOlder("0.9.5", "0.10.0")
+        && !MainWindow.IsOlder("0.9.5", "0.9.5") && !MainWindow.IsOlder("0.10.0", "0.9.5")
+        && !MainWindow.IsOlder("dev", "0.9.5") && !MainWindow.IsOlder("0.9.2", "0.0.0-dev"),
+        "older server: releases only");
 }
 
 static async Task CheckAll(string url, string? screenshot)
@@ -526,6 +530,7 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
         && window.ActivityText.Contains("To the board: ") && window.ActivityText.Contains(" used"), "load of the board",
         () => window.ActivityText);
     Check(!window.PiWarningShown, "no warning sign for a board that is not a Raspberry Pi");
+    Check(!window.VersionNoteShown, "no note to update a server run from the sources");
     window.ShowBoardLog(true);
     await WaitFor(() => window.BoardLog is DutTab shownLog && shownLog.Live
         && shownLog.Buffer.GetAllText().Contains(" INFO booboot: BooBoot "), "BooBoot log shown");

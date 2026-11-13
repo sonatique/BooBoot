@@ -449,6 +449,12 @@ public partial class MainWindow : Window
         var connected = tab?.Connected == true;
         BoardText.Text = connected ? tab!.BoardState : connection;
         Title = connected && tab!.Name != "" ? $"{tab.DisplayName} - {ProgramName}" : ProgramName;
+        var server = connected ? tab!.Details?.Version ?? "" : "";
+        VersionNote.IsVisible = IsOlder(server, ProgramVersion);
+        VersionNote.Text = $"Update the board ({server})";
+        ToolTip.SetTip(VersionNote, $"The board runs BooBoot {server}, this program {ProgramVersion}. What this program "
+            + "shows that needs a newer server, like the warnings of a Raspberry Pi, does not show until the board "
+            + "is updated: see Update in the README of BooBoot.");
         ConnectButton.Content = opening != null ? "Disconnect" : "Connect";
         ToolTip.SetTip(ConnectButton, opening != null ? "Stop watching the DUTs of this board, in this window"
             : "Watch the DUTs of the board at this address");
@@ -744,9 +750,23 @@ public partial class MainWindow : Window
 
     static string Size(double bytes) => bytes < 1 << 30 ? $"{bytes / (1 << 20):0} MB" : $"{bytes / (1 << 30):0.0} GB";
 
+    /// <summary>The version of this program, like 1.2.3, or "" when not known.</summary>
+    public static string ProgramVersion { get; } = typeof(MainWindow).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "";
+
     /// <summary>The name and the version of this program, like "BooBoot Console 1.2.3", as in the title.</summary>
-    public static string ProgramName { get; } = ("BooBoot Console " + typeof(MainWindow).Assembly
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]).TrimEnd();
+    public static string ProgramName { get; } = ("BooBoot Console " + ProgramVersion).TrimEnd();
+
+    /// <summary>True when version is older than other, both releases like 1.2.3, unlike 0.0.0-dev or dev.</summary>
+    public static bool IsOlder(string version, string other)
+    {
+        static Version? Release(string v) =>
+            Version.TryParse(v, out var r) && r.Major + r.Minor + r.Build > 0 && r.Revision < 0 ? r : null;
+        return Release(version) is Version a && Release(other) is Version b && a < b;
+    }
+
+    /// <summary>True when the note to update the board shows. For tests.</summary>
+    public bool VersionNoteShown => VersionNote.IsVisible;
 
     /// <summary>True when the warning sign of a Raspberry Pi shows. For tests.</summary>
     public bool PiWarningShown => PiWarning.IsVisible;

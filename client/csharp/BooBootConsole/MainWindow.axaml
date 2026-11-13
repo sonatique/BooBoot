@@ -110,6 +110,9 @@
                VerticalAlignment="Center" ToolTip.Tip="Address of the BooBoot board, or of one of its DUTs" />
       <Button Name="ConnectButton" DockPanel.Dock="Left" Content="Connect" Margin="4,0,0,0"
               ToolTip.Tip="Watch the DUTs of the board at this address" />
+      <!-- When the server of the board is older than this program. -->
+      <TextBlock Name="VersionNote" DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Center"
+                 Foreground="#D29922" IsVisible="False" />
       <TextBlock Name="BoardText" Margin="8,0,0,0" VerticalAlignment="Center" Opacity="0.75"
                  TextTrimming="CharacterEllipsis" />
     </DockPanel>
