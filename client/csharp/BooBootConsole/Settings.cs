@@ -11,7 +11,8 @@ public sealed class Settings
 {
     public string Url { get; set; } = "http://booboot.local:8080";
     public string LogFolder { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BooBoot logs");
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments, Environment.SpecialFolderOption.DoNotVerify),
+        "BooBoot logs");
     /// <summary>Log file names start with it, then the DUT name with several DUTs. Empty: the DUT name.</summary>
     public string LogPrefix { get; set; } = "";
     public bool LogOnConnect { get; set; }
@@ -28,8 +29,10 @@ public sealed class Settings
     /// <summary>The DUTs not shown, for each board with several.</summary>
     public Dictionary<string, List<string>> HiddenDuts { get; set; } = new();
 
+    // DoNotVerify: the folder may not exist yet, like ~/.config on macOS.
     public static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BooBootConsole", "settings.json");
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify),
+        "BooBootConsole", "settings.json");
 
     public static Settings Load(string? path = null)
     {
