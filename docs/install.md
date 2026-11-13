@@ -204,7 +204,9 @@ A desktop program to watch the console, with log files on the desktop (see
 `https://github.com/sonatique/BooBoot/releases/latest`, download `BooBootConsole-win-x64.exe` (Windows),
 `BooBootConsole-linux-x64` (Linux), or `BooBootConsole-osx-arm64.zip` (macOS,
 Apple Silicon) or `BooBootConsole-osx-x64.zip` (macOS, Intel), and run it.
-It is one file, or one app, with nothing else to install.
+On ARM, take `BooBootConsole-win-arm64.exe` (Windows) or
+`BooBootConsole-linux-arm64` (Linux, like a Raspberry Pi with a 64-bit
+system). It is one file, or one app, with nothing else to install.
 
 - Windows may warn that the program is not signed: "More info", then "Run
   anyway".

@@ -230,10 +230,12 @@ only "check your viewer".
    | Another copy, or an older version | tell the user what runs and offer the latest release, started for `URL`. If they agree: when the old one is the `TOOLS` copy, ask them to close it first (a running program cannot be replaced), then steps 4 and 5 |
 
 4. **Get BooBoot Console**, the first way that works:
-   1. Windows x64, Linux x64 or macOS, when there is a release (step 2): the
-      latest release, no login needed. When `TOOLS/BooBootConsole/version.txt` holds
-      its tag, keep the program there. Otherwise download it, and write the
-      tag in `version.txt`:
+   1. Windows, Linux or macOS, when there is a release (step 2): the latest
+      release, no login needed. On ARM, take the `arm64` files in place of
+      the `x64` ones: Windows when `$env:PROCESSOR_ARCHITECTURE` is `ARM64`,
+      Linux when `uname -m` gives `aarch64`. When
+      `TOOLS/BooBootConsole/version.txt` holds its tag, keep the program
+      there. Otherwise download it, and write the tag in `version.txt`:
 
       ```sh
       curl -sSfL --create-dirs -o TOOLS/BooBootConsole/BooBootConsole.exe https://github.com/sonatique/BooBoot/releases/latest/download/BooBootConsole-win-x64.exe
@@ -245,9 +247,9 @@ only "check your viewer".
       `BooBootConsole-osx-x64.zip`, and unzip it with
       `ditto -x -k FILE.zip TOOLS/BooBootConsole`: the app is then
       `TOOLS/BooBootConsole/BooBoot Console.app`.
-   2. Windows x64, Linux x64 or macOS, when there is no release yet, with the
-      GitHub CLI logged in (`gh auth status`): the build of the latest
-      successful CI run (kept 30 days). On Linux, use
+   2. Windows, Linux or macOS, when there is no release yet, with the GitHub
+      CLI logged in (`gh auth status`): the build of the latest successful CI
+      run (kept 30 days), `arm64` on ARM as in 1. On Linux, use
       `BooBootConsole-linux-x64`, then
       `chmod +x TOOLS/BooBootConsole/BooBootConsole`. On macOS, use
       `BooBootConsole-osx-arm64` or `BooBootConsole-osx-x64`, then unzip the

@@ -181,7 +181,7 @@ CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
 3.14 (with the web page in headless Chrome), once as root, runs the client
 tests on Windows and macOS, checks the C# client and BooBoot Console against a
 server with a simulated board, builds BooBoot Console for Windows, Linux and
-macOS (started on a Mac), and runs `server/install.sh` on a machine with systemd, with the relays on a
+macOS, on x64 and ARM64 (started on Linux, Linux ARM64 and a Mac), and runs `server/install.sh` on a machine with systemd, with the relays on a
 simulated GPIO chip, as an update of an install of 0.4.1 with two DUTs. A
 runner without the modules of its kernel skips this last check, with a
 warning.
@@ -201,7 +201,8 @@ version, like `0.3.1`: it does the same from `main`, and creates the tag
 `v0.3.1` itself. Agents that can start workflows but not push tags use it.
 
 CI runs all the checks, then adds to the release BooBoot Console for Windows,
-Linux and macOS, `booboot.py`, and their SHA-256 sums in `SHA256SUMS`. The tag
+Linux and macOS, on x64 and ARM64, `booboot.py`, and their SHA-256 sums in
+`SHA256SUMS`. The tag
 gives the version: no file needs editing. CI writes it into the released
 files, and on the BooBoot board `install.sh` takes it from git: `0.3.0` for
 the tagged commit, `0.3.0-2-gabc1234` for a later one, `dev` without git.

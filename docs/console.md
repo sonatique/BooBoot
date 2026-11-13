@@ -183,8 +183,10 @@ cursor, and follows the output at each key.
 and Linux, and an app for macOS, with nothing else to install. From the
 [latest release](https://github.com/sonatique/BooBoot/releases/latest), download:
 
-- Windows: `BooBootConsole-win-x64.exe`.
-- Linux: `BooBootConsole-linux-x64`, then make it executable:
+- Windows: `BooBootConsole-win-x64.exe`, or `BooBootConsole-win-arm64.exe`
+  on an ARM PC, like one with a Snapdragon processor.
+- Linux: `BooBootConsole-linux-x64`, or `BooBootConsole-linux-arm64` on ARM,
+  like a Raspberry Pi with a 64-bit system. Then make it executable:
   `chmod +x BooBootConsole-linux-x64`.
 - macOS: `BooBootConsole-osx-arm64.zip` (Apple Silicon: M1 and later) or
   `BooBootConsole-osx-x64.zip` (Intel). Open it, and move "BooBoot Console"
