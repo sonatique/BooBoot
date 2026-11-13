@@ -198,10 +198,86 @@ jobs:
       - if: always()
         run: cat server.log
 
+  macos:
+    # BooBoot Console as macOS apps, for Apple Silicon and Intel, started on the Mac of the runner.
+    runs-on: macos-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      AVALONIA_TELEMETRY_OPTOUT: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Start the server with a fake board
+        run: |
+          cd server
+          nohup python3 -m booboot_server --fake --config-dir ../tests/fake-board --host 127.0.0.1 --port 8080 \
+            > ../server.log 2>&1 &
+          for i in $(seq 20); do
+            curl -sf http://127.0.0.1:8080/api/v1/status > /dev/null && exit 0
+            sleep 0.5
+          done
+          cat ../server.log
+          exit 1
+      - name: Build BooBoot Console as apps
+        env:
+          RELEASE: ${{ inputs.version }}
+        run: |
+          version=0.0.0-dev
+          if [[ -n $RELEASE ]]; then
+            version=$RELEASE
+          elif [[ $GITHUB_REF == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}
+          fi
+          for rid in osx-arm64 osx-x64; do
+            dotnet publish client/csharp/BooBootConsole -c Release -r $rid --self-contained \
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+              -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:PublishTrimmed=true \
+              -p:DebugType=none -p:Version=$version -o publish/$rid
+            app="publish/$rid/BooBoot Console.app"
+            mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+            mv publish/$rid/BooBootConsole "$app/Contents/MacOS/"
+            cp client/csharp/BooBootConsole/macos/booboot.icns "$app/Contents/Resources/"
+            sed "s/VERSION/$version/g" client/csharp/BooBootConsole/macos/Info.plist > "$app/Contents/Info.plist"
+            # Not signed by Apple, but signed: Apple Silicon runs only signed code.
+            codesign --force --deep --sign - "$app"
+            codesign --verify --deep --strict "$app"
+            (cd publish/$rid && ditto -c -k --keepParent "BooBoot Console.app" ../BooBootConsole-$rid.zip)
+          done
+      - name: Start the Apple Silicon app, until it connects
+        run: |
+          export XDG_CONFIG_HOME=$(mktemp -d)
+          logs=$(mktemp -d)
+          mkdir -p "$XDG_CONFIG_HOME/BooBootConsole"
+          echo "{\"LogFolder\": \"$logs\", \"LogOnConnect\": true}" > "$XDG_CONFIG_HOME/BooBootConsole/settings.json"
+          "publish/osx-arm64/BooBoot Console.app/Contents/MacOS/BooBootConsole" http://127.0.0.1:8080 &
+          for i in $(seq 60); do
+            ls "$logs"/*.log > /dev/null 2>&1 && break
+            sleep 0.5
+          done
+          sleep 2
+          pgrep -x BooBootConsole
+          ls "$logs"/*.log
+          pkill -x BooBootConsole
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BooBootConsole-osx-arm64
+          path: publish/BooBootConsole-osx-arm64.zip
+          retention-days: 30
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BooBootConsole-osx-x64
+          path: publish/BooBootConsole-osx-x64.zip
+          retention-days: 30
+      - if: always()
+        run: cat server.log
+
   release:
     # A tag vX.Y.Z, or the Release workflow, publishes a GitHub release with the programs, once all checks pass.
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
-    needs: [lint, test, test-root, install, client, csharp]
+    needs: [lint, test, test-root, install, client, csharp, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -219,11 +295,20 @@ jobs:
         with:
           name: BooBootConsole-linux-x64
           path: build/linux-x64
+      - uses: actions/download-artifact@v8
+        with:
+          name: BooBootConsole-osx-arm64
+          path: build/osx-arm64
+      - uses: actions/download-artifact@v8
+        with:
+          name: BooBootConsole-osx-x64
+          path: build/osx-x64
       - name: Publish the release
         run: |
           mkdir dist
           cp build/win-x64/BooBootConsole.exe dist/BooBootConsole-win-x64.exe
           cp build/linux-x64/BooBootConsole dist/BooBootConsole-linux-x64
+          cp build/osx-arm64/BooBootConsole-osx-arm64.zip build/osx-x64/BooBootConsole-osx-x64.zip dist/
           sed "s/^__version__ = .*/__version__ = \"${TAG#v}\"/" client/booboot.py > dist/booboot.py
           [ "$(python3 dist/booboot.py --version)" = "${TAG#v}" ]
           (cd dist && sha256sum * > SHA256SUMS)

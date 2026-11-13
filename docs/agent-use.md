@@ -230,8 +230,8 @@ only "check your viewer".
    | Another copy, or an older version | tell the user what runs and offer the latest release, started for `URL`. If they agree: when the old one is the `TOOLS` copy, ask them to close it first (a running program cannot be replaced), then steps 4 and 5 |
 
 4. **Get BooBoot Console**, the first way that works:
-   1. Windows x64 or Linux x64, when there is a release (step 2): the latest
-      release, no login needed. When `TOOLS/BooBootConsole/version.txt` holds
+   1. Windows x64, Linux x64 or macOS, when there is a release (step 2): the
+      latest release, no login needed. When `TOOLS/BooBootConsole/version.txt` holds
       its tag, keep the program there. Otherwise download it, and write the
       tag in `version.txt`:
 
@@ -240,11 +240,18 @@ only "check your viewer".
       ```
 
       On Linux, download `BooBootConsole-linux-x64` as
-      `TOOLS/BooBootConsole/BooBootConsole`, then `chmod +x` it.
-   2. Windows x64 or Linux x64, when there is no release yet, with the GitHub
-      CLI logged in (`gh auth status`): the build of the latest successful CI
-      run (kept 30 days). On Linux, use `BooBootConsole-linux-x64`, then
-      `chmod +x TOOLS/BooBootConsole/BooBootConsole`.
+      `TOOLS/BooBootConsole/BooBootConsole`, then `chmod +x` it. On macOS,
+      download `BooBootConsole-osx-arm64.zip` (`uname -m` gives `arm64`) or
+      `BooBootConsole-osx-x64.zip`, and unzip it with
+      `ditto -x -k FILE.zip TOOLS/BooBootConsole`: the app is then
+      `TOOLS/BooBootConsole/BooBoot Console.app`.
+   2. Windows x64, Linux x64 or macOS, when there is no release yet, with the
+      GitHub CLI logged in (`gh auth status`): the build of the latest
+      successful CI run (kept 30 days). On Linux, use
+      `BooBootConsole-linux-x64`, then
+      `chmod +x TOOLS/BooBootConsole/BooBootConsole`. On macOS, use
+      `BooBootConsole-osx-arm64` or `BooBootConsole-osx-x64`, then unzip the
+      zip it gives as in 1.
 
       ```sh
       RUN=$(gh run list -R sonatique/BooBoot -w CI -b main -s success -L 1 --json databaseId -q '.[0].databaseId')
@@ -265,9 +272,10 @@ only "check your viewer".
       program themselves, if they want it (install.md B3).
 5. **Start it**, detached from your shell, with the server address:
    - Windows: `powershell -NoProfile -Command "Start-Process -FilePath 'TOOLS\BooBootConsole\BooBootConsole.exe' -ArgumentList 'URL'"`
-   - Linux and macOS: `nohup TOOLS/BooBootConsole/BooBootConsole URL >/dev/null 2>&1 &`.
+   - Linux, and macOS when built from the sources: `nohup TOOLS/BooBootConsole/BooBootConsole URL >/dev/null 2>&1 &`.
      On Linux it needs a desktop session (`DISPLAY` or `WAYLAND_DISPLAY`
      set). Without one, use the web page.
+   - macOS, the app: `open -n "TOOLS/BooBootConsole/BooBoot Console.app" --args URL`.
 
    After 5 seconds, check that it runs (step 1).
 6. **Web page.** `URL/` shows the same in any browser, phones too

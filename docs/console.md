@@ -93,10 +93,11 @@ program remembers the layout.
 
 Several windows work too, like one for each DUT on another screen: start the
 program again with the address of the DUT, like
-`BooBootConsole-win-x64.exe http://booboot.local:8080/duts/dut2`. An address
-given this way is not kept: the next start without one uses the last address
-typed. With a log started on connect, hide that DUT in the window of the
-board, or its output goes to two log files.
+`BooBootConsole-win-x64.exe http://booboot.local:8080/duts/dut2`, or on macOS
+`open -n "/Applications/BooBoot Console.app" --args http://booboot.local:8080/duts/dut2`.
+An address given this way is not kept: the next start without one uses the
+last address typed. With a log started on connect, hide that DUT in the
+window of the board, or its output goes to two log files.
 
 ## BooBoot log and load
 
@@ -178,12 +179,22 @@ cursor, and follows the output at each key.
 ## Run
 
 **Ready-built program.** Each release has a single program file for Windows
-and Linux, with nothing else to install. From the
-[latest release](https://github.com/sonatique/BooBoot/releases/latest), download `BooBootConsole-win-x64.exe` or
-`BooBootConsole-linux-x64`. On Linux, make the file executable first:
-`chmod +x BooBootConsole-linux-x64`. CI also builds them at each push: the
-artifacts of the latest CI run have the changes made since the release (a
-GitHub login is needed, and they are kept 30 days).
+and Linux, and an app for macOS, with nothing else to install. From the
+[latest release](https://github.com/sonatique/BooBoot/releases/latest), download:
+
+- Windows: `BooBootConsole-win-x64.exe`.
+- Linux: `BooBootConsole-linux-x64`, then make it executable:
+  `chmod +x BooBootConsole-linux-x64`.
+- macOS: `BooBootConsole-osx-arm64.zip` (Apple Silicon: M1 and later) or
+  `BooBootConsole-osx-x64.zip` (Intel). Open it, and move "BooBoot Console"
+  to Applications. The app is not signed by Apple: the first time, macOS
+  does not open it. Then in System Settings, Privacy & Security, click
+  "Open Anyway". Or, in a terminal:
+  `xattr -dr com.apple.quarantine "/Applications/BooBoot Console.app"`.
+
+CI also builds them at each push: the artifacts of the latest CI run have
+the changes made since the release (a GitHub login is needed, and they are
+kept 30 days).
 
 **From the sources**, on any system with the .NET 10 SDK:
 

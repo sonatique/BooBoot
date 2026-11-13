@@ -153,7 +153,7 @@ browser: the [console web page](docs/web.md), served by the BooBoot board.
 [BooBoot Console](docs/console.md) does the same as a desktop program
 (Windows, Linux, macOS), with log files on the desktop. The
 [latest release](https://github.com/sonatique/BooBoot/releases/latest) has it
-ready to run for Windows and Linux. Both need no session to watch, so they
+ready to run for Windows, Linux and macOS. Both need no session to watch, so they
 can watch while an agent works. "Take control" in either
 opens the session, to type into the console and switch the DUT power. With
 several DUTs, the web page lists them, and BooBoot Console shows a tab for
@@ -180,8 +180,8 @@ python3 -m unittest discover -s tests
 CI (GitHub Actions) runs a lint check and the tests on Python 3.9, 3.11 and
 3.14 (with the web page in headless Chrome), once as root, runs the client
 tests on Windows and macOS, checks the C# client and BooBoot Console against a
-server with a simulated board, builds BooBoot Console for Windows and Linux,
-and runs `server/install.sh` on a machine with systemd, with the relays on a
+server with a simulated board, builds BooBoot Console for Windows, Linux and
+macOS (started on a Mac), and runs `server/install.sh` on a machine with systemd, with the relays on a
 simulated GPIO chip, as an update of an install of 0.4.1 with two DUTs. A
 runner without the modules of its kernel skips this last check, with a
 warning.
@@ -200,8 +200,8 @@ Or run the Release workflow (Actions, "Release", "Run workflow") with the
 version, like `0.3.1`: it does the same from `main`, and creates the tag
 `v0.3.1` itself. Agents that can start workflows but not push tags use it.
 
-CI runs all the checks, then adds to the release BooBoot Console for Windows
-and Linux, `booboot.py`, and their SHA-256 sums in `SHA256SUMS`. The tag
+CI runs all the checks, then adds to the release BooBoot Console for Windows,
+Linux and macOS, `booboot.py`, and their SHA-256 sums in `SHA256SUMS`. The tag
 gives the version: no file needs editing. CI writes it into the released
 files, and on the BooBoot board `install.sh` takes it from git: `0.3.0` for
 the tagged commit, `0.3.0-2-gabc1234` for a later one, `dev` without git.

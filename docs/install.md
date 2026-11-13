@@ -201,15 +201,17 @@ Then `booboot --help` lists the commands.
 
 A desktop program to watch the console, with log files on the desktop (see
 [console.md](console.md)). From the latest release,
-`https://github.com/sonatique/BooBoot/releases/latest`, download `BooBootConsole-win-x64.exe` (Windows) or
-`BooBootConsole-linux-x64` (Linux), and run it. It is one file, with nothing
-else to install.
+`https://github.com/sonatique/BooBoot/releases/latest`, download `BooBootConsole-win-x64.exe` (Windows),
+`BooBootConsole-linux-x64` (Linux), or `BooBootConsole-osx-arm64.zip` (macOS,
+Apple Silicon) or `BooBootConsole-osx-x64.zip` (macOS, Intel), and run it.
+It is one file, or one app, with nothing else to install.
 
 - Windows may warn that the program is not signed: "More info", then "Run
   anyway".
 - Linux: `chmod +x BooBootConsole-linux-x64` first.
-- macOS: from the sources, with the .NET 10 SDK:
-  `dotnet run --project client/csharp/BooBootConsole`.
+- macOS: open the zip and move "BooBoot Console" to Applications. It is not
+  signed by Apple: the first time, macOS does not open it. Then in System
+  Settings, Privacy & Security, click "Open Anyway".
 
 ### 4. MCP clients (optional)
 
