@@ -222,9 +222,13 @@ class Storage:
         sysdir, names = self._partition_names(dev)
         parts = []
         for name in names:
+            number = _read(sysdir, name, "partition")
+            # Gone since listed, like while the kernel reads the partition table again.
+            if not number:
+                continue
             info = _blkid("/dev/" + name)
             parts.append({
-                "number": int(_read(sysdir, name, "partition") or 0),
+                "number": int(number),
                 "device": "/dev/" + name,
                 "start": int(_read(sysdir, name, "start") or 0) * 512,
                 "size": int(_read(sysdir, name, "size") or 0) * 512,
