@@ -69,11 +69,16 @@ class ScriptTest(unittest.TestCase):
         info = self.c.run_script(LOOP, "loop.py", ["3", "0.2"])
         self.assertEqual((info["state"], info["name"], info["args"], info["client"]),
                          ("running", "loop.py", ["3", "0.2"], "test"))
-        # Another client reads the output while the script runs, and after.
+        # Another client reads the output while the script runs, and after. The first line can come in parts.
         reader = booboot.Client(self.url)
-        first = reader.script_output(info["id"], 0, wait=5)
-        self.assertTrue(first["text"].startswith("run 0 off\n"), first)
-        text = first["text"] + "".join(t for t, _ in reader.follow_script(info["id"], first["next"]))
+        text, cursor = "", 0
+        deadline = time.monotonic() + 10
+        while "\n" not in text:
+            self.assertLess(time.monotonic(), deadline, "no first line: %r" % text)
+            part = reader.script_output(info["id"], cursor, wait=5)
+            text, cursor = text + part["text"], part["next"]
+        self.assertTrue(text.startswith("run 0 off\n"), text)
+        text += "".join(t for t, _ in reader.follow_script(info["id"], cursor))
         self.assertEqual(text, "run 0 off\nrun 1 off\nrun 2 off\ndone\n")
         end = reader.script(info["id"])
         self.assertEqual((end["state"], end["exit_code"], end["reason"], end["output"]), ("exited", 0, "", len(text)))
