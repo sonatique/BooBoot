@@ -99,7 +99,10 @@ public sealed class DutTab
             if (!history)
                 log.WriteLine(line.Text);
         };
-        View = new TerminalView { Buffer = Buffer, TextSize = settings.TextSize, Fonts = settings.Fonts };
+        View = new TerminalView
+        {
+            Buffer = Buffer, TextSize = settings.TextSize, Fonts = settings.Fonts, Wrap = settings.WrapLines,
+        };
         View.FollowChanged += (_, _) =>
         {
             FollowButton.IsChecked = View.Follow;
@@ -646,6 +649,7 @@ public sealed class DutTab
         Buffer.MaxLines = settings.ScrollbackLines;
         View.TextSize = settings.TextSize;
         View.Fonts = settings.Fonts;
+        View.Wrap = settings.WrapLines;
     }
 
     // Control

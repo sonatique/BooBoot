@@ -78,7 +78,7 @@
         <Button Content="Settings">
           <Button.Flyout>
             <Flyout Placement="BottomEdgeAlignedRight" Closed="OnSettingsClosed">
-              <Grid ColumnDefinitions="Auto,260" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+              <Grid ColumnDefinitions="Auto,260" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                     RowSpacing="8" ColumnSpacing="8">
                 <TextBlock Text="Log folder" VerticalAlignment="Center" />
                 <TextBox Name="LogFolderBox" Grid.Column="1" />
@@ -101,6 +101,8 @@
                                Increment="1" FormatString="0" />
                 <TextBlock Grid.Row="7" Text="Fonts" VerticalAlignment="Center" />
                 <TextBox Name="FontsBox" Grid.Row="7" Grid.Column="1" />
+                <CheckBox Name="WrapBox" Grid.Row="8" Grid.Column="1" Content="Wrap long lines"
+                          ToolTip.Tip="Off: long lines scroll sideways" />
               </Grid>
             </Flyout>
           </Button.Flyout>

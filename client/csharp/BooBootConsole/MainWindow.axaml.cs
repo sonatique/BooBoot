@@ -979,6 +979,7 @@ public partial class MainWindow : Window
         ScrollbackBox.Value = settings.ScrollbackLines;
         TextSizeBox.Value = (decimal)settings.TextSize;
         FontsBox.Text = settings.Fonts;
+        WrapBox.IsChecked = settings.WrapLines;
     }
 
     void OnSettingsClosed(object? sender, EventArgs e)
@@ -992,6 +993,7 @@ public partial class MainWindow : Window
         settings.ScrollbackLines = (int)(ScrollbackBox.Value ?? settings.ScrollbackLines);
         settings.TextSize = (double)(TextSizeBox.Value ?? (decimal)settings.TextSize);
         settings.Fonts = string.IsNullOrWhiteSpace(FontsBox.Text) ? TerminalView.DefaultFonts : FontsBox.Text.Trim();
+        settings.WrapLines = WrapBox.IsChecked == true;
         ShowSettings();
         foreach (var tab in tabs)
             tab.ApplySettings();

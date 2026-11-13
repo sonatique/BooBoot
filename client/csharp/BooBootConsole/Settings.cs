@@ -20,6 +20,8 @@ public sealed class Settings
     public int ScrollbackLines { get; set; } = 200_000;
     public double TextSize { get; set; } = 13;
     public string Fonts { get; set; } = TerminalView.DefaultFonts;
+    /// <summary>Long lines wrap. Without wrap, they scroll sideways.</summary>
+    public bool WrapLines { get; set; } = true;
     /// <summary>The addresses that each server reported, for when its name is not found.</summary>
     public Dictionary<string, List<string>> Addresses { get; set; } = new();
     /// <summary>How several DUTs show: "tabs", one at a time, or all at once "columns" (side by side) or "rows".</summary>

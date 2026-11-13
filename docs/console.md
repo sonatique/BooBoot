@@ -38,7 +38,12 @@ The title shows the current DUT and the version of the program.
 - **Terminal text.** Colors, carriage returns, backspaces and line erase work
   as in a terminal.
 - **Power switches.** A line shows each power on and power off, with its time.
-- **Scrollback.** 200,000 lines by default. Long lines wrap.
+- **Scrollback.** 200,000 lines by default.
+- **Long lines.** They wrap, unless "Wrap long lines" is off in Settings. Then
+  each line takes one row, and the view scrolls sideways: with the scroll bar
+  at the bottom, Shift and the mouse wheel, the touchpad, or Left and Right
+  when not typing. Find scrolls to show the match, and typing keeps the
+  cursor in view.
 - **Follow.** The view follows new output. Scrolling up stops it, so that the
   text stays in place. End or the Follow button of the DUT starts it again.
 - **Copy and save.** Select with the mouse (double-click: word, triple-click:
@@ -241,6 +246,7 @@ and macOS.
 | Scrollback lines | 200,000 |
 | Text size | 13 |
 | Fonts | Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, monospace (the first one found) |
+| Wrap long lines | on |
 
 The Layout button sets the layout, and the DUTs button the DUTs shown: both are
 kept in the same file.

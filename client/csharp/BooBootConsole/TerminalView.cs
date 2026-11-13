@@ -15,7 +15,7 @@ using Avalonia.Media.Immutable;
 namespace BooBootConsole;
 
 /// <summary>
-/// Shows a TerminalBuffer. Long lines wrap. Only the visible rows are drawn,
+/// Shows a TerminalBuffer. Long lines wrap, or scroll sideways. Only the visible rows are drawn,
 /// so the buffer can be large. The view follows new output unless the user
 /// scrolls up. While Typing is on, keys are raised as Input, as a terminal
 /// would send them, and the cursor is shown. Search highlights what matches,
@@ -45,6 +45,7 @@ public sealed class TerminalView : Control
     }, Color.Parse);
 
     readonly ScrollBar bar = new() { Orientation = Orientation.Vertical, AllowAutoHide = false };
+    readonly ScrollBar hbar = new() { Orientation = Orientation.Horizontal, AllowAutoHide = false, IsVisible = false };
     readonly Dictionary<int, IBrush> brushes = new();
     Dictionary<(TermLine, int), RowText> rowCache = new();
     // The buffer given, and the one shown: the same, or the lines of the given one that match.
@@ -62,12 +63,16 @@ public sealed class TerminalView : Control
     long topLine;
     int topRow;
     bool follow = true;
+    bool wrap = true;
+    // Without wrap: the first column shown.
+    int left;
+    double hbarHeight;
     TextPos? anchor, caret;
     bool selecting;
     bool typing;
-    double wheel;
+    double wheel, sideWheel;
 
-    record RowText(int Version, int Columns, FormattedText Text);
+    record RowText(int Version, int Columns, int Start, FormattedText Text);
 
     readonly record struct TextMatch(long Line, int Start, int Length);
 
@@ -78,7 +83,10 @@ public sealed class TerminalView : Control
         Cursor = new Cursor(StandardCursorType.Ibeam);
         VisualChildren.Add(bar);
         LogicalChildren.Add(bar);
+        VisualChildren.Add(hbar);
+        LogicalChildren.Add(hbar);
         bar.Scroll += (_, e) => ScrollToLine((long)Math.Round(e.NewValue), e.NewValue >= bar.Maximum);
+        hbar.Scroll += (_, e) => ScrollColumns((int)Math.Round(e.NewValue) - left);
         UpdateMetrics();
     }
 
@@ -116,6 +124,26 @@ public sealed class TerminalView : Control
             Refresh();
         }
     }
+
+    /// <summary>Long lines wrap. Without wrap, each line takes one row, and the view scrolls sideways.</summary>
+    public bool Wrap
+    {
+        get => wrap;
+        set
+        {
+            if (wrap == value)
+                return;
+            wrap = value;
+            left = 0;
+            topRow = 0;
+            hbar.IsVisible = !wrap;
+            rowCache.Clear();
+            Refresh();
+        }
+    }
+
+    /// <summary>Without wrap: the first column shown.</summary>
+    public int FirstColumn => left;
 
     /// <summary>True while the view shows the end of the output and follows it.</summary>
     public bool Follow
@@ -171,6 +199,9 @@ public sealed class TerminalView : Control
         topRow = Math.Min(topRow, Rows(topLine) - 1);
         if (follow && !selecting)
             (topLine, topRow) = BottomTop();
+        // Without wrap, the cursor stays shown while typing.
+        if (!wrap && typing && follow && (buffer.CursorColumn < left || buffer.CursorColumn >= left + Columns))
+            left = Math.Max(0, buffer.CursorColumn - Columns * 3 / 4);
         UpdateBar();
         InvalidateVisual();
     }
@@ -369,6 +400,12 @@ public sealed class TerminalView : Control
         if (current < 0)
             return;
         var m = matches[current];
+        if (!wrap && (m.Start < left || m.Start + m.Length > left + Columns))
+        {
+            left = Math.Max(0, m.Start - Columns / 3);
+            UpdateBar();
+            InvalidateVisual();
+        }
         var (line, row) = (m.Line, Math.Min(m.Start / Columns, Rows(m.Line) - 1));
         var (bottomLine, bottomRow) = (topLine, topRow);
         Forward(ref bottomLine, ref bottomRow, VisibleRows - 1);
@@ -399,9 +436,15 @@ public sealed class TerminalView : Control
 
     int Columns => Math.Max(10, (int)((Bounds.Width - bar.Bounds.Width - 2 * Pad) / cellWidth));
 
-    int VisibleRows => Math.Max(1, (int)((Bounds.Height - 2 * Pad) / rowHeight));
+    // The height above the horizontal scroll bar.
+    double TextHeight => Bounds.Height - hbarHeight;
 
-    int Rows(long line) => Math.Max(1, (buffer[line].Text.Length + Columns - 1) / Columns);
+    int VisibleRows => Math.Max(1, (int)((TextHeight - 2 * Pad) / rowHeight));
+
+    int Rows(long line) => wrap ? Math.Max(1, (buffer[line].Text.Length + Columns - 1) / Columns) : 1;
+
+    // The column at the start of a row of a line.
+    int RowStart(int row) => wrap ? row * Columns : left;
 
     void UpdateMetrics()
     {
@@ -416,13 +459,21 @@ public sealed class TerminalView : Control
     protected override Size MeasureOverride(Size availableSize)
     {
         bar.Measure(availableSize);
+        hbar.Measure(availableSize);
         return default;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
     {
         var width = bar.DesiredSize.Width;
-        bar.Arrange(new Rect(finalSize.Width - width, 0, width, finalSize.Height));
+        var height = hbar.IsVisible ? hbar.DesiredSize.Height : 0;
+        bar.Arrange(new Rect(finalSize.Width - width, 0, width, finalSize.Height - height));
+        hbar.Arrange(new Rect(0, finalSize.Height - height, finalSize.Width - width, height));
+        if (height != hbarHeight)
+        {
+            hbarHeight = height;
+            Refresh();
+        }
         return finalSize;
     }
 
@@ -511,6 +562,34 @@ public sealed class TerminalView : Control
         bar.Maximum = BottomTop().Item1 - buffer.First;
         bar.ViewportSize = VisibleRows;
         bar.Value = topLine - buffer.First;
+        if (wrap)
+            return;
+        hbar.Minimum = 0;
+        hbar.Maximum = Math.Max(Widest() - Columns, left);
+        hbar.ViewportSize = Columns;
+        hbar.Value = left;
+    }
+
+    // The length of the longest line shown, with the cursor.
+    int Widest()
+    {
+        var widest = 0;
+        var last = Math.Min(buffer.Last, topLine + VisibleRows - 1);
+        for (var n = topLine; n <= last; n++)
+            widest = Math.Max(widest, buffer[n].Text.Length);
+        if (typing && last == buffer.Last)
+            widest = Math.Max(widest, buffer.CursorColumn + 1);
+        return widest;
+    }
+
+    /// <summary>Without wrap: scrolls sideways by n columns, up to the end of the longest line shown.</summary>
+    public void ScrollColumns(int n)
+    {
+        if (wrap)
+            return;
+        left = Math.Clamp(left + n, 0, Math.Max(left, Widest() - Columns));
+        UpdateBar();
+        InvalidateVisual();
     }
 
     // Drawing
@@ -523,57 +602,64 @@ public sealed class TerminalView : Control
         var (sa, sb) = HasSelection ? Order(anchor!.Value, caret!.Value) : (default, default);
         var y = Pad;
         var (line, row) = (topLine, topRow);
-        while (y < Bounds.Height && line <= buffer.Last)
+        var height = TextHeight;
+        using (context.PushClip(new Rect(0, 0, Bounds.Width, height)))
         {
-            var l = buffer[line];
-            var rows = Rows(line);
-            if (typing && line == buffer.Last)
-                rows = Math.Max(rows, buffer.CursorColumn / cols + 1);
-            for (; row < rows && y < Bounds.Height; row++, y += rowHeight)
+            while (y < height && line <= buffer.Last)
             {
-                var start = row * cols;
-                var end = Math.Min(l.Text.Length, start + cols);
-                if (l.IsMarker)
-                    context.FillRectangle(MarkerBackground, new Rect(0, y, Bounds.Width, rowHeight));
-                else
-                    DrawBackgrounds(context, l, start, end, y);
-                for (var i = FirstMatch(line); i < matches.Count && matches[i].Line == line; i++)
+                var l = buffer[line];
+                var rows = Rows(line);
+                if (wrap && typing && line == buffer.Last)
+                    rows = Math.Max(rows, buffer.CursorColumn / cols + 1);
+                for (; row < rows && y < height; row++, y += rowHeight)
                 {
-                    var from = Math.Max(matches[i].Start, start);
-                    var to = Math.Min(matches[i].Start + matches[i].Length, end);
-                    if (to <= from)
-                        continue;
-                    var cells = new Rect(Pad + (from - start) * cellWidth, y, (to - from) * cellWidth, rowHeight);
-                    context.FillRectangle(i == current ? CurrentMatchBrush : MatchBrush, cells);
-                    if (i == current)
-                        context.DrawRectangle(CurrentMatchPen, cells.Deflate(0.5));
-                }
-                if (HasSelection && line >= sa.Line && line <= sb.Line)
-                {
-                    var from = Math.Max(line == sa.Line ? sa.Column : 0, start);
-                    // A selected line break shows as one more cell.
-                    var to = Math.Min(line == sb.Line ? sb.Column : end + 1, row == rows - 1 ? end + 1 : start + cols);
-                    if (to > from)
-                        context.FillRectangle(SelectionBrush,
-                            new Rect(Pad + (from - start) * cellWidth, y, (to - from) * cellWidth, rowHeight));
-                }
-                if (end > start)
-                {
-                    if (!rowCache.TryGetValue((l, row), out var text) || text.Version != l.Version || text.Columns != cols)
-                        text = new RowText(l.Version, cols, RowFormattedText(l, start, end));
-                    next[(l, row)] = text;
-                    context.DrawText(text.Text, new Point(Pad, y));
-                }
-                if (typing && line == buffer.Last && row == buffer.CursorColumn / cols)
-                {
-                    var cell = new Rect(Pad + buffer.CursorColumn % cols * cellWidth, y, cellWidth, rowHeight);
-                    if (IsFocused)
-                        context.FillRectangle(CursorBrush, cell);
+                    var start = RowStart(row);
+                    var end = Math.Min(l.Text.Length, start + cols);
+                    if (l.IsMarker)
+                        context.FillRectangle(MarkerBackground, new Rect(0, y, Bounds.Width, rowHeight));
                     else
-                        context.DrawRectangle(CursorPen, cell.Deflate(0.5));
+                        DrawBackgrounds(context, l, start, end, y);
+                    for (var i = FirstMatch(line); i < matches.Count && matches[i].Line == line; i++)
+                    {
+                        var from = Math.Max(matches[i].Start, start);
+                        var to = Math.Min(matches[i].Start + matches[i].Length, end);
+                        if (to <= from)
+                            continue;
+                        var cells = new Rect(Pad + (from - start) * cellWidth, y, (to - from) * cellWidth, rowHeight);
+                        context.FillRectangle(i == current ? CurrentMatchBrush : MatchBrush, cells);
+                        if (i == current)
+                            context.DrawRectangle(CurrentMatchPen, cells.Deflate(0.5));
+                    }
+                    if (HasSelection && line >= sa.Line && line <= sb.Line)
+                    {
+                        var from = Math.Max(line == sa.Line ? sa.Column : 0, start);
+                        // A selected line break shows as one more cell.
+                        var to = Math.Min(line == sb.Line ? sb.Column : end + 1, row == rows - 1 ? end + 1 : start + cols);
+                        if (to > from)
+                            context.FillRectangle(SelectionBrush,
+                                new Rect(Pad + (from - start) * cellWidth, y, (to - from) * cellWidth, rowHeight));
+                    }
+                    if (end > start)
+                    {
+                        if (!rowCache.TryGetValue((l, row), out var text) || text.Version != l.Version || text.Columns != cols
+                            || text.Start != start)
+                            text = new RowText(l.Version, cols, start, RowFormattedText(l, start, end));
+                        next[(l, row)] = text;
+                        context.DrawText(text.Text, new Point(Pad, y));
+                    }
+                    var (cursorRow, cursorColumn) = wrap
+                        ? (buffer.CursorColumn / cols, buffer.CursorColumn % cols) : (0, buffer.CursorColumn - left);
+                    if (typing && line == buffer.Last && row == cursorRow && cursorColumn >= 0 && cursorColumn < cols)
+                    {
+                        var cell = new Rect(Pad + cursorColumn * cellWidth, y, cellWidth, rowHeight);
+                        if (IsFocused)
+                            context.FillRectangle(CursorBrush, cell);
+                        else
+                            context.DrawRectangle(CursorPen, cell.Deflate(0.5));
+                    }
                 }
+                (line, row) = (line + 1, 0);
             }
-            (line, row) = (line + 1, 0);
         }
         rowCache = next;
         if (typing)
@@ -668,18 +754,19 @@ public sealed class TerminalView : Control
         var (line, row) = (topLine, topRow);
         var index = (int)Math.Floor((p.Y - Pad) / rowHeight);
         if (index < 0)
-            return new TextPos(line, row * Columns);
+            return new TextPos(line, RowStart(row));
         if (Forward(ref line, ref row, index) < index)
             return new TextPos(buffer.Last, buffer[buffer.Last].Text.Length);
         var col = Math.Clamp((int)Math.Round((p.X - Pad) / cellWidth), 0, Columns);
-        return new TextPos(line, Math.Min(row * Columns + col, buffer[line].Text.Length));
+        return new TextPos(line, Math.Min(RowStart(row) + col, buffer[line].Text.Length));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         var point = e.GetCurrentPoint(this);
-        if (!point.Properties.IsLeftButtonPressed || point.Position.X >= Bounds.Width - bar.Bounds.Width)
+        if (!point.Properties.IsLeftButtonPressed || point.Position.X >= Bounds.Width - bar.Bounds.Width
+            || point.Position.Y >= TextHeight)
             return;
         Focus();
         var pos = HitTest(point.Position);
@@ -705,8 +792,12 @@ public sealed class TerminalView : Control
         var p = e.GetPosition(this);
         if (p.Y < 0)
             ScrollRows(-1);
-        else if (p.Y > Bounds.Height)
+        else if (p.Y > TextHeight)
             ScrollRows(1);
+        if (p.X < 0)
+            ScrollColumns(-1);
+        else if (p.X > Bounds.Width - bar.Bounds.Width)
+            ScrollColumns(1);
         caret = HitTest(p);
         InvalidateVisual();
     }
@@ -724,12 +815,23 @@ public sealed class TerminalView : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+        e.Handled = true;
+        // Without wrap: sideways with Shift, or a sideways touchpad move.
+        var sideways = e.Delta.X != 0 ? -e.Delta.X : e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -e.Delta.Y : 0;
+        if (!wrap && sideways != 0)
+        {
+            sideWheel += sideways * 8;
+            var columns = (int)sideWheel;
+            sideWheel -= columns;
+            if (columns != 0)
+                ScrollColumns(columns);
+            return;
+        }
         wheel -= e.Delta.Y * 3;
         var n = (int)wheel;
         wheel -= n;
         if (n != 0)
             ScrollRows(n);
-        e.Handled = true;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -784,6 +886,12 @@ public sealed class TerminalView : Control
                 break;
             case Key.Down:
                 ScrollRows(1);
+                break;
+            case Key.Left when !wrap:
+                ScrollColumns(-8);
+                break;
+            case Key.Right when !wrap:
+                ScrollColumns(8);
                 break;
             case Key.Home when ctrl:
                 SetTop(buffer.First, 0);

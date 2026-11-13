@@ -115,15 +115,17 @@ static void CheckSettings()
         new Settings
         {
             Url = "http://test:8081", LogPrefix = "lab", NewLogAtPowerOn = true, TextSize = 15.5, Layout = "rows",
-            HiddenDuts = { ["http://test:8080"] = new() { "dut2" } },
+            WrapLines = false, HiddenDuts = { ["http://test:8080"] = new() { "dut2" } },
         }.Save(path);
         var s = Settings.Load(path);
         Check(s.Url == "http://test:8081" && s.LogPrefix == "lab" && s.NewLogAtPowerOn && s.TextSize == 15.5
-            && s.Layout == "rows" && s.ScrollbackLines == 200_000
+            && s.Layout == "rows" && !s.WrapLines && s.ScrollbackLines == 200_000
             && s.HiddenDuts["http://test:8080"].SequenceEqual(new[] { "dut2" }),
             "settings saved and loaded");
         Check(File.ReadAllText(path).Contains("\n  \"LogPrefix\": \"lab\","), "settings file indented");
         Check(Settings.Load(Path.Combine(dir.FullName, "none.json")).Url == new Settings().Url, "default settings");
+        File.WriteAllText(path, "{\"Url\": \"http://old:8080\"}");
+        Check(Settings.Load(path).WrapLines, "lines wrap without the setting in the file");
     }
     finally
     {
@@ -168,6 +170,59 @@ static void CheckSearch()
     Check(!tab.FindBar.IsVisible && view.Search == null && view.MatchCount == 0, "search closed");
 }
 
+// Long lines: wrapped, or on one row that scrolls sideways.
+static void CheckWrap()
+{
+    var settings = new Settings { WrapLines = false };
+    var tab = new DutTab("wrap", settings, () => { });
+    var view = tab.View;
+    Check(!view.Wrap, "wrap setting given to the view");
+    tab.Pane.IsVisible = true;
+    var window = new Avalonia.Controls.Window { Content = tab.Pane, Width = 400, Height = 400 };
+    window.Show();
+    try
+    {
+        tab.Buffer.Feed(new string('x', 300) + "\r\nshort\r\n" + new string('y', 150) + "end\r\n");
+        view.Refresh();
+        // Light pixels of the text, inside the scroll bars.
+        int TextPixels()
+        {
+            var origin = view.TranslatePoint(default, window)!.Value;
+            var area = new PixelRect((int)origin.X, (int)origin.Y, (int)view.Bounds.Width - 30,
+                (int)view.Bounds.Height - 30);
+            return Pixels(window.CaptureRenderedFrame()!, area).Count(p => (byte)(p >> 8) > 0x80);
+        }
+        var oneRow = TextPixels();
+
+        view.Focus();
+        window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
+        Check(view.FirstColumn == 8, "Right scrolls sideways");
+        window.KeyPressQwerty(PhysicalKey.ArrowLeft, RawInputModifiers.None);
+        Check(view.FirstColumn == 0, "Left scrolls back");
+        window.MouseWheel(new Point(100, 100), new Vector(0, -1), RawInputModifiers.Shift);
+        Check(view.FirstColumn == 8, "Shift and wheel scroll sideways");
+        view.ScrollColumns(10_000);
+        var end = view.FirstColumn;
+        view.ScrollColumns(1);
+        Check(end > 200 && end < 300 && view.FirstColumn == end, "sideways up to the end of the longest line");
+        view.ScrollColumns(-10_000);
+        view.Search = new Regex("end");
+        Check(view.FirstColumn > 100 && view.FirstColumn <= 150, "search scrolls sideways to the match");
+        view.Search = null;
+
+        settings.WrapLines = true;
+        tab.ApplySettings();
+        Check(view.Wrap && view.FirstColumn == 0, "wrap setting applied");
+        view.ScrollColumns(8);
+        Check(view.FirstColumn == 0, "no sideways scroll with wrap");
+        Check(TextPixels() > 2 * oneRow, "long lines wrap: all the text drawn");
+    }
+    finally
+    {
+        window.Close();
+    }
+}
+
 // The conditions of a Raspberry Pi, from the load of the board.
 static void CheckPi()
 {
@@ -192,6 +247,7 @@ static void CheckPi()
 static async Task CheckAll(string url, string? screenshot)
 {
     CheckSearch();
+    CheckWrap();
     CheckPi();
     var tmp = Directory.CreateTempSubdirectory("booboot-console-");
     using var dut = new BooBootClient(url);
