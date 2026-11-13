@@ -4,5 +4,33 @@
              RequestedThemeVariant="Default">
   <Application.Styles>
     <FluentTheme />
+    <!-- Compact bars, to leave the room to the consoles. -->
+    <Style Selector="DockPanel.toolbar Button, DockPanel.toolbar ToggleButton, Border.dut-bar Button, Border.dut-bar ToggleButton">
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
+    <Style Selector="DockPanel.toolbar TextBox">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
+    <Style Selector="TabStripItem">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
+    <!-- The bar of a DUT, above its view, in the main window or in its own. With several DUTs at once, the one
+         that takes the keys is marked. -->
+    <Style Selector="Border.dut-bar">
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="Background" Value="#14808080" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Grid.split Border.dut-bar.current">
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentButtonBackground}" />
+    </Style>
+    <Style Selector="GridSplitter.panes">
+      <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+    </Style>
   </Application.Styles>
 </Application>

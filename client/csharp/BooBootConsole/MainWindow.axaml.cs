@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -53,6 +54,14 @@ public partial class MainWindow : Window
     bool changingTabs;
     // The question before a power off, with its answers, while it shows.
     (Flyout Flyout, Button Yes, Button No)? powerOffQuestion;
+    // The DUTs shown in their own window.
+    readonly Dictionary<DutTab, DutWindow> windows = new();
+    // Saves the settings a moment after a window of a DUT stops moving.
+    readonly DispatcherTimer saveSoon = new() { Interval = TimeSpan.FromSeconds(1) };
+    // Set when connecting: the DUTs remembered in their own window open in it.
+    bool openWindows;
+    // The DUT that the DUT panel shows.
+    DutTab? panelTab;
 
     public MainWindow() : this(new Settings(), null, false)
     {
@@ -106,6 +115,21 @@ public partial class MainWindow : Window
         };
         BrowseButton.Click += OnBrowse;
         OpenFolderButton.Click += OnOpenFolder;
+        ShowWindowButton.Click += (_, _) =>
+        {
+            if (current != null && windows.TryGetValue(current, out var window))
+                window.Bring();
+        };
+        BringBackButton.Click += (_, _) =>
+        {
+            if (current != null)
+                Attach(current);
+        };
+        saveSoon.Tick += (_, _) =>
+        {
+            saveSoon.Stop();
+            SaveSettings();
+        };
         ShowSettings();
         Refresh();
         Opened += (_, _) => Connect();
@@ -121,6 +145,13 @@ public partial class MainWindow : Window
                 Close();
                 return;
             }
+            // They open again at the next start, where they are.
+            if (saveSoon.IsEnabled)
+            {
+                saveSoon.Stop();
+                SaveSettings();
+            }
+            CloseWindows();
             Disconnect();
             foreach (var tab in tabs)
                 tab.StopLog();
@@ -184,7 +215,11 @@ public partial class MainWindow : Window
             SaveSettings();
         }
         url = text.TrimEnd('/');
+        // The windows of the DUTs of another board close: they open again with their board.
+        if (DutPath.Replace(url, "") != board)
+            CloseWindows();
         board = DutPath.Replace(url, "");
+        openWindows = true;
         foreach (var tab in tabs)
             tab.Clear();
         connection = "Connecting to " + url;
@@ -246,9 +281,11 @@ public partial class MainWindow : Window
         var log = wholeBoard && settings.BoardLogs.Contains(board);
         foreach (var tab in tabs.Where(t => t.IsBoardLog ? !log : !shown.Contains(t.Name)).ToList())
         {
+            CloseWindow(tab);
             tab.Close();
             tabs.Remove(tab);
         }
+        var before = tabs.ToList();
         var ordered = shown.Select(n => tabs.FirstOrDefault(t => !t.IsBoardLog && t.Name == n) ?? Add(n)).ToList();
         if (log)
             ordered.Add(tabs.FirstOrDefault(t => t.IsBoardLog) ?? Add(DutTab.BoardLogName, boardLog: true));
@@ -270,22 +307,29 @@ public partial class MainWindow : Window
         var focused = FocusManager?.GetFocusedElement();
         Select(current != null && tabs.Contains(current) ? current : tabs.FirstOrDefault(t => t.Name == first) ?? tabs[0],
             focus: focused is null or TerminalView);
+        // In their own window, as remembered: at the connection, or when shown again.
+        if (wholeBoard && settings.DutWindows.TryGetValue(board, out var places))
+        {
+            foreach (var tab in tabs.Where(t => !t.Detached && (openWindows || !before.Contains(t))).ToList())
+            {
+                if (places.TryGetValue(tab.Name, out var place))
+                    Detach(tab, Screens.ScreenFromPoint(new PixelPoint(place.X + 40, place.Y + 10)) != null ? place : null);
+            }
+        }
+        openWindows = false;
     }
 
     DutTab Add(string name, bool boardLog = false)
     {
         var tab = new DutTab(name, settings, SaveSettings, boardLog);
-        tab.View.ContextMenu = ViewMenu(!boardLog);
-        if (!boardLog)
-            tab.Header.ContextMenu = DutMenu(() =>
-            {
-                Select(tab, focus: true);
-                OpenDutPanel();
-            });
+        tab.View.ContextMenu = ViewMenu(tab);
+        tab.Header.ContextMenu = DutMenu(tab);
         tab.Changed += () =>
         {
             if (tab == current)
                 Refresh();
+            else if (tab == panelTab)
+                ShowDutPanel(false);
         };
         tab.BoardChanged += names =>
         {
@@ -295,24 +339,23 @@ public partial class MainWindow : Window
         // With several DUTs at once, the one clicked or typed into becomes the current one.
         tab.View.GotFocus += (_, _) =>
         {
-            if (tab != current && tabs.Contains(tab))
+            if (tab != current && tabs.Contains(tab) && !tab.Detached)
                 Select(tab, focus: false);
         };
         tab.View.ContextRequested += (_, _) =>
         {
-            if (tab != current && tabs.Contains(tab))
+            if (tab != current && tabs.Contains(tab) && !tab.Detached)
                 Select(tab, focus: true);
         };
-        tab.Bar.PointerPressed += (_, _) => Select(tab, focus: true);
-        if (!boardLog)
-            tab.Bar.ContextMenu = DutMenu(() =>
-            {
+        tab.Bar.PointerPressed += (_, _) =>
+        {
+            if (!tab.Detached)
                 Select(tab, focus: true);
-                OpenDutPanel();
-            });
+        };
+        tab.Bar.ContextMenu = DutMenu(tab);
         tab.ControlButton.Click += async (_, _) =>
         {
-            Select(tab, focus: false);
+            Use(tab);
             if (tab.InControl)
                 await tab.ReleaseControl();
             else
@@ -320,7 +363,7 @@ public partial class MainWindow : Window
         };
         tab.PowerButton.Click += async (_, _) =>
         {
-            Select(tab, focus: false);
+            Use(tab);
             if (tab.PowerState == "on")
                 AskPowerOff(tab);
             else
@@ -328,11 +371,25 @@ public partial class MainWindow : Window
         };
         tab.PropertiesButton.Click += (_, _) =>
         {
-            Select(tab, focus: false);
-            OpenDutPanel();
+            Use(tab);
+            OpenDutPanel(tab);
+        };
+        tab.DetachButton.Click += (_, _) =>
+        {
+            if (tab.Detached)
+                Attach(tab);
+            else
+                Detach(tab);
         };
         tab.LogFolderItem.Click += OnOpenFolder;
         return tab;
+    }
+
+    // A DUT whose button is used becomes the current one, unless in its own window.
+    void Use(DutTab tab)
+    {
+        if (!tab.Detached)
+            Select(tab, focus: false);
     }
 
     void Select(DutTab tab, bool focus)
@@ -346,14 +403,16 @@ public partial class MainWindow : Window
         Tabs.SelectedItem = tab.Header;
         changingTabs = false;
         Refresh();
-        if (focus)
+        if (focus && tab.Detached)
+            ShowWindowButton.Focus();
+        else if (focus)
             tab.View.Focus();
     }
 
     // Layout
 
     /// <summary>True when the DUTs show all at once, side by side or top and bottom.</summary>
-    bool AllAtOnce => settings.Layout is "columns" or "rows" && tabs.Count > 1;
+    bool AllAtOnce => settings.Layout is "columns" or "rows" && tabs.Count(t => !t.Detached) > 1;
 
     /// <summary>Shows the DUTs in tabs ("tabs"), side by side ("columns") or top and bottom ("rows").</summary>
     public void SetLayout(string layout)
@@ -395,7 +454,8 @@ public partial class MainWindow : Window
         // The panes have their bars in place of the tabs.
         Tabs.IsVisible = tabs.Count > 1 && !allAtOnce;
         Views.Classes.Set("split", allAtOnce);
-        foreach (var tab in tabs)
+        var inside = tabs.Where(t => !t.Detached).ToList();
+        foreach (var tab in inside)
         {
             if (!allAtOnce)
             {
@@ -404,7 +464,7 @@ public partial class MainWindow : Window
                 Views.Children.Add(tab.Pane);
                 continue;
             }
-            if (tab != tabs[0])
+            if (tab != inside[0])
             {
                 var splitter = new GridSplitter
                 {
@@ -426,7 +486,114 @@ public partial class MainWindow : Window
     {
         var allAtOnce = AllAtOnce;
         foreach (var tab in tabs)
-            tab.Shown = allAtOnce || tab == current;
+            tab.Shown = tab.Detached || allAtOnce || tab == current;
+        DetachedNote.IsVisible = !allAtOnce && current is { Detached: true };
+    }
+
+    // Own windows
+
+    /// <summary>Shows the view of a DUT, with its bar, in its own window. place: where, else over the views here.</summary>
+    public void Detach(DutTab tab, WindowPlace? place = null)
+    {
+        if (tab.Detached || !tabs.Contains(tab))
+            return;
+        place ??= PlaceOver(tab);
+        tab.Detached = true;
+        Arrange();
+        var window = new DutWindow(tab, place) { Icon = Icon };
+        windows[tab] = window;
+        window.Moved += () =>
+        {
+            if (!wholeBoard)
+                return;
+            saveSoon.Stop();
+            saveSoon.Start();
+        };
+        window.CommandKey += e => e.Handled = Command(tab, e);
+        window.Closing += (_, e) =>
+        {
+            // Closed with the program: it opens again at the next start.
+            if (e.CloseReason is WindowCloseReason.ApplicationShutdown or WindowCloseReason.OSShutdown)
+                windows.Remove(tab);
+        };
+        window.Closed += (_, _) =>
+        {
+            // Closed by the user: back here.
+            if (windows.Remove(tab))
+                PutBack(tab, window);
+        };
+        if (wholeBoard)
+        {
+            if (!settings.DutWindows.TryGetValue(board, out var places))
+                settings.DutWindows[board] = places = new Dictionary<string, WindowPlace>();
+            places[tab.Name] = place;
+            SaveSettings();
+        }
+        window.Show();
+        tab.View.Focus();
+        if (current == tab && tabs.FirstOrDefault(t => !t.Detached) is DutTab other)
+            Select(other, focus: false);
+        else
+            Refresh();
+    }
+
+    /// <summary>Puts the view of a DUT in its own window back here, and closes the window.</summary>
+    public void Attach(DutTab tab)
+    {
+        if (!windows.Remove(tab, out var window))
+            return;
+        PutBack(tab, window);
+        window.Close();
+    }
+
+    /// <summary>The window of a DUT in its own window. For tests.</summary>
+    public DutWindow? WindowOf(DutTab tab) => windows.TryGetValue(tab, out var window) ? window : null;
+
+    /// <summary>True while the note for a DUT in its own window shows here. For tests.</summary>
+    public bool DetachedNoteShown => DetachedNote.IsVisible;
+
+    void PutBack(DutTab tab, DutWindow window)
+    {
+        window.Content = null;
+        tab.Detached = false;
+        if (wholeBoard && settings.DutWindows.TryGetValue(board, out var places) && places.Remove(tab.Name))
+        {
+            if (places.Count == 0)
+                settings.DutWindows.Remove(board);
+            SaveSettings();
+        }
+        Arrange();
+        Select(tab, focus: true);
+    }
+
+    // Closes the window of a DUT, its view back here. The window stays remembered.
+    void CloseWindow(DutTab tab)
+    {
+        if (!windows.Remove(tab, out var window))
+            return;
+        window.Content = null;
+        tab.Detached = false;
+        window.Close();
+    }
+
+    void CloseWindows()
+    {
+        if (windows.Count == 0)
+            return;
+        foreach (var tab in windows.Keys.ToList())
+            CloseWindow(tab);
+        Arrange();
+    }
+
+    // Over the views here, a bit lower, with the size of the view.
+    WindowPlace PlaceOver(DutTab tab)
+    {
+        Control area = tab.Pane.IsEffectivelyVisible && tab.Pane.Bounds.Width > 0 ? tab.Pane : Views;
+        var at = TopLevel.GetTopLevel(area) != null ? area.PointToScreen(new Point(30, 30)) : Position + new PixelPoint(60, 60);
+        return new WindowPlace
+        {
+            X = at.X, Y = at.Y, Width = Math.Max(area.Bounds.Width, 500), Height = Math.Max(area.Bounds.Height, 300),
+        };
     }
 
     /// <summary>Selects the tab of a DUT. For tests.</summary>
@@ -449,6 +616,7 @@ public partial class MainWindow : Window
         var connected = tab?.Connected == true;
         BoardText.Text = connected ? tab!.BoardState : connection;
         Title = connected && tab!.Name != "" ? $"{tab.DisplayName} - {ProgramName}" : ProgramName;
+        DetachedText.Text = tab != null ? $"{tab.DisplayName} is in its own window." : "";
         var server = connected ? tab!.Details?.Version ?? "" : "";
         VersionNote.IsVisible = IsOlder(server, ProgramVersion);
         VersionNote.Text = $"Update the board ({server})";
@@ -471,10 +639,13 @@ public partial class MainWindow : Window
             LabelBox.Focus();
     }
 
-    /// <summary>Shows the current DUT in the panel. opening: also its label, which is not changed while typed.</summary>
+    // The DUT of the panel: the one it was opened for, else the current one.
+    DutTab? PanelTab => panelTab != null && tabs.Contains(panelTab) ? panelTab : current;
+
+    /// <summary>Shows the DUT of the panel. opening: also its label, which is not changed while typed.</summary>
     void ShowDutPanel(bool opening)
     {
-        var tab = current;
+        var tab = PanelTab;
         DutNameBox.Text = tab?.Name ?? "";
         DutAddressBox.Text = tab?.Url ?? "";
         var inControl = tab?.InControl == true;
@@ -497,10 +668,10 @@ public partial class MainWindow : Window
         DutServerText.Text = details?.Server ?? "";
     }
 
-    /// <summary>Sets the label of the current DUT to the text of the panel. For tests: with text.</summary>
+    /// <summary>Sets the label of the DUT of the panel to the text of the panel. For tests: with text.</summary>
     public async Task SetLabelFromPanel(string? text = null)
     {
-        if (current is not DutTab tab)
+        if (PanelTab is not DutTab tab)
             return;
         if (text != null)
             LabelBox.Text = text;
@@ -509,10 +680,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Opens the DUT panel of the current DUT, at its Properties button.</summary>
-    public void OpenDutPanel()
+    public void OpenDutPanel() => OpenDutPanel(current);
+
+    void OpenDutPanel(DutTab? tab)
     {
-        if (current != null)
-            FlyoutBase.GetAttachedFlyout(Views)?.ShowAt(current.PropertiesButton);
+        if (tab == null)
+            return;
+        panelTab = tab;
+        FlyoutBase.GetAttachedFlyout(Views)?.ShowAt(tab.PropertiesButton);
     }
 
     public void CloseDutPanel() => FlyoutBase.GetAttachedFlyout(Views)?.Hide();
@@ -785,7 +960,7 @@ public partial class MainWindow : Window
 
     async Task TakeControl(DutTab tab, bool force, bool ifGone)
     {
-        if (await tab.TakeControl(force, ifGone) is JsonElement busy && tab == current)
+        if (await tab.TakeControl(force, ifGone) is JsonElement busy && (tab == current || tab.Detached))
             AskTakeOver(tab, busy);
     }
 
@@ -866,19 +1041,24 @@ public partial class MainWindow : Window
 
     // Commands
 
-    ContextMenu ViewMenu(bool dut)
+    // The commands on the view of a DUT, also in its own window.
+    ContextMenu ViewMenu(DutTab tab)
     {
         var menu = new ContextMenu();
-        foreach (var (header, gesture, click) in new (string, string?, EventHandler<RoutedEventArgs>?)[]
+        foreach (var (header, gesture, click) in new (string, string?, Action?)[]
                  {
-                     ("Copy", "Ctrl+C", OnCopy),
-                     ("Paste", "Ctrl+V", OnPaste),
-                     ("Copy all", null, OnCopyAll),
-                     ("Select all", "Ctrl+A", OnSelectAll),
-                     ("Find...", "Ctrl+F", OnFind),
+                     ("Copy", "Ctrl+C", tab.View.CopySelection),
+                     ("Paste", "Ctrl+V", tab.View.Paste),
+                     ("Copy all", null, () =>
+                     {
+                         tab.View.SelectAll();
+                         tab.View.CopySelection();
+                     }),
+                     ("Select all", "Ctrl+A", tab.View.SelectAll),
+                     ("Find...", "Ctrl+F", tab.ShowFind),
                      ("-", null, null),
-                     ("Clear", "Ctrl+L", OnClear),
-                     ("Save...", "Ctrl+S", OnSave),
+                     ("Clear", "Ctrl+L", tab.Clear),
+                     ("Save...", "Ctrl+S", () => Save(tab)),
                  })
         {
             if (click == null)
@@ -887,46 +1067,49 @@ public partial class MainWindow : Window
                 continue;
             }
             var item = new MenuItem { Header = header, InputGesture = gesture != null ? KeyGesture.Parse(gesture) : null };
-            item.Click += click;
+            item.Click += (_, _) => click();
             menu.Items.Add(item);
         }
-        if (dut)
-        {
-            menu.Items.Add(new Separator());
-            menu.Items.Add(DutItem(OpenDutPanel));
-        }
+        menu.Items.Add(new Separator());
+        AddDutItems(menu, tab);
         return menu;
     }
 
-    ContextMenu DutMenu(Action open) => new() { Items = { DutItem(open) } };
-
-    static MenuItem DutItem(Action open)
+    // The commands on a DUT, on its tab and bar.
+    ContextMenu DutMenu(DutTab tab)
     {
-        var item = new MenuItem { Header = "Properties..." };
-        item.Click += (_, _) => open();
-        return item;
+        var menu = new ContextMenu();
+        AddDutItems(menu, tab);
+        return menu;
     }
 
-    void OnClear(object? sender, RoutedEventArgs e) => current?.Clear();
-
-    void OnCopy(object? sender, RoutedEventArgs e) => current?.View.CopySelection();
-
-    void OnPaste(object? sender, RoutedEventArgs e) => current?.View.Paste();
-
-    void OnCopyAll(object? sender, RoutedEventArgs e)
+    // Its properties, and its own window.
+    void AddDutItems(ContextMenu menu, DutTab tab)
     {
-        current?.View.SelectAll();
-        current?.View.CopySelection();
+        if (!tab.IsBoardLog)
+        {
+            var properties = new MenuItem { Header = "Properties..." };
+            properties.Click += (_, _) =>
+            {
+                Use(tab);
+                OpenDutPanel(tab);
+            };
+            menu.Items.Add(properties);
+        }
+        var own = new MenuItem();
+        own.Click += (_, _) =>
+        {
+            if (tab.Detached)
+                Attach(tab);
+            else
+                Detach(tab);
+        };
+        menu.Items.Add(own);
+        menu.Opening += (_, _) => own.Header = tab.Detached ? "Back to the main window" : "Open in its own window";
     }
 
-    void OnSelectAll(object? sender, RoutedEventArgs e) => current?.View.SelectAll();
-
-    void OnFind(object? sender, RoutedEventArgs e) => current?.ShowFind();
-
-    async void OnSave(object? sender, RoutedEventArgs e)
+    async void Save(DutTab tab)
     {
-        if (current is not DutTab tab)
-            return;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save the console text",
@@ -955,17 +1138,23 @@ public partial class MainWindow : Window
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Handled || !(e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)))
-            return;
+        if (!e.Handled && (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+            && current is { Detached: false })
+            e.Handled = Command(current, e);
+    }
+
+    /// <summary>Runs the command of a key pressed with Ctrl or Cmd on a DUT: clear, save, find. False for other keys.</summary>
+    bool Command(DutTab tab, KeyEventArgs e)
+    {
         if (e.Key == Key.L)
-            OnClear(this, e);
+            tab.Clear();
         else if (e.Key == Key.S)
-            OnSave(this, e);
+            Save(tab);
         else if (e.Key == Key.F)
-            OnFind(this, e);
+            tab.ShowFind();
         else
-            return;
-        e.Handled = true;
+            return false;
+        return true;
     }
 
     // Settings

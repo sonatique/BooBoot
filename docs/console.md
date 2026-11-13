@@ -83,7 +83,8 @@ scrollback, log files and session. A tab shows:
 - a dot: green when the DUT is on, gray when it is off,
 - "in control" when this program has the session of the DUT, or "used by"
   and the client that has it,
-- a bullet when new output came while another tab was shown.
+- a bullet when new output came while another tab was shown,
+- a window sign when the DUT is in its own window.
 
 Ctrl+Tab shows the next DUT, Ctrl+Shift+Tab the previous one. The DUTs button
 shows or hides DUTs, and the BooBoot log: a hidden DUT is not watched, and the
@@ -98,8 +99,20 @@ views changes their sizes. What is typed goes to the view clicked last,
 whose bar has a blue line under it; Ctrl+Tab goes to the next one. The
 program remembers the layout.
 
-Several windows work too, like one for each DUT on another screen: start the
-program again with the address of the DUT, like
+A DUT can also show in its own window, to put it on another screen, size it,
+maximize or minimize it: the button at the right end of the bar of the DUT,
+or "Open in its own window" in the right-click menu of its tab or view. The
+window has the same bar, find bar, keys and menus, and the output, log and
+session go on. In the main window, its tab stays, with a window sign, and
+shows "Show its window" and "Bring it back here"; side by side or top and
+bottom, the DUT leaves the split. The same button in its window, or closing
+the window, puts the view back in the main window. Closing the main window
+closes the windows of the DUTs: the program remembers them for the board,
+with where they are and their size, and opens them again at the next start.
+A window whose screen is gone opens over the main window.
+
+Another instance of the program works too: start it with the address of the
+DUT, like
 `BooBootConsole-win-x64.exe http://booboot.local:8080/duts/dut2`, or on macOS
 `open -n "/Applications/BooBoot Console.app" --args http://booboot.local:8080/duts/dut2`.
 An address given this way is not kept: the next start without one uses the
@@ -250,7 +263,7 @@ and macOS.
 | Wrap long lines | on |
 
 The Layout button sets the layout, and the DUTs button the DUTs shown: both are
-kept in the same file.
+kept in the same file, with the DUTs in their own window.
 
 ## How it works
 

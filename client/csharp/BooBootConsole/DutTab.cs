@@ -27,6 +27,9 @@ public sealed class DutTab
 {
     static readonly IBrush OnBrush = new SolidColorBrush(Color.Parse("#2EA043"));
     static readonly IBrush OffBrush = new SolidColorBrush(Color.Parse("#8C8C8C"));
+    // A window with an arrow out of it, and one with an arrow into it.
+    const string OutIcon = "M 5,1 L 1,1 L 1,9 L 9,9 L 9,5 M 7,1 L 11,1 L 11,5 M 11,1 L 5,7";
+    const string InIcon = "M 5,1 L 1,1 L 1,9 L 9,9 L 9,5 M 11,1 L 5,7 M 5,3 L 5,7 L 9,7";
 
     readonly Settings settings;
     readonly Action saveSettings;
@@ -49,6 +52,12 @@ public sealed class DutTab
     {
         Text = "•", FontWeight = FontWeight.Bold, Margin = new Thickness(4, 0, 0, 0), IsVisible = false,
         VerticalAlignment = VerticalAlignment.Center,
+    };
+    // On the tab while the view is in its own window.
+    readonly Avalonia.Controls.Shapes.Path windowMark = new()
+    {
+        Data = Geometry.Parse(OutIcon), Stroke = OffBrush, StrokeThickness = 1.5, Width = 12, Height = 10,
+        Margin = new Thickness(6, 0, 0, 0), IsVisible = false, VerticalAlignment = VerticalAlignment.Center,
     };
     readonly TextBlock barTitle = new()
     {
@@ -82,7 +91,7 @@ public sealed class DutTab
     bool switching;
     // True while output from before the connection is added: it is not logged.
     bool history;
-    bool connectedOnce, current;
+    bool connectedOnce, current, detached;
 
     /// <summary>The name of the view of the messages of the server of the board.</summary>
     public const string BoardLogName = "BooBoot log";
@@ -121,7 +130,10 @@ public sealed class DutTab
         };
         Header = new TabStripItem
         {
-            Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { dot, title, state, mark } },
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Children = { dot, title, state, mark, windowMark },
+            },
         };
         StartLogItem.Click += (_, _) => StartLog();
         StopLogItem.Click += (_, _) => StopLog();
@@ -135,15 +147,27 @@ public sealed class DutTab
             },
         };
         DockPanel.SetDock(barTitle, Dock.Left);
-        Bar = new Border { Child = new DockPanel { Children = { buttons, barTitle, barState } }, ClipToBounds = true };
+        // At the right end of the line of the name, also when the other buttons go under it.
+        DockPanel.SetDock(DetachButton, Dock.Right);
+        DetachButton.VerticalAlignment = VerticalAlignment.Top;
+        DetachButton.Margin = new Thickness(4, 0, 0, 0);
+        var line = new DockPanel { Children = { DetachButton, buttons, barTitle, barState } };
+        Bar = new Border { Child = line, ClipToBounds = true };
         Bar.Classes.Add("dut-bar");
         // The buttons go under the name and state when the view is too narrow for both on one line.
         Bar.SizeChanged += (_, e) =>
         {
             buttons.Measure(Size.Infinity);
-            var under = e.NewSize.Width < buttons.DesiredSize.Width + 200;
+            var under = e.NewSize.Width < buttons.DesiredSize.Width + 240;
             DockPanel.SetDock(buttons, under ? Dock.Bottom : Dock.Right);
             buttons.Margin = under ? new Thickness(0, 3, 0, 0) : new Thickness(8, 0, 0, 0);
+            // Under, the buttons come first, to take the whole width.
+            var at = under ? 1 : 0;
+            if (line.Children.IndexOf(DetachButton) != at)
+            {
+                line.Children.Remove(DetachButton);
+                line.Children.Insert(at, DetachButton);
+            }
         };
         DockPanel.SetDock(buttons, Dock.Right);
         buttons.Margin = new Thickness(8, 0, 0, 0);
@@ -239,6 +263,9 @@ public sealed class DutTab
         Content = "Follow", IsChecked = true, [ToolTip.TipProperty] = "Show new output as it comes (End)",
     };
 
+    /// <summary>Opens the view in its own window, or puts it back in the main window.</summary>
+    public Button DetachButton { get; } = IconButton(OutIcon, "Open in its own window");
+
     /// <summary>The items of the Log file menu: start, stop, open folder.</summary>
     public MenuItem StartLogItem { get; } = new() { Header = "Start new log", [ToolTip.TipProperty] = "Log to a new file from now on" };
 
@@ -284,7 +311,21 @@ public sealed class DutTab
         }
     }
 
-    /// <summary>The view is in the window: the current DUT, or all with several at once.</summary>
+    /// <summary>The view is in its own window, out of the main window.</summary>
+    public bool Detached
+    {
+        get => detached;
+        set
+        {
+            detached = value;
+            windowMark.IsVisible = value;
+            ((Avalonia.Controls.Shapes.Path)DetachButton.Content!).Data = Geometry.Parse(value ? InIcon : OutIcon);
+            ToolTip.SetTip(DetachButton, value ? "Back to the main window" : "Open in its own window");
+            Update();
+        }
+    }
+
+    /// <summary>The view shows: the current DUT, all with several at once, or in its own window.</summary>
     public bool Shown
     {
         get => Pane.IsVisible;
@@ -624,7 +665,7 @@ public sealed class DutTab
         state.Text = InControl ? "in control" : session.StartsWith("used by ") ? session : "";
         mark.IsVisible = NewOutput;
         ToolTip.SetTip(Header, string.Join(", ", new[] { DisplayName, PowerText, state.Text,
-            NewOutput ? "new output" : "" }.Where(p => p != "")));
+            NewOutput ? "new output" : "", detached ? "in its own window" : "" }.Where(p => p != "")));
         barTitle.Text = DisplayName;
         barState.Text = State;
         ToolTip.SetTip(barState, State);

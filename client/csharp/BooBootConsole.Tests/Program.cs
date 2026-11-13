@@ -558,6 +558,51 @@ static async Task CheckDuts(string url, string tmp, string? screenshot, Action<M
     await dut2.SetLabelAsync("");
     await WaitFor(() => second.DisplayName == "dut2", "label removed by another client");
 
+    // A DUT in its own window: the same view, bar and keys, its tab kept here. Closed, it comes back here.
+    window.SelectDut(first);
+    window.Detach(second);
+    var own = window.WindowOf(second)!;
+    Check(own.IsVisible && own.Content == second.Pane && second.Detached && second.Shown && window.CurrentDut == first
+        && window.Duts.Contains(second) && own.Title == "dut2 - " + MainWindow.ProgramName
+        && settings.DutWindows[url].ContainsKey("dut2"), "DUT in its own window, its tab kept, remembered");
+    await dut2.RunAsync("echo in-own-window", timeout: 5);
+    await WaitFor(() => second.Buffer.GetAllText().Contains("\nin-own-window") && !second.NewOutput,
+        "output in its own window");
+    second.View.Focus();
+    Check(window.CurrentDut == first, "the main window keeps its DUT");
+    own.KeyPressQwerty(PhysicalKey.F, RawInputModifiers.Control);
+    Check(second.FindBar.IsVisible && !first.FindBar.IsVisible, "Ctrl+F in its own window");
+    second.CloseFind();
+    second.PropertiesButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    await WaitFor(() => window.DutPanelOpen && window.DutPanelText.StartsWith("dut2\n"), "DUT panel in its own window");
+    window.CloseDutPanel();
+    window.SelectDut(second);
+    Check(window.DetachedNoteShown && window.CurrentDut == second, "a note here for the DUT in its own window");
+    window.SelectDut(first);
+    Check(!window.DetachedNoteShown, "no note for a DUT here");
+    own.Close();
+    await WaitFor(() => !second.Detached, "window closed");
+    Check(window.WindowOf(second) == null && second.Pane.Parent == first.Pane.Parent && window.CurrentDut == second
+        && !settings.DutWindows.ContainsKey(url), "closed: back here, forgotten");
+    // Remembered, it opens in its own window again, where it was.
+    window.Detach(second);
+    var place = settings.DutWindows[url]["dut2"];
+    var other = new MainWindow(settings, url, persist: false) { Width = 800, Height = 300 };
+    created(other);
+    other.Show();
+    await WaitFor(() => other.Duts.Count == names.Count && other.Duts.Single(d => d.Name == "dut2").Detached,
+        "in its own window again at the next start");
+    var otherSecond = other.Duts.Single(d => d.Name == "dut2");
+    var otherWindow = other.WindowOf(otherSecond)!;
+    Check(otherWindow.Position == new PixelPoint(place.X, place.Y) && otherWindow.Width == place.Width
+        && otherWindow.Height == place.Height, "where it was, with its size");
+    other.Close();
+    Check(other.WindowOf(otherSecond) == null && settings.DutWindows[url].ContainsKey("dut2"),
+        "its window closed with the main window, still remembered");
+    window.Attach(second);
+    Check(!second.Detached && window.WindowOf(second) == null && window.CurrentDut == second
+        && !settings.DutWindows.ContainsKey(url), "back from its button");
+
     // Each DUT has its session.
     await dut2.CloseSessionAsync();
     await window.TakeControl();

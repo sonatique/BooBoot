@@ -30,6 +30,8 @@ public sealed class Settings
     public List<string> BoardLogs { get; set; } = new();
     /// <summary>The DUTs not shown, for each board with several.</summary>
     public Dictionary<string, List<string>> HiddenDuts { get; set; } = new();
+    /// <summary>The DUTs shown in their own window, with where it is, for each board.</summary>
+    public Dictionary<string, Dictionary<string, WindowPlace>> DutWindows { get; set; } = new();
 
     // DoNotVerify: the folder may not exist yet, like ~/.config on macOS.
     public static string FilePath => Path.Combine(
@@ -61,6 +63,16 @@ public sealed class Settings
         {
         }
     }
+}
+
+/// <summary>Where a window is: position on the screens in pixels, size while not maximized, and maximized or not.</summary>
+public sealed class WindowPlace
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+    public bool Maximized { get; set; }
 }
 
 // JSON code made at build time, as trimmed programs cannot use reflection.
