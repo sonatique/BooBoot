@@ -42,8 +42,9 @@ The title shows the current DUT and the version of the program.
 - **Long lines.** They wrap, unless "Wrap long lines" is off in Settings. Then
   each line takes one row, and the view scrolls sideways: with the scroll bar
   at the bottom, Shift and the mouse wheel, the touchpad, or Left and Right
-  when not typing. Find scrolls to show the match, and typing keeps the
-  cursor in view.
+  when not typing. A small arrow at the right edge shows that a line goes on,
+  and one at the left edge that it starts further left. Find scrolls to show
+  the match, and typing keeps the cursor in view.
 - **Follow.** The view follows new output. Scrolling up stops it, so that the
   text stays in place. End or the Follow button of the DUT starts it again.
 - **Copy and save.** Select with the mouse (double-click: word, triple-click:

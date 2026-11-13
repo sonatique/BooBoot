@@ -184,15 +184,25 @@ static void CheckWrap()
     {
         tab.Buffer.Feed(new string('x', 300) + "\r\nshort\r\n" + new string('y', 150) + "end\r\n");
         view.Refresh();
-        // Light pixels of the text, inside the scroll bars.
-        int TextPixels()
+        // Pixels of the view, without a margin at the right and bottom.
+        uint[] ViewPixels(int margin)
         {
             var origin = view.TranslatePoint(default, window)!.Value;
-            var area = new PixelRect((int)origin.X, (int)origin.Y, (int)view.Bounds.Width - 30,
-                (int)view.Bounds.Height - 30);
-            return Pixels(window.CaptureRenderedFrame()!, area).Count(p => (byte)(p >> 8) > 0x80);
+            var area = new PixelRect((int)origin.X, (int)origin.Y, (int)view.Bounds.Width - margin,
+                (int)view.Bounds.Height - margin);
+            return Pixels(window.CaptureRenderedFrame()!, area);
         }
+        // Light pixels inside the scroll bars.
+        int TextPixels() => ViewPixels(30).Count(p => (byte)(p >> 8) > 0x80);
+        // The blue of the marks of cut lines, in BGRA or RGBA. Not the colored edges of text.
+        int MarkPixels() => ViewPixels(0).Count(p =>
+        {
+            int c0 = (byte)p, c1 = (byte)(p >> 8), c2 = (byte)(p >> 16);
+            return Math.Abs(c1 - 0x9C) < 6 && Math.Abs(Math.Max(c0, c2) - 0xD6) < 6
+                && Math.Abs(Math.Min(c0, c2) - 0x56) < 6;
+        });
         var oneRow = TextPixels();
+        Check(MarkPixels() > 5, "mark where a line goes on to the right");
 
         view.Focus();
         window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
@@ -216,6 +226,7 @@ static void CheckWrap()
         view.ScrollColumns(8);
         Check(view.FirstColumn == 0, "no sideways scroll with wrap");
         Check(TextPixels() > 2 * oneRow, "long lines wrap: all the text drawn");
+        Check(MarkPixels() == 0, "no mark with wrap");
     }
     finally
     {

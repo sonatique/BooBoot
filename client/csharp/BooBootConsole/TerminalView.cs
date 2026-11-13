@@ -641,12 +641,17 @@ public sealed class TerminalView : Control
                     }
                     if (end > start)
                     {
-                        if (!rowCache.TryGetValue((l, row), out var text) || text.Version != l.Version || text.Columns != cols
-                            || text.Start != start)
+                        if (!rowCache.TryGetValue((l, row), out var text) || text.Version != l.Version
+                            || text.Columns != cols || text.Start != start)
                             text = new RowText(l.Version, cols, start, RowFormattedText(l, start, end));
                         next[(l, row)] = text;
                         context.DrawText(text.Text, new Point(Pad, y));
                     }
+                    // Without wrap: a mark in the last cell when the line goes on, in the first when it starts before.
+                    if (!wrap && l.Text.Length > end)
+                        DrawCutMark(context, Pad + (cols - 1) * cellWidth, y, right: true);
+                    if (!wrap && start > 0 && l.Text.Length > 0)
+                        DrawCutMark(context, Pad, y, right: false);
                     var (cursorRow, cursorColumn) = wrap
                         ? (buffer.CursorColumn / cols, buffer.CursorColumn % cols) : (0, buffer.CursorColumn - left);
                     if (typing && line == buffer.Last && row == cursorRow && cursorColumn >= 0 && cursorColumn < cols)
@@ -664,6 +669,24 @@ public sealed class TerminalView : Control
         rowCache = next;
         if (typing)
             context.DrawRectangle(TypingPen, new Rect(Bounds.Size).Deflate(1));
+    }
+
+    void DrawCutMark(DrawingContext context, double x, double y, bool right)
+    {
+        var cell = new Rect(x, y, cellWidth, rowHeight);
+        context.FillRectangle(MarkerBackground, cell);
+        var (w, h) = (cellWidth * 0.5, rowHeight * 0.5);
+        var (tip, back) = right
+            ? (cell.Center.X + w / 2, cell.Center.X - w / 2) : (cell.Center.X - w / 2, cell.Center.X + w / 2);
+        var arrow = new StreamGeometry();
+        using (var g = arrow.Open())
+        {
+            g.BeginFigure(new Point(back, cell.Center.Y - h / 2), true);
+            g.LineTo(new Point(tip, cell.Center.Y));
+            g.LineTo(new Point(back, cell.Center.Y + h / 2));
+            g.EndFigure(true);
+        }
+        context.DrawGeometry(MarkerBrush, null, arrow);
     }
 
     void DrawBackgrounds(DrawingContext context, TermLine line, int start, int end, double y)
