@@ -150,6 +150,12 @@ Check((await dut.ReadAsync("boot", timestamps: true)).GetProperty("text").GetStr
     "read console with timestamps");
 var (data, next) = await dut.ReadRawAsync("boot");
 Check(data.Length > 0 && next == read.GetProperty("cursor").GetInt64() + data.Length, "read raw console");
+// Bytes as they are, also those that are not UTF-8: the fake shell echoes each once.
+var bytes = await dut.WriteBytesAsync(new byte[] { 0x80, 0xFE, 0xFF, 0xC3, 0x28 });
+Check(bytes.GetProperty("written").GetInt64() == 5
+    && (await dut.ExpectAsync(@"\x80\xfe\xff\xc3\(", since: bytes.GetProperty("cursor").GetInt64().ToString(),
+        timeout: 5)).Matched, "write bytes");
+await dut.WriteAsync("\u0003");
 
 // Stream, without session
 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import codecs
 import json
 import logging
@@ -712,7 +713,17 @@ def web_file(r, m):
 @route("POST", "/console/write")
 def console_write(r, m):
     c = r.dut.console
-    data = str(r.param("text", "")).encode("utf-8")
+    text, encoded = r.param("text"), r.param("data")
+    if text is not None and encoded is not None:
+        raise BadRequest("give text or data, not both")
+    if encoded is not None:
+        # Bytes as they are, like an image for a serial download.
+        try:
+            data = base64.b64decode(str(encoded), validate=True)
+        except ValueError:
+            raise BadRequest("data must be base64") from None
+    else:
+        data = ("" if text is None else str(text)).encode("utf-8")
     if r.param_bool("newline"):
         data += c.eol
     c.write(data)

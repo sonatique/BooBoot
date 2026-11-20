@@ -358,6 +358,35 @@ public sealed class BooBootClient : IDisposable
         SendJsonAsync(HttpMethod.Post, "/console/write", Body(("text", text), ("newline", newline)));
 
     /// <summary>
+    /// Sends bytes as they are, like an image for a serial download, in parts of 32 KiB. newline adds the line
+    /// ending set on the server. Answers "written", and "cursor" where the output after the first part starts.
+    /// </summary>
+    public async Task<JsonElement> WriteBytesAsync(byte[] data, bool newline = false)
+    {
+        const int part = 32 << 10;
+        long written = 0, cursor = 0;
+        for (var i = 0; i < Math.Max(data.Length, 1); i += part)
+        {
+            var length = Math.Min(part, data.Length - i);
+            // Slow ports take long: the server stops after 10 s without progress.
+            var r = await SendJsonAsync(HttpMethod.Post, "/console/write",
+                Body(("data", Convert.ToBase64String(data, i, length))), TimeSpan.FromMinutes(2));
+            var n = r.GetProperty("written").GetInt64();
+            // A server older than 0.9.10 takes no data: it writes nothing.
+            if (n != length)
+                throw new BooBootException($"the board wrote {written + n} of {data.Length} bytes: writing bytes "
+                    + "needs BooBoot 0.9.10 or later on the board");
+            if (i == 0)
+                cursor = r.GetProperty("cursor").GetInt64();
+            written += n;
+        }
+        if (newline)
+            written += (await WriteAsync("", newline: true)).GetProperty("written").GetInt64();
+        using var doc = JsonDocument.Parse($"{{\"written\": {written}, \"cursor\": {cursor}}}");
+        return doc.RootElement.Clone();
+    }
+
+    /// <summary>
     /// Waits for a regex (Python syntax) in the console output. A power switch before the match throws
     /// BooBootException "power_switched": the output after it is from another boot.
     /// </summary>

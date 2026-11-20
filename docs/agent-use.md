@@ -337,6 +337,7 @@ Then go on with the task.
 | Log in, then run a command | `bb console run root`, then `bb console run "uname -a" --timeout 30` |
 | Wait for a text | `bb console expect "REGEX" --timeout 60` |
 | Send text without waiting | `bb console write "text"` (see Input below) |
+| Send bytes as they are, like an image for a serial download | `bb console write --file IMAGE`, or `-e -n "\xNN..."` for a few bytes |
 | Read the output | `bb console read --since boot --clean` (`-t`: time since power on on each line) |
 | Power | `bb power on`, `bb power off`, `bb power cycle` |
 | Boot time | `bb boottime "login: " --runs 5` |

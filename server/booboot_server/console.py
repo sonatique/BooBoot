@@ -108,6 +108,7 @@ class SerialPort:
         return data
 
     def write(self, data, timeout=10):
+        """Write all of data. Fails after timeout seconds without any byte taken: a long write takes its time."""
         view = memoryview(data)
         deadline = time.monotonic() + timeout
         while view:
@@ -118,6 +119,8 @@ class SerialPort:
                 n = os.write(self._fd, view)
             except BlockingIOError:
                 continue
+            if n:
+                deadline = time.monotonic() + timeout
             view = view[n:]
 
     def close(self):

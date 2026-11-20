@@ -321,8 +321,15 @@ With `format=raw`, the answer is the output bytes only, for terminals:
 
 ### POST /console/write
 
-Parameters: `text`, `newline` (add the line ending set on the server).
-Answer: `{"written": 5, "cursor": 5120}`.
+Parameters: `text`, or `data`, `newline` (add the line ending set on the
+server). Answer: `{"written": 5, "cursor": 5120}`.
+
+`text` is sent in UTF-8. `data` is bytes in base64, sent as they are, like an
+image for a serial download: in a query string or form, `+` is written `%2B`.
+A request body is at most 1 MiB, so send a large image in parts; the Python
+and C# clients (`write_bytes`, `WriteBytesAsync`) send parts of 32 KiB. The
+answer comes once all the bytes are written, about 11 KB per second at 115200
+baud. Servers before 0.9.10 take only `text`: they write nothing of `data`.
 
 `written` is the number of bytes the serial driver of the BooBoot board
 accepted. It does not show that the DUT received them: a broken adapter, a

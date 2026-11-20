@@ -101,6 +101,15 @@ class ClientTest(unittest.TestCase):
         c.power_cycle()
         self.assertEqual(json.loads(self.server.requests[-1][3]), {})  # None values are not sent
 
+    def test_write_bytes(self):
+        # A server older than writing bytes writes nothing of them.
+        self.answer("POST", "/console/write", {"written": 0, "cursor": 7})
+        c = booboot.Client(self.url, session="tok")
+        with self.assertRaises(booboot.Error) as e:
+            c.write_bytes(b"\xff\x00")
+        self.assertIn("needs BooBoot 0.9.10", e.exception.message)
+        self.assertEqual(json.loads(self.server.requests[-1][3]), {"data": "/wA="})
+
     def test_errors(self):
         self.answer("POST", "/session", {"error": "busy", "message": "used", "session": {"client": "x"}}, 423)
         with self.assertRaises(booboot.Error) as e:

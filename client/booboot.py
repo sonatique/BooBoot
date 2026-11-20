@@ -18,6 +18,7 @@ Windows. Copy this file anywhere and run it, or import it:
 from __future__ import annotations
 
 import argparse
+import base64
 import codecs
 import contextlib
 import getpass
@@ -38,6 +39,7 @@ __version__ = "dev"  # set by install.sh and in releases
 
 DEFAULT_URL = "http://booboot.local:8080"
 CHUNK = 1 << 20
+WRITE_PART = 32 << 10  # bytes per console write: about 3 s at 115200 baud
 
 HEARTBEAT = 10  # seconds between heartbeats
 
@@ -393,6 +395,30 @@ class Client:
     def write(self, text, newline=False):
         """Send text. newline adds the line ending set on the server."""
         return self.request("POST", "/console/write", json_body={"text": text, "newline": newline})
+
+    def write_bytes(self, data, newline=False):
+        """Send bytes as they are, like an image for a serial download, in parts of WRITE_PART bytes.
+
+        newline adds the line ending set on the server. Result: "written", and "cursor" where the
+        output after the first part starts.
+        """
+        data = bytes(data)
+        first = None
+        written = 0
+        for i in range(0, max(len(data), 1), WRITE_PART):
+            part = data[i:i + WRITE_PART]
+            # Slow ports take long: the server stops after 10 s without progress.
+            r = self.request("POST", "/console/write", json_body={"data": base64.b64encode(part).decode("ascii")},
+                             timeout=self.timeout + 120)
+            # A server older than 0.9.10 takes no data: it writes nothing.
+            if r["written"] != len(part):
+                raise Error("the board wrote %d of %d bytes: writing bytes needs BooBoot 0.9.10 or later on the "
+                            "board" % (written + r["written"], len(data)))
+            written += r["written"]
+            first = first or r
+        if newline:
+            written += self.write("", newline=True)["written"]
+        return {"written": written, "cursor": first["cursor"]}
 
     def expect(self, pattern, since="last", timeout=30, clean=False, switch=None):
         """Wait for a regex in the console output.
@@ -929,11 +955,52 @@ def cmd_console_read(args):
             return
 
 
+_ESCAPE = re.compile(r"\\(x[0-9a-fA-F]{2}|[0-7]{1,3}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|N\{[^}]*\}|.)", re.S)
+
+
+def _unescape(text):
+    """The bytes of text with backslash escapes: \\xNN and octal ones are bytes, the others as in Python."""
+    out = bytearray()
+    at = 0
+    for m in _ESCAPE.finditer(text):
+        out += text[at:m.start()].encode("utf-8")
+        e = m.group(1)
+        if len(e) == 3 and e[0] == "x":
+            out.append(int(e[1:], 16))
+        elif e[0] in "01234567" and int(e, 8) < 256:
+            out.append(int(e, 8))
+        else:
+            try:
+                out += codecs.decode("\\" + e, "unicode_escape").encode("utf-8")
+            except UnicodeDecodeError:
+                raise Error("bad escape: \\" + e) from None
+        at = m.end()
+    return bytes(out + text[at:].encode("utf-8"))
+
+
 def cmd_console_write(args):
-    text = args.text
-    if args.escapes:
-        text = codecs.decode(text.encode("latin-1", "backslashreplace"), "unicode_escape")
-    r = _client(args).write(text, newline=not args.no_newline)
+    if (args.text is None) == (args.file is None):
+        raise Error("give text or --file")
+    c = _client(args)
+    newline = not args.no_newline
+    if args.file is not None:
+        if args.file == "-":
+            data = sys.stdin.buffer.read()
+        else:
+            with open(args.file, "rb") as f:
+                data = f.read()
+        r = c.write_bytes(data)
+    elif not args.escapes:
+        r = c.write(args.text, newline=newline)
+    else:
+        data = _unescape(args.text)
+        try:
+            # As text when it is one, which servers older than 0.9.10 take too.
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            r = c.write_bytes(data, newline=newline)
+        else:
+            r = c.write(text, newline=newline)
     if args.json:
         _print_json(r)
 
@@ -1430,7 +1497,21 @@ def _mcp_console_read(s, a, report):
 
 
 def _mcp_console_write(s, a, report):
-    r = s.dut().write(str(_arg(a, "text")), newline=bool(a.get("newline", True)))
+    given = [k for k in ("text", "data", "file") if a.get(k) is not None]
+    if len(given) != 1:
+        raise ValueError("give one of text, data or file")
+    if given[0] == "text":
+        r = s.dut().write(str(a["text"]), newline=bool(a.get("newline", True)))
+    else:
+        if given[0] == "data":
+            try:
+                data = base64.b64decode(str(a["data"]), validate=True)
+            except ValueError:
+                raise ValueError("data must be base64") from None
+        else:
+            with open(_local(a["file"]), "rb") as f:
+                data = f.read()
+        r = s.dut().write_bytes(data, newline=bool(a.get("newline", False)))
     return "Sent %d bytes. Their answer starts at cursor %d." % (r["written"], r["cursor"])
 
 
@@ -1681,9 +1762,13 @@ MCP_TOOLS = [
           [], _mcp_console_read, read_only=True, destructive=False),
     _tool("console_write", "Write to the console",
           "Send text to the serial console, followed by Enter unless newline is false. Control "
-          "characters work: \\u0003 is Ctrl-C.",
-          {"text": {"type": "string"}, "newline": {"type": "boolean", "description": "Default true"}},
-          ["text"], _mcp_console_write),
+          "characters work: \\u0003 is Ctrl-C. For bytes as they are, like an image for a serial "
+          "download, give data or file in place of text: then no Enter unless newline is true.",
+          {"text": {"type": "string"},
+           "data": {"type": "string", "description": "Bytes, in base64"},
+           "file": {"type": "string", "description": "Local file whose bytes to send"},
+           "newline": {"type": "boolean", "description": "Default true for text, false for data or file"}},
+          [], _mcp_console_write),
     _tool("console_expect", "Wait for console output",
           "Wait until a regex (Python syntax) appears in the console output after a cursor, and return "
           "the output up to it. $ matches the end of the output received so far, which suits prompts.",
@@ -1948,9 +2033,12 @@ def build_parser():
     sp.add_argument("-t", "--timestamps", action="store_true", help="start each line with its time since power on")
     sp.set_defaults(func=cmd_console_read)
     sp = con.add_parser("write", help="send text, with a line ending unless -n")
-    sp.add_argument("text")
+    sp.add_argument("text", nargs="?")
     sp.add_argument("-n", "--no-newline", action="store_true")
-    sp.add_argument("-e", "--escapes", action="store_true", help=r"interpret escapes like \x03 (Ctrl-C)")
+    sp.add_argument("-e", "--escapes", action="store_true",
+                    help=r"interpret escapes like \x03 (Ctrl-C); \xNN is the byte NN")
+    sp.add_argument("--file", metavar="PATH", help="send the bytes of a file (- for stdin) as they are, "
+                    "like an image for a serial download, without line ending")
     sp.set_defaults(func=cmd_console_write)
     sp = con.add_parser("expect", help="wait for a regex and print the output up to it")
     sp.add_argument("pattern")

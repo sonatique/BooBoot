@@ -443,6 +443,28 @@ class ConsolePortTest(unittest.TestCase):
             c.write(b"x")
         self.assertIn("no console", c.error)
 
+    def test_long_write(self):
+        # A write that takes longer than its timeout goes on while the port takes bytes.
+        master, slave = os.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        port = SerialPort(os.ttyname(slave), 115200)
+        port.open()
+        self.addCleanup(port.close)
+        received = bytearray()
+
+        def drain():
+            while len(received) < 65536:
+                received.extend(os.read(master, 1024))
+                time.sleep(0.02)
+
+        reader = threading.Thread(target=drain, daemon=True)
+        reader.start()
+        data = bytes(range(256)) * 256
+        port.write(data, timeout=1)
+        reader.join(10)
+        self.assertEqual(bytes(received), data)
+
     def test_bad_settings(self):
         with self.assertRaises(ValueError):
             SerialPort("/dev/ttyUSB0", 12345)

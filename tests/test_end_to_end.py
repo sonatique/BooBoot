@@ -113,6 +113,24 @@ class EndToEnd(unittest.TestCase):
         self.assertTrue(r["matched"])
         c.power_off()
 
+    def test_write_bytes(self):
+        c = self.c
+        c.power_off()
+        c.put_file(__file__, "1:/BOOT.BIN")
+        self.addCleanup(c.delete, "1:/BOOT.BIN")
+        self.addCleanup(c.power_off)
+        c.power_on()
+        self.assertTrue(c.expect("login: $", since="boot", timeout=10)["matched"])
+        c.run("root", timeout=5)
+        # Bytes as they are, also those that are not UTF-8, in several parts: the fake shell echoes each once.
+        data = bytes(range(0x80, 0x100))
+        with mock.patch.object(booboot, "WRITE_PART", 50):
+            r = c.write_bytes(data)
+        self.assertEqual(r["written"], len(data))
+        echo = "".join("\\x%02x" % b for b in data)
+        self.assertTrue(c.expect(echo, since=r["cursor"], timeout=5)["matched"])
+        c.write("\x03")
+
     def test_expect_timeout(self):
         c = self.c
         c.power_off()
@@ -205,6 +223,8 @@ class EndToEnd(unittest.TestCase):
             (b"PUT /api/v1/power HTTP/1.1\r\n" + auth + b"Content-Length: 2\r\n\r\n[]", b"JSON object"),
             (b"PUT /api/v1/power HTTP/1.1\r\n" + auth + b"Content-Length: x\r\n\r\n", b"Content-Length"),
             (b"POST /api/v1/console/write?newline=maybe HTTP/1.1\r\n" + auth + b"\r\n", b"true or false"),
+            (b"POST /api/v1/console/write?data=%21%21 HTTP/1.1\r\n" + auth + b"\r\n", b"must be base64"),
+            (b"POST /api/v1/console/write?text=a&data=YQ%3D%3D HTTP/1.1\r\n" + auth + b"\r\n", b"not both"),
             (b"GET /api/v1/console?wait=100 HTTP/1.1\r\n" + auth + b"\r\n", b"between 0 and 60"),
             (b"PUT /api/v1/sd/image?compression=rar HTTP/1.1\r\n" + auth + b"Content-Length: 1\r\n\r\nx",
              b"compression must be"),
@@ -365,6 +385,15 @@ class Cli(unittest.TestCase):
         self.cli("console", "write", "echo from write")
         self.assertIn("from write", self.cli("console", "expect", "(?s)write.*# $", "--timeout", "5"))
         self.assertEqual(json.loads(self.cli("--json", "status"))["console"]["written"], written + 16)
+        # Bytes that are not UTF-8: from escapes, and from a file.
+        self.cli("console", "write", "-e", "-n", r"\xff\xfe")
+        self.cli("console", "expect", r"\xff\xfe", "--timeout", "5")
+        with open(os.path.join(self.tmp, "bytes"), "wb") as f:
+            f.write(b"\x80\xc3(")
+        self.cli("console", "write", "--file", os.path.join(self.tmp, "bytes"))
+        self.cli("console", "expect", r"\x80\xc3\(", "--timeout", "5")
+        self.cli("console", "write", "-e", "-n", r"\x03")
+        self.cli("console", "write", "text", "--file", "x", code=1)
         self.cli("console", "expect", "nothing", "--timeout", "0.3", code=3)
 
         # Another client holds the session: exit code 4.

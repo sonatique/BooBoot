@@ -140,6 +140,17 @@ class McpServerTest(unittest.TestCase):
         self.assertFalse(m.tool("console_write", text="root")[0])
         failed, text = m.tool("console_expect", pattern="# $", timeout=5)
         self.assertIn("Matched '# '", text)
+        # Bytes as they are, in base64 or from a file: the fake shell echoes them.
+        failed, text = m.tool("console_write", data="gP8=")
+        self.assertTrue(not failed and text.startswith("Sent 2 bytes."), text)
+        self.assertFalse(m.tool("console_expect", pattern=r"\x80\xff", timeout=5)[0])
+        raw = os.path.join(self.tmp, "raw.bin")
+        with open(raw, "wb") as f:
+            f.write(b"\xfe\xc3(")
+        self.assertFalse(m.tool("console_write", file=raw)[0])
+        self.assertFalse(m.tool("console_expect", pattern=r"\xfe\xc3\(", timeout=5)[0])
+        self.assertTrue(m.tool("console_write")[0])
+        self.assertFalse(m.tool("console_write", text="\x03", newline=False)[0])
         self.assertEqual(m.tool("console_run", command="uname -a"),
                          (False, "Linux fake 6.6.0-fake #1 SMP armv7l GNU/Linux\n"))
         failed, text = m.tool("console_run", command="true", prompt="never", timeout=0.5)

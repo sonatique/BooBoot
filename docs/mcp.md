@@ -45,7 +45,7 @@ On Windows, the command is usually `python` or `py`. Options go before `mcp`:
 | `sd_put` | Copy local files to the card | yes |
 | `sd_delete` | Delete a card file or directory | yes |
 | `console_read` | Console output after a cursor, with times since power on if asked | no |
-| `console_write` | Send text, Enter by default | yes |
+| `console_write` | Send text, Enter by default; or bytes as they are, in base64 or from a local file | yes |
 | `console_expect` | Wait for a regex in the console output | no |
 | `console_run` | Send a command line and return its output | yes |
 | `boot_time` | Power cycle and measure the time to a regex, once or several times | yes |
